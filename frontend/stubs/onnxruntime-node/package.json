@@ -1,0 +1,7 @@
+{
+  "name": "onnxruntime-node",
+  "version": "1.21.0",
+  "description": "Local empty stub. The real onnxruntime-node (~536MB) is a Node-only ONNX backend pulled in transitively by @huggingface/transformers. NovelScraper only runs Kokoro in the browser via onnxruntime-web, so the Node backend is never imported. Replaced via package.json overrides to save disk.",
+  "main": "index.js",
+  "license": "MIT"
+}

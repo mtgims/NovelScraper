@@ -1,0 +1,23 @@
+# Scraper runtime data — regenerable caches (data/cache, data/audio), generated
+# EPUBs, covers, and the SQLite db. Bounded by the LRU cache pruner at runtime.
+data/
+backend/data/
+
+# TTS model files (large, downloaded on first use)
+backend/models/
+
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+*.egg-info/
+
+# Node / frontend (added later)
+node_modules/
+.next/
+
+# NOTE: frontend/stubs/ is intentionally TRACKED (not ignored). It holds the
+# empty onnxruntime-node stub that the package.json "overrides" points at via
+# file:stubs/onnxruntime-node; without it a fresh `npm ci` can't resolve the
+# dependency and the build fails.

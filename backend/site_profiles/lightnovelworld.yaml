@@ -1,0 +1,19 @@
+# Site profile for lightnovelworld.org
+# Chapters are div.chapter-card elements with an onclick handler (no <a href>),
+# so the URL is pulled from the onclick attribute via link_url_regex.
+name: lightnovelworld
+base_url: https://lightnovelworld.org
+enumeration: paginated
+book_url_regex: "/novel/(?P<book>[^/?#]+)"
+list_url_template: "{base_url}/novel/{book}/chapters/?page={page}"
+list_container_selector: ".chapters-grid"
+link_selector: ".chapter-card"
+link_attr: "onclick"
+link_url_regex: "location\\.href='(?P<url>[^']+)'"
+chapter_title_selector: ".chapter-title"
+content_selector: ".chapter-content"
+book_title_selector: "h1.novel-title"
+book_author_selector: ".novel-author"
+strip_selectors:
+  - script
+  - style

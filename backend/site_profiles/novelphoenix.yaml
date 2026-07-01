@@ -1,0 +1,16 @@
+# novelphoenix.com — paginated chapter list at /novel/<slug>/chapters?page=N,
+# same ul.chapter-list structure as several other sites.
+name: novelphoenix
+base_url: https://novelphoenix.com
+enumeration: paginated
+book_url_regex: "/novel/(?P<book>[^/?#]+)"
+list_url_template: "{base_url}/novel/{book}/chapters?page={page}"
+list_container_selector: "ul.chapter-list"
+link_selector: "a"
+chapter_title_selector: "strong.chapter-title"
+content_selector: "#content"
+book_title_selector: "h1.novel-title"
+book_author_selector: "[itemprop=author]"
+strip_selectors:
+  - script
+  - style

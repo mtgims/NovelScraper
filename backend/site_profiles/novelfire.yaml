@@ -1,0 +1,14 @@
+# Site profile for novelfire.net (the original script's target).
+# Selectors mirror the original Scraper.py behavior.
+name: novelfire
+base_url: https://novelfire.net
+enumeration: paginated
+list_url_template: "{base_url}/book/{book}/chapters?page={page}"
+book_url_regex: "/book/(?P<book>[^/?#]+)"
+list_container_selector: "ul.chapter-list"
+link_selector: "a"
+chapter_no_selector: "span.chapter-no"
+content_selector: "#content"
+strip_selectors:
+  - script
+  - style

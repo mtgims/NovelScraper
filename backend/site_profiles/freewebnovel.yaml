@@ -1,0 +1,13 @@
+# freewebnovel.com — full chapter list lives in <ul id="idData"> on the book
+# page (single page), content in div.txt.
+name: freewebnovel
+base_url: https://freewebnovel.com
+enumeration: paginated
+book_url_regex: "/novel/(?P<book>[^/?#]+)"
+list_url_template: "{base_url}/novel/{book}"
+list_container_selector: "#idData"
+link_selector: "a"
+content_selector: ".txt"
+strip_selectors:
+  - script
+  - style

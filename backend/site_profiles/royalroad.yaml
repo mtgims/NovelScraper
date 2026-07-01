@@ -1,0 +1,17 @@
+# royalroad.com — all chapters are listed in a single table on the fiction page
+# (no pagination), so the "listing" URL is the fiction page itself and the
+# duplicate-page guard stops enumeration after one pass.
+name: royalroad
+base_url: https://www.royalroad.com
+enumeration: paginated
+book_url_regex: "/fiction/(?P<book>[0-9]+/[^/?#]+)"
+list_url_template: "{base_url}/fiction/{book}"
+list_container_selector: "#chapters"
+# Each row has two links to the same chapter (title cell + "time ago" cell);
+# target only the first cell's link so chapters aren't doubled.
+link_selector: "td:first-child a[href*='/chapter/']"
+content_selector: ".chapter-content"
+book_author_selector: "a[href^='/profile/']"
+strip_selectors:
+  - script
+  - style
