@@ -13,6 +13,10 @@ class ProgressUpdate(BaseModel):
     scroll: Optional[float] = Field(default=None, ge=0, le=1)
     mark_read: Optional[int] = Field(default=None, ge=1)
     unmark_read: Optional[int] = Field(default=None, ge=1)
+    # Bulk marking (range select, "mark above", "mark all others"): a set of
+    # chapter positions to add to / remove from the read set in one request.
+    mark_positions: Optional[List[int]] = None
+    unmark_positions: Optional[List[int]] = None
     mark_all: Optional[bool] = None   # mark every chapter read
     reset: Optional[bool] = None      # clear all progress for the book
 
@@ -81,7 +85,34 @@ class BookRead(BaseModel):
     language: str
     has_cover: bool = False
     created_at: datetime
+    sort_order: int = 0
+    collection_ids: List[int] = []
     volumes: List[VolumeRead] = []
+
+
+class CollectionRead(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: int
+    name: str
+    sort_order: int
+
+
+class CollectionCreate(BaseModel):
+    name: str = Field(min_length=1, max_length=100)
+
+
+class CollectionUpdate(BaseModel):
+    name: Optional[str] = Field(default=None, min_length=1, max_length=100)
+    sort_order: Optional[int] = None
+
+
+class BookCollectionsUpdate(BaseModel):
+    collection_ids: List[int] = []
+
+
+class BookReorder(BaseModel):
+    ordered_ids: List[int]
 
 
 class SiteRead(BaseModel):

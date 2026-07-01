@@ -49,7 +49,15 @@ export interface Book {
   language: string;
   has_cover: boolean;
   created_at: string;
+  sort_order: number;
+  collection_ids: number[];
   volumes: Volume[];
+}
+
+export interface Collection {
+  id: number;
+  name: string;
+  sort_order: number;
 }
 
 export interface Site {
@@ -92,6 +100,8 @@ export interface ProgressUpdate {
   scroll?: number;
   mark_read?: number;
   unmark_read?: number;
+  mark_positions?: number[];
+  unmark_positions?: number[];
   mark_all?: boolean;
   reset?: boolean;
 }

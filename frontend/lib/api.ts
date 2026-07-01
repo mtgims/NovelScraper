@@ -2,6 +2,7 @@ import type {
   Book,
   Chapter,
   ChapterListItem,
+  Collection,
   Job,
   JobCreate,
   ProgressUpdate,
@@ -56,6 +57,29 @@ export const api = {
   getBook: (id: number) => req<Book>(`/api/books/${id}`),
   deleteBook: (id: number) =>
     req<void>(`/api/books/${id}`, { method: "DELETE" }),
+  setBookCollections: (id: number, collectionIds: number[]) =>
+    req<Book>(`/api/books/${id}/collections`, {
+      method: "PUT",
+      body: JSON.stringify({ collection_ids: collectionIds }),
+    }),
+  reorderBooks: (orderedIds: number[]) =>
+    req<void>("/api/books/reorder", {
+      method: "POST",
+      body: JSON.stringify({ ordered_ids: orderedIds }),
+    }),
+  getCollections: () => req<Collection[]>("/api/collections"),
+  createCollection: (name: string) =>
+    req<Collection>("/api/collections", {
+      method: "POST",
+      body: JSON.stringify({ name }),
+    }),
+  updateCollection: (id: number, body: { name?: string; sort_order?: number }) =>
+    req<Collection>(`/api/collections/${id}`, {
+      method: "PATCH",
+      body: JSON.stringify(body),
+    }),
+  deleteCollection: (id: number) =>
+    req<void>(`/api/collections/${id}`, { method: "DELETE" }),
   getChapters: (bookId: number) =>
     req<ChapterListItem[]>(`/api/books/${bookId}/chapters`),
   getChapter: (bookId: number, position: number) =>

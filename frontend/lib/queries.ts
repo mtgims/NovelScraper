@@ -123,6 +123,57 @@ export function useDeleteBook() {
   });
 }
 
+// --- Library collections (Mihon-style categories) ---
+
+export function useCollections() {
+  return useQuery({ queryKey: ["collections"], queryFn: api.getCollections });
+}
+
+export function useCreateCollection() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (name: string) => api.createCollection(name),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ["collections"] }),
+  });
+}
+
+export function useUpdateCollection() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({ id, ...body }: { id: number; name?: string; sort_order?: number }) =>
+      api.updateCollection(id, body),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ["collections"] }),
+  });
+}
+
+export function useDeleteCollection() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (id: number) => api.deleteCollection(id),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["collections"] });
+      qc.invalidateQueries({ queryKey: ["books"] }); // memberships changed
+    },
+  });
+}
+
+export function useSetBookCollections() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({ id, collectionIds }: { id: number; collectionIds: number[] }) =>
+      api.setBookCollections(id, collectionIds),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ["books"] }),
+  });
+}
+
+export function useReorderBooks() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (orderedIds: number[]) => api.reorderBooks(orderedIds),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ["books"] }),
+  });
+}
+
 const TERMINAL = new Set(["completed", "failed", "cancelled"]);
 
 /**

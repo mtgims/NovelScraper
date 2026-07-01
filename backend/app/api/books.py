@@ -12,15 +12,17 @@ from typing import List, Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 from fastapi.responses import FileResponse, StreamingResponse
-from sqlmodel import Session, select
+from sqlmodel import Session, delete, select
 
 from ..db import get_session
-from ..models import Book, Chapter, ReadingProgress, Volume
+from ..models import Book, BookCollectionLink, Chapter, Collection, ReadingProgress, Volume
 from ..scraper.parser import count_words
 from ..settings import settings
 from ..tts import DEFAULT_VOICE, build_chunks, chunk_to_text, segment_paragraphs, tts
 from ..schemas import (
+    BookCollectionsUpdate,
     BookRead,
+    BookReorder,
     ChapterListItem,
     ChapterRead,
     ProgressUpdate,
@@ -104,24 +106,69 @@ def _book_read(session: Session, book: Book) -> BookRead:
 
 @router.get("", response_model=List[BookRead])
 def list_books(session: Session = Depends(get_session)):
-    books = session.exec(select(Book).order_by(Book.created_at.desc())).all()
+    # Manual order first (drag-to-reorder), newest first as a tiebreaker.
+    books = session.exec(
+        select(Book).order_by(Book.sort_order, Book.created_at.desc())
+    ).all()
     if not books:
         return []
-    # Fetch all volumes in one query and group, rather than N per-book queries.
     ids = [b.id for b in books]
+    # Fetch volumes + collection memberships in bulk (avoid N+1 per book).
     volumes = session.exec(
         select(Volume).where(Volume.book_id.in_(ids)).order_by(Volume.number)
     ).all()
     by_book: dict[int, list[VolumeRead]] = defaultdict(list)
     for v in volumes:
         by_book[v.book_id].append(VolumeRead.model_validate(v))
+    links = session.exec(
+        select(BookCollectionLink).where(BookCollectionLink.book_id.in_(ids))
+    ).all()
+    colls_by_book: dict[int, list[int]] = defaultdict(list)
+    for link in links:
+        colls_by_book[link.book_id].append(link.collection_id)
     result = []
     for book in books:
         data = BookRead.model_validate(book)
         data.has_cover = _has_cover(book)
         data.volumes = by_book.get(book.id, [])
+        data.collection_ids = colls_by_book.get(book.id, [])
         result.append(data)
     return result
+
+
+@router.put("/{book_id}/collections", response_model=BookRead)
+def set_book_collections(book_id: int, body: BookCollectionsUpdate,
+                         session: Session = Depends(get_session)):
+    """Replace the set of collections a book belongs to (checkbox assignment)."""
+    book = session.get(Book, book_id)
+    if book is None:
+        raise HTTPException(status_code=404, detail="Book not found")
+    # Validate the target collections exist, then rewrite the links.
+    valid = set(session.exec(
+        select(Collection.id).where(Collection.id.in_(body.collection_ids or [0]))
+    ).all())
+    session.exec(
+        delete(BookCollectionLink).where(BookCollectionLink.book_id == book_id)
+    )
+    for cid in valid:
+        session.add(BookCollectionLink(book_id=book_id, collection_id=cid))
+    session.commit()
+    data = BookRead.model_validate(book)
+    data.has_cover = _has_cover(book)
+    data.collection_ids = sorted(valid)
+    return data
+
+
+@router.post("/reorder", status_code=204)
+def reorder_books(body: BookReorder, session: Session = Depends(get_session)):
+    """Assign a manual library order from a full list of book ids (front to back).
+    Ids not present keep their existing sort_order (pushed after the ordered set)."""
+    for index, book_id in enumerate(body.ordered_ids):
+        book = session.get(Book, book_id)
+        if book is not None:
+            book.sort_order = index
+            session.add(book)
+    session.commit()
 
 
 @router.get("/{book_id}", response_model=BookRead)
@@ -213,6 +260,11 @@ def update_progress(book_id: int, body: ProgressUpdate,
         prog.read_positions = prog.read_positions + [body.mark_read]
     if body.unmark_read is not None and body.unmark_read in prog.read_positions:
         prog.read_positions = [p for p in prog.read_positions if p != body.unmark_read]
+    if body.mark_positions:
+        prog.read_positions = sorted(set(prog.read_positions) | set(body.mark_positions))
+    if body.unmark_positions:
+        remove = set(body.unmark_positions)
+        prog.read_positions = [p for p in prog.read_positions if p not in remove]
     prog.updated_at = datetime.now(timezone.utc)
 
     session.add(prog)
@@ -343,6 +395,9 @@ def delete_book(book_id: int, session: Session = Depends(get_session)):
     ).first()
     if prog is not None:
         session.delete(prog)
+    session.exec(
+        delete(BookCollectionLink).where(BookCollectionLink.book_id == book_id)
+    )
     # Best-effort: drop cached TTS audio for this book.
     audio_dir = settings.audio_dir / str(book_id)
     if audio_dir.exists():

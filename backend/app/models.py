@@ -60,6 +60,22 @@ class Book(SQLModel, table=True):
     language: str = "en"
     cover_path: Optional[str] = None
     created_at: datetime = Field(default_factory=utcnow)
+    # Manual library order (drag-to-reorder). Ties fall back to created_at desc.
+    sort_order: int = Field(default=0)
+
+
+class Collection(SQLModel, table=True):
+    """A user-defined library group (Mihon-style category). A book can belong to
+    many collections via BookCollectionLink."""
+    id: Optional[int] = Field(default=None, primary_key=True)
+    name: str
+    sort_order: int = Field(default=0)   # tab order
+    created_at: datetime = Field(default_factory=utcnow)
+
+
+class BookCollectionLink(SQLModel, table=True):
+    book_id: int = Field(foreign_key="book.id", primary_key=True)
+    collection_id: int = Field(foreign_key="collection.id", primary_key=True)
 
 
 class Volume(SQLModel, table=True):

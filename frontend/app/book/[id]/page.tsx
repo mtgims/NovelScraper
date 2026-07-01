@@ -14,6 +14,7 @@ import {
 } from "lucide-react";
 import Link from "next/link";
 import { useParams, useRouter } from "next/navigation";
+import { type MouseEvent as ReactMouseEvent, useEffect, useRef, useState } from "react";
 
 import { useConfirm } from "@/components/confirm-dialog";
 import { PageHeader } from "@/components/page-header";
@@ -41,6 +42,28 @@ export default function BookDetailPage() {
   const updateProgress = useUpdateProgress(id);
   const deleteBook = useDeleteBook();
   const confirm = useConfirm();
+
+  // Anchor for range selection: the last-toggled chapter and the state it was
+  // set to. Shift/Ctrl-clicking another mark applies that state to the range.
+  const rangeAnchor = useRef<{ position: number; read: boolean } | null>(null);
+  const [menu, setMenu] = useState<{ x: number; y: number; position: number } | null>(
+    null
+  );
+
+  // Close the context menu on any click / scroll / Escape.
+  useEffect(() => {
+    if (!menu) return;
+    const close = () => setMenu(null);
+    const onKey = (e: KeyboardEvent) => e.key === "Escape" && setMenu(null);
+    window.addEventListener("click", close);
+    window.addEventListener("scroll", close, true);
+    window.addEventListener("keydown", onKey);
+    return () => {
+      window.removeEventListener("click", close);
+      window.removeEventListener("scroll", close, true);
+      window.removeEventListener("keydown", onKey);
+    };
+  }, [menu]);
 
   async function onDelete() {
     const ok = await confirm({
@@ -74,10 +97,31 @@ export default function BookDetailPage() {
   const resumeAt = progress?.last_position ?? 1;
   const hasStarted = (progress?.read_count ?? 0) > 0 || resumeAt > 1;
 
-  function toggleRead(position: number, read: boolean) {
+  const orderedPositions = (chapters ?? []).map((c) => c.position);
+
+  function applyRead(positions: number[], read: boolean) {
+    if (positions.length === 0) return;
     updateProgress.mutate(
-      read ? { unmark_read: position } : { mark_read: position }
+      read ? { mark_positions: positions } : { unmark_positions: positions }
     );
+  }
+
+  function onToggle(e: ReactMouseEvent, position: number, read: boolean) {
+    const rangeKey = e.shiftKey || e.ctrlKey || e.metaKey;
+    if (rangeKey && rangeAnchor.current) {
+      const anchor = rangeAnchor.current;
+      const lo = Math.min(anchor.position, position);
+      const hi = Math.max(anchor.position, position);
+      applyRead(
+        orderedPositions.filter((p) => p >= lo && p <= hi),
+        anchor.read
+      );
+      rangeAnchor.current = { position, read: anchor.read };
+    } else {
+      const next = !read;
+      applyRead([position], next);
+      rangeAnchor.current = { position, read: next };
+    }
   }
 
   return (
@@ -203,10 +247,13 @@ export default function BookDetailPage() {
 
         {/* Verso: chapter index */}
         <div className="min-w-0">
-          <div className="rule-accent flex items-baseline justify-between pt-3 mb-4">
+          <div className="rule-accent flex items-baseline justify-between pt-3 mb-1.5">
             <h2 className="font-display text-2xl">Chapters</h2>
             <span className="kicker">{totalChapters} total</span>
           </div>
+          <p className="mb-4 text-xs text-muted-foreground">
+            Shift-click a mark to set a range · right-click a chapter for more
+          </p>
 
           {!chapters ? (
             <div className="space-y-2">
@@ -222,6 +269,10 @@ export default function BookDetailPage() {
                 return (
                   <div
                     key={ch.position}
+                    onContextMenu={(e) => {
+                      e.preventDefault();
+                      setMenu({ x: e.clientX, y: e.clientY, position: ch.position });
+                    }}
                     className={cn(
                       "flex items-center transition-colors hover:bg-muted/60",
                       current && "bg-accent-soft"
@@ -248,10 +299,14 @@ export default function BookDetailPage() {
                     </Link>
                     <button
                       type="button"
-                      onClick={() => toggleRead(ch.position, read)}
+                      onClick={(e) => onToggle(e, ch.position, read)}
                       className="shrink-0 px-3 py-2.5 text-muted-foreground hover:text-accent transition-colors"
                       aria-label={read ? "Mark as unread" : "Mark as read"}
-                      title={read ? "Mark as unread" : "Mark as read"}
+                      title={
+                        read
+                          ? "Mark as unread (Shift-click for range)"
+                          : "Mark as read (Shift-click for range)"
+                      }
                     >
                       {read ? (
                         <Check size={16} className="text-accent" />
@@ -266,6 +321,78 @@ export default function BookDetailPage() {
           )}
         </div>
       </section>
+
+      {menu && (
+        <ChapterMenu
+          menu={menu}
+          positions={orderedPositions}
+          onApply={applyRead}
+          onClose={() => setMenu(null)}
+        />
+      )}
     </>
+  );
+}
+
+function ChapterMenu({
+  menu,
+  positions,
+  onApply,
+  onClose,
+}: {
+  menu: { x: number; y: number; position: number };
+  positions: number[];
+  onApply: (positions: number[], read: boolean) => void;
+  onClose: () => void;
+}) {
+  const pos = menu.position;
+  const thisAndAbove = positions.filter((p) => p <= pos);
+  const others = positions.filter((p) => p !== pos);
+  const items = [
+    { label: "Mark read — this & above", fn: () => onApply(thisAndAbove, true) },
+    { label: "Mark unread — this & above", fn: () => onApply(thisAndAbove, false) },
+    { label: "Mark read — all others", fn: () => onApply(others, true) },
+    { label: "Mark unread — all others", fn: () => onApply(others, false) },
+  ];
+  const W = 224;
+  const vw = typeof window !== "undefined" ? window.innerWidth : 9999;
+  const vh = typeof window !== "undefined" ? window.innerHeight : 9999;
+
+  // Grow-in from the click point.
+  const [shown, setShown] = useState(false);
+  useEffect(() => {
+    const id = requestAnimationFrame(() => setShown(true));
+    return () => cancelAnimationFrame(id);
+  }, []);
+
+  return (
+    <div
+      role="menu"
+      className={cn(
+        "fixed z-[60] w-56 origin-top-left overflow-hidden rounded-md border border-border bg-card py-1 shadow-xl",
+        "transition-[opacity,transform] duration-150 ease-out",
+        shown ? "scale-100 opacity-100" : "scale-95 opacity-0"
+      )}
+      style={{ top: Math.min(menu.y, vh - 190), left: Math.min(menu.x, vw - W - 8) }}
+      onClick={(e) => e.stopPropagation()}
+    >
+      <p className="kicker border-b border-border px-3 pb-1.5 pt-1">Chapter {pos}</p>
+      <div className="pt-1">
+        {items.map((it) => (
+          <button
+            key={it.label}
+            type="button"
+            role="menuitem"
+            onClick={() => {
+              it.fn();
+              onClose();
+            }}
+            className="block w-full px-3 py-1.5 text-left text-sm text-foreground transition-colors hover:bg-muted"
+          >
+            {it.label}
+          </button>
+        ))}
+      </div>
+    </div>
   );
 }
