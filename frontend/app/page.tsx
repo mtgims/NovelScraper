@@ -1,10 +1,27 @@
 "use client";
 
+import {
+  DndContext,
+  DragOverlay,
+  KeyboardSensor,
+  PointerSensor,
+  closestCenter,
+  useSensor,
+  useSensors,
+  type DragEndEvent,
+  type DragStartEvent,
+} from "@dnd-kit/core";
+import {
+  SortableContext,
+  arrayMove,
+  rectSortingStrategy,
+  sortableKeyboardCoordinates,
+} from "@dnd-kit/sortable";
 import { Library, Plus } from "lucide-react";
 import Link from "next/link";
 import { useEffect, useRef, useState } from "react";
 
-import { BookCard } from "@/components/book-card";
+import { BookCard, BookCardView } from "@/components/book-card";
 import { CollectionTabs, type TabValue } from "@/components/collection-tabs";
 import { PageHeader } from "@/components/page-header";
 import { Button } from "@/components/ui/button";
@@ -20,14 +37,18 @@ export default function LibraryPage() {
 
   const [tab, setTab] = useState<TabValue>("all");
   const [orderIds, setOrderIds] = useState<number[]>([]);
-  const [dragId, setDragId] = useState<number | null>(null);
-  const draggingId = useRef<number | null>(null);
-  const orderRef = useRef<number[]>([]);
-  orderRef.current = orderIds;
+  const [activeId, setActiveId] = useState<number | null>(null);
+  const dragging = useRef(false);
+
+  const sensors = useSensors(
+    // A small drag threshold so a plain click still opens the novel.
+    useSensor(PointerSensor, { activationConstraint: { distance: 8 } }),
+    useSensor(KeyboardSensor, { coordinateGetter: sortableKeyboardCoordinates })
+  );
 
   // Keep local order synced with the server, except mid-drag.
   useEffect(() => {
-    if (books && draggingId.current == null) setOrderIds(books.map((b) => b.id));
+    if (books && !dragging.current) setOrderIds(books.map((b) => b.id));
   }, [books]);
 
   // If the active collection is deleted, fall back to All.
@@ -43,6 +64,7 @@ export default function LibraryPage() {
     .filter((b): b is Book => b != null);
   const visible =
     tab === "all" ? ordered : ordered.filter((b) => b.collection_ids.includes(tab));
+  const visibleIds = visible.map((b) => b.id);
 
   const counts = {
     all: books?.length ?? 0,
@@ -52,21 +74,30 @@ export default function LibraryPage() {
     }, {}),
   };
 
-  const move = (overId: number) => {
-    const dId = draggingId.current;
-    if (dId == null || dId === overId) return;
-    setOrderIds((prev) => {
-      const next = prev.filter((x) => x !== dId);
-      next.splice(next.indexOf(overId), 0, dId);
-      return next;
-    });
+  const onDragStart = (e: DragStartEvent) => {
+    dragging.current = true;
+    setActiveId(Number(e.active.id));
   };
 
-  const endDrag = () => {
-    if (draggingId.current != null) reorder.mutate(orderRef.current);
-    draggingId.current = null;
-    setDragId(null);
+  const onDragEnd = (e: DragEndEvent) => {
+    dragging.current = false;
+    setActiveId(null);
+    const { active, over } = e;
+    if (!over || active.id === over.id) return;
+    const from = visibleIds.indexOf(Number(active.id));
+    const to = visibleIds.indexOf(Number(over.id));
+    if (from < 0 || to < 0) return;
+    // Reorder the visible subset, then weave it back into the full order so
+    // novels hidden by the current tab keep their relative positions.
+    const newVisible = arrayMove(visibleIds, from, to);
+    const visSet = new Set(visibleIds);
+    const queue = [...newVisible];
+    const newFull = orderIds.map((id) => (visSet.has(id) ? queue.shift()! : id));
+    setOrderIds(newFull);
+    reorder.mutate(newFull);
   };
+
+  const activeBook = activeId != null ? byId.get(activeId) : undefined;
 
   return (
     <>
@@ -122,22 +153,35 @@ export default function LibraryPage() {
       )}
 
       {visible.length > 0 && (
-        <div className="grid gap-5 sm:grid-cols-2 lg:grid-cols-3">
-          {visible.map((book) => (
-            <BookCard
-              key={book.id}
-              book={book}
-              collections={collections ?? []}
-              dragging={dragId === book.id}
-              onDragStart={() => {
-                draggingId.current = book.id;
-                setDragId(book.id);
-              }}
-              onDragEnter={() => move(book.id)}
-              onDragEnd={endDrag}
-            />
-          ))}
-        </div>
+        <DndContext
+          sensors={sensors}
+          collisionDetection={closestCenter}
+          onDragStart={onDragStart}
+          onDragEnd={onDragEnd}
+          onDragCancel={() => {
+            dragging.current = false;
+            setActiveId(null);
+          }}
+        >
+          <SortableContext items={visibleIds} strategy={rectSortingStrategy}>
+            {/* keyed by tab so switching collections replays the fade/slide */}
+            <div
+              key={String(tab)}
+              className="grid animate-fade-in-up gap-5 sm:grid-cols-2 lg:grid-cols-3"
+            >
+              {visible.map((book) => (
+                <BookCard key={book.id} book={book} collections={collections ?? []} />
+              ))}
+            </div>
+          </SortableContext>
+          <DragOverlay dropAnimation={{ duration: 200, easing: "cubic-bezier(0.2,0,0,1)" }}>
+            {activeBook ? (
+              <div className="rotate-2 cursor-grabbing shadow-2xl">
+                <BookCardView book={activeBook} />
+              </div>
+            ) : null}
+          </DragOverlay>
+        </DndContext>
       )}
     </>
   );

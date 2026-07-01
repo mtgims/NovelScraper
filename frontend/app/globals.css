@@ -140,6 +140,22 @@
   }
 }
 
+/* Collection-switch transition for the library grid. */
+@keyframes fadeInUp {
+  from {
+    opacity: 0;
+    transform: translateY(8px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.animate-fade-in-up {
+  animation: fadeInUp 0.28s cubic-bezier(0.2, 0, 0, 1);
+}
+
 @media (prefers-reduced-motion: reduce) {
   *,
   *::before,

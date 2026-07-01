@@ -36,13 +36,27 @@ def _migrate_add_columns() -> None:
             continue  # newly created by create_all; already complete
         have = {c["name"] for c in inspector.get_columns(table_name)}
         for column in table.columns:
-            if column.name in have:
-                continue
-            col_type = column.type.compile(dialect=engine.dialect)
-            ddl = f'ALTER TABLE "{table_name}" ADD COLUMN "{column.name}" {col_type}'
-            with engine.begin() as conn:
-                conn.execute(text(ddl))
-            logger.info("db migration: added %s.%s", table_name, column.name)
+            if column.name not in have:
+                col_type = column.type.compile(dialect=engine.dialect)
+                ddl = f'ALTER TABLE "{table_name}" ADD COLUMN "{column.name}" {col_type}'
+                with engine.begin() as conn:
+                    conn.execute(text(ddl))
+                logger.info("db migration: added %s.%s", table_name, column.name)
+
+            # SQLite's ADD COLUMN leaves existing rows NULL (the model's Python
+            # default is not a SQL default), which breaks non-Optional response
+            # fields. Backfill NULLs to the column's scalar default so a
+            # freshly-added column like `sort_order` reads as 0, not NULL.
+            default = column.default
+            if default is not None and getattr(default, "is_scalar", False):
+                with engine.begin() as conn:
+                    conn.execute(
+                        text(
+                            f'UPDATE "{table_name}" SET "{column.name}" = :val '
+                            f'WHERE "{column.name}" IS NULL'
+                        ),
+                        {"val": default.arg},
+                    )
 
 
 def init_db() -> None:

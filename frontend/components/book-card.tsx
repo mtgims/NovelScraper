@@ -1,5 +1,7 @@
 "use client";
 
+import { useSortable } from "@dnd-kit/sortable";
+import { CSS } from "@dnd-kit/utilities";
 import { Check, MoreVertical, Plus, Trash2 } from "lucide-react";
 import Link from "next/link";
 import { useEffect, useRef, useState } from "react";
@@ -15,21 +17,67 @@ import {
 import type { Book, Collection } from "@/lib/types";
 import { cn } from "@/lib/utils";
 
+/** Purely visual card — reused by the sortable item and the drag overlay. */
+export function BookCardView({
+  book,
+  className,
+}: {
+  book: Book;
+  className?: string;
+}) {
+  return (
+    <Card interactive className={cn("h-full overflow-hidden", className)}>
+      <div className="relative aspect-[3/4] bg-muted">
+        {book.has_cover ? (
+          // eslint-disable-next-line @next/next/no-img-element
+          <img
+            src={coverUrl(book.id)}
+            alt={`Cover of ${book.title}`}
+            draggable={false}
+            className="h-full w-full object-cover"
+          />
+        ) : (
+          <div className="flex h-full w-full flex-col items-center justify-center p-4 text-center">
+            <div className="mb-3 h-1 w-8 bg-accent" />
+            <span className="font-display text-lg leading-tight line-clamp-4 break-words">
+              {book.title}
+            </span>
+          </div>
+        )}
+      </div>
+      <div className="min-w-0 p-4">
+        <h2 className="font-display text-lg leading-snug line-clamp-2 break-words">
+          {book.title}
+        </h2>
+        <p className="mt-1 text-sm text-muted-foreground line-clamp-1 break-words">
+          {book.author}
+        </p>
+        <p className="kicker mt-3">
+          {book.volumes.length} vol{book.volumes.length === 1 ? "" : "s"} · {book.site}
+        </p>
+      </div>
+    </Card>
+  );
+}
+
+/** Sortable, interactive library card: click to open, drag to reorder, ⋮ menu
+ *  to assign collections / delete. */
 export function BookCard({
   book,
   collections,
-  dragging,
-  onDragStart,
-  onDragEnter,
-  onDragEnd,
 }: {
   book: Book;
   collections: Collection[];
-  dragging: boolean;
-  onDragStart: () => void;
-  onDragEnter: () => void;
-  onDragEnd: () => void;
 }) {
+  const {
+    attributes,
+    listeners,
+    setNodeRef,
+    transform,
+    transition,
+    isDragging,
+  } = useSortable({ id: book.id });
+
   const setColls = useSetBookCollections();
   const createColl = useCreateCollection();
   const del = useDeleteBook();
@@ -81,58 +129,35 @@ export function BookCard({
     if (ok) del.mutate(book.id);
   };
 
+  const style = {
+    transform: CSS.Transform.toString(transform),
+    transition,
+  };
+
   return (
     <div
-      draggable
-      onDragStart={(e) => {
-        e.dataTransfer.effectAllowed = "move";
-        onDragStart();
-      }}
-      onDragEnter={onDragEnter}
-      onDragOver={(e) => e.preventDefault()}
-      onDragEnd={onDragEnd}
+      ref={setNodeRef}
+      style={style}
+      {...attributes}
+      {...listeners}
       className={cn(
-        "group relative transition-opacity",
-        dragging && "opacity-40"
+        "group relative touch-none",
+        // While dragging, this stays as a dimmed placeholder; the DragOverlay
+        // renders the lifted card that follows the cursor.
+        isDragging && "opacity-40"
       )}
     >
       <Link href={`/book/${book.id}`} draggable={false} className="block min-w-0">
-        <Card interactive className="h-full overflow-hidden">
-          <div className="relative aspect-[3/4] bg-muted">
-            {book.has_cover ? (
-              // eslint-disable-next-line @next/next/no-img-element
-              <img
-                src={coverUrl(book.id)}
-                alt={`Cover of ${book.title}`}
-                draggable={false}
-                className="h-full w-full object-cover"
-              />
-            ) : (
-              <div className="flex h-full w-full flex-col items-center justify-center p-4 text-center">
-                <div className="mb-3 h-1 w-8 bg-accent" />
-                <span className="font-display text-lg leading-tight line-clamp-4 break-words">
-                  {book.title}
-                </span>
-              </div>
-            )}
-          </div>
-          <div className="min-w-0 p-4">
-            <h2 className="font-display text-lg leading-snug line-clamp-2 break-words transition-colors group-hover:text-accent">
-              {book.title}
-            </h2>
-            <p className="mt-1 text-sm text-muted-foreground line-clamp-1 break-words">
-              {book.author}
-            </p>
-            <p className="kicker mt-3">
-              {book.volumes.length} vol{book.volumes.length === 1 ? "" : "s"} · {book.site}
-            </p>
-          </div>
-        </Card>
+        <BookCardView
+          book={book}
+          className="transition-colors group-hover:[&_h2]:text-accent"
+        />
       </Link>
 
       <button
         type="button"
         aria-label="Novel options"
+        onPointerDown={(e) => e.stopPropagation()}
         onClick={(e) => {
           e.preventDefault();
           e.stopPropagation();
@@ -149,6 +174,7 @@ export function BookCard({
       {menu && (
         <div
           ref={menuRef}
+          onPointerDown={(e) => e.stopPropagation()}
           onClick={(e) => e.preventDefault()}
           className="absolute right-2 top-10 z-40 w-56 rounded-md border border-border bg-card p-1 shadow-xl"
         >
