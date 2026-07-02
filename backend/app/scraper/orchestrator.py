@@ -9,19 +9,20 @@ concurrency cap and rate limiter).
 from __future__ import annotations
 
 import asyncio
+import json
 import logging
 import re
 from pathlib import Path
 from typing import Callable, List, Optional, Tuple
-from urllib.parse import urlparse
+from urllib.parse import urljoin, urlparse
 
 from .config import ScraperConfig
-from .enumerators import enumerate_chapters
+from .enumerators import _format_url, enumerate_chapters
 from .errors import ScraperError
 from .fetcher import AsyncFetcher
 from .metadata import extract_metadata
 from .models import Book, Chapter, ScrapeResult, VolumeResult
-from .parser import parse_chapter_content
+from .parser import dig, parse_chapter_content, parse_json_content
 from .site_profile import SiteProfile
 
 logger = logging.getLogger(__name__)
@@ -36,14 +37,39 @@ _IMAGE_EXTS = {".jpg", ".jpeg", ".png", ".webp", ".gif"}
 
 
 def _cover_ext(url: str) -> str:
-    ext = Path(urlparse(url).path).suffix.lower()
-    return ext if ext in _IMAGE_EXTS else ".jpg"
+    parsed = urlparse(url)
+    ext = Path(parsed.path).suffix.lower()
+    if ext in _IMAGE_EXTS:
+        return ext
+    # Image endpoints sometimes carry the type in a ?format= query param
+    # (e.g. /cover?format=webp) rather than a file extension.
+    m = re.search(r"format=(webp|png|jpe?g|gif)", parsed.query or "", re.IGNORECASE)
+    if m:
+        fmt = m.group(1).lower()
+        return ".jpg" if fmt in ("jpg", "jpeg") else f".{fmt}"
+    return ".jpg"
+
+
+async def _save_cover(fetcher: AsyncFetcher, book: Book, cover_url: str,
+                      cover_dir: str) -> None:
+    try:
+        data = await fetcher.get_bytes(cover_url)
+        safe = re.sub(r"[^A-Za-z0-9._-]", "_", book.slug).strip("_") or "cover"
+        path = Path(cover_dir) / f"{safe}{_cover_ext(cover_url)}"
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_bytes(data)
+        book.cover_path = str(path)
+    except (ScraperError, OSError) as e:
+        logger.warning("cover fetch/save failed for %s: %s", cover_url, e)
 
 
 async def _load_metadata(fetcher: AsyncFetcher, profile: SiteProfile, book: Book,
                          source_url: str, cover_dir: Optional[str]) -> None:
     """Best-effort: enrich `book` with title/author and download a cover.
     Never fails the scrape."""
+    if profile.enumeration == "json_api":
+        await _load_metadata_json(fetcher, profile, book, cover_dir)
+        return
     try:
         html = await fetcher.get_text(source_url, use_cache=False)
     except ScraperError as e:
@@ -60,22 +86,41 @@ async def _load_metadata(fetcher: AsyncFetcher, profile: SiteProfile, book: Book
     if meta.author:
         book.author = meta.author
     if meta.cover_url and cover_dir:
-        try:
-            data = await fetcher.get_bytes(meta.cover_url)
-            safe = re.sub(r"[^A-Za-z0-9._-]", "_", book.slug).strip("_") or "cover"
-            path = Path(cover_dir) / f"{safe}{_cover_ext(meta.cover_url)}"
-            path.parent.mkdir(parents=True, exist_ok=True)
-            path.write_bytes(data)
-            book.cover_path = str(path)
-        except (ScraperError, OSError) as e:
-            logger.warning("cover fetch/save failed for %s: %s", meta.cover_url, e)
+        await _save_cover(fetcher, book, meta.cover_url, cover_dir)
+
+
+async def _load_metadata_json(fetcher: AsyncFetcher, profile: SiteProfile,
+                              book: Book, cover_dir: Optional[str]) -> None:
+    """Metadata for json_api sites: read title/author/cover from the same JSON
+    detail endpoint the chapter list comes from."""
+    try:
+        detail_url = _format_url(profile.list_url_template, profile.base_url, book.slug)
+        data = json.loads(await fetcher.get_text(detail_url, use_cache=False))
+    except (ScraperError, ValueError) as e:
+        logger.warning("could not fetch book detail for %s: %s", book.slug, e)
+        return
+    if profile.json_title_path:
+        title = dig(data, profile.json_title_path)
+        if title:
+            book.title = str(title).strip()
+    if profile.json_author_path:
+        author = dig(data, profile.json_author_path)
+        if author:
+            book.author = str(author).strip()
+    if profile.json_cover_path and cover_dir:
+        cover = dig(data, profile.json_cover_path)
+        if cover:
+            await _save_cover(fetcher, book, urljoin(profile.base_url, str(cover)), cover_dir)
 
 
 async def _fetch_content(fetcher: AsyncFetcher, profile: SiteProfile,
                          chapter: Chapter, progress: ProgressCb) -> Chapter:
     try:
-        html = await fetcher.get_text(chapter.url)
-        chapter.content = parse_chapter_content(html, profile)
+        body = await fetcher.get_text(chapter.url)
+        if profile.json_content_path:
+            chapter.content = parse_json_content(body, profile)
+        else:
+            chapter.content = parse_chapter_content(body, profile)
     except ScraperError as e:
         # A single bad chapter shouldn't abort the whole book; record and skip.
         logger.warning("skipping chapter %s (%s): %s",

@@ -10,12 +10,14 @@ site can use whichever strategy fits:
 
 from __future__ import annotations
 
+import json
 import logging
 from typing import Callable, List, Optional
 
+from .errors import ScraperError
 from .fetcher import AsyncFetcher
 from .models import Book, Chapter
-from .parser import find_next_link, parse_chapter_list, parse_title
+from .parser import dig, find_next_link, parse_chapter_list, parse_title
 from .site_profile import SiteProfile
 
 logger = logging.getLogger(__name__)
@@ -85,9 +87,39 @@ async def enumerate_next_link(fetcher: AsyncFetcher, profile: SiteProfile,
     return chapters
 
 
+async def enumerate_json_api(fetcher: AsyncFetcher, profile: SiteProfile,
+                             book: Book, progress: ProgressCb = None) -> List[Chapter]:
+    """Read the whole chapter list from a JSON detail endpoint. The list order
+    is the reading order, so the 1-based index is the chapter number and each
+    chapter's content URL is built from chapter_url_template."""
+    detail_url = _format_url(profile.list_url_template, profile.base_url, book.slug)
+    text = await fetcher.get_text(detail_url, use_cache=False)
+    try:
+        data = json.loads(text)
+    except ValueError as e:
+        raise ScraperError(f"book detail was not valid JSON: {e}")
+    entries = dig(data, profile.json_chapters_path)
+    if not isinstance(entries, list) or not entries:
+        return []
+    chapters: List[Chapter] = []
+    for index, entry in enumerate(entries, start=1):
+        if isinstance(entry, dict):
+            key = profile.json_chapter_title_key or "name"
+            title = str(entry.get(key) or "").strip()
+        else:
+            title = str(entry or "").strip()
+        url = profile.chapter_url_template.format(
+            base_url=profile.base_url.rstrip("/"), book=book.slug, number=index)
+        chapters.append(Chapter(number=str(index), title=title, url=url))
+    if progress:
+        progress("enumerating", {"found": len(chapters)})
+    return chapters
+
+
 _STRATEGIES = {
     "paginated": enumerate_paginated,
     "next_link": enumerate_next_link,
+    "json_api": enumerate_json_api,
 }
 
 

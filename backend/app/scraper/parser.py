@@ -6,8 +6,10 @@ generic and uses CSS selectors so new sites need no code changes.
 
 from __future__ import annotations
 
+import json
 import re
-from typing import List, Optional
+from html import escape
+from typing import Any, List, Optional
 from urllib.parse import urljoin
 
 from bs4 import BeautifulSoup
@@ -114,6 +116,33 @@ def parse_chapter_content(html: str, profile: SiteProfile) -> str:
     # decode() emits well-formed markup with void elements self-closed, which is
     # closer to the XHTML the EPUB writer expects than the raw source.
     return content.decode()
+
+
+def dig(data: Any, path: str) -> Any:
+    """Traverse a dotted key path into nested dicts. Returns None if any hop is
+    missing or the value isn't a dict where a key is expected."""
+    cur = data
+    for key in path.split("."):
+        if not isinstance(cur, dict):
+            return None
+        cur = cur.get(key)
+    return cur
+
+
+def parse_json_content(text: str, profile: SiteProfile) -> str:
+    """Extract a chapter body from a JSON API response and render it as clean
+    paragraph HTML. The body is treated as plain text (newline-separated
+    paragraphs) and HTML-escaped, so nothing executable can survive."""
+    try:
+        data = json.loads(text)
+    except ValueError as e:
+        raise ContentNotFoundError(f"chapter response was not valid JSON: {e}")
+    raw = dig(data, profile.json_content_path)
+    if not isinstance(raw, str) or not raw.strip():
+        raise ContentNotFoundError(
+            f"json_content_path '{profile.json_content_path}' matched no text")
+    paragraphs = [p.strip() for p in raw.replace("\r\n", "\n").split("\n")]
+    return "".join(f"<p>{escape(p)}</p>" for p in paragraphs if p)
 
 
 def find_next_link(html: str, profile: SiteProfile, current_url: str) -> Optional[str]:

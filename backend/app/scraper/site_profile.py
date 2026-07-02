@@ -18,7 +18,7 @@ import yaml
 
 from .errors import ProfileError, ScraperError
 
-VALID_STRATEGIES = {"paginated", "next_link"}
+VALID_STRATEGIES = {"paginated", "next_link", "json_api"}
 
 
 class UnsupportedSourceError(ScraperError):
@@ -48,7 +48,11 @@ def resolve_book_url(
         if not profile.book_url_regex:
             raise ProfileError(
                 f"Site '{profile.name}' does not support URL pasting yet")
-        match = re.search(profile.book_url_regex, parsed.path)
+        # Match against path + query so sites that carry the book id in a query
+        # string (e.g. /novel?id=...) work; path-only regexes are unaffected
+        # since their character classes stop at '?'.
+        target = f"{parsed.path}?{parsed.query}" if parsed.query else parsed.path
+        match = re.search(profile.book_url_regex, target)
         if not match:
             raise ProfileError(
                 f"Could not find a book id in the URL for '{profile.name}'")
@@ -60,8 +64,9 @@ def resolve_book_url(
 class SiteProfile:
     name: str
     base_url: str
-    enumeration: str                       # "paginated" | "next_link"
-    content_selector: str                  # CSS selector for the chapter body
+    enumeration: str                       # "paginated" | "next_link" | "json_api"
+    content_selector: str = ""             # CSS selector for the chapter body
+                                           # (not used by the json_api strategy)
 
     # paginated strategy
     list_url_template: Optional[str] = None
@@ -80,6 +85,21 @@ class SiteProfile:
     first_chapter_url_template: Optional[str] = None
     next_link_selector: Optional[str] = None
     title_selector: Optional[str] = None
+
+    # json_api strategy: chapters and content come from a JSON API rather than
+    # HTML pages. `list_url_template` is the book-detail endpoint; json_* values
+    # are dotted paths into the parsed JSON (e.g. "novel.chapter_names"). The
+    # chapter list may be a list of title strings or a list of objects (then set
+    # json_chapter_title_key). Each chapter's text is fetched from
+    # chapter_url_template, which additionally accepts a {number} placeholder
+    # (the 1-based chapter index).
+    chapter_url_template: Optional[str] = None
+    json_chapters_path: Optional[str] = None       # detail JSON -> ordered chapter list
+    json_content_path: Optional[str] = None        # chapter JSON -> body text/HTML
+    json_chapter_title_key: Optional[str] = None   # key for the title if items are objects
+    json_title_path: Optional[str] = None          # detail JSON -> book title
+    json_author_path: Optional[str] = None         # detail JSON -> author
+    json_cover_path: Optional[str] = None          # detail JSON -> cover URL
 
     # URL resolution: a regex with a named group `book` that extracts the book
     # id/slug from a pasted book or chapter URL's path (e.g. r"/book/(?P<book>[^/?#]+)").
@@ -101,7 +121,7 @@ class SiteProfile:
     def validate(self) -> None:
         if not self.base_url:
             raise ProfileError(f"Profile '{self.name}': base_url is required")
-        if not self.content_selector:
+        if self.enumeration != "json_api" and not self.content_selector:
             raise ProfileError(f"Profile '{self.name}': content_selector is required")
         if self.enumeration not in VALID_STRATEGIES:
             raise ProfileError(
@@ -122,6 +142,13 @@ class SiteProfile:
             if missing:
                 raise ProfileError(
                     f"Profile '{self.name}': next_link strategy requires {missing}")
+        if self.enumeration == "json_api":
+            missing = [k for k in ("list_url_template", "json_chapters_path",
+                                   "chapter_url_template", "json_content_path")
+                       if not getattr(self, k)]
+            if missing:
+                raise ProfileError(
+                    f"Profile '{self.name}': json_api strategy requires {missing}")
         if self.book_url_regex:
             try:
                 compiled = re.compile(self.book_url_regex)

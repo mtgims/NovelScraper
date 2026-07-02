@@ -1,0 +1,20 @@
+# novelarchive.cc — the site is a JS app backed by a JSON API (the HTML pages
+# are empty shells), so it uses the json_api strategy instead of CSS selectors.
+#
+# One detail endpoint (/api/novels/{id}) carries the title, author, cover URL
+# and the ordered chapter-name list; each chapter's text is at
+# /api/novels/{id}/chapters/{n}. Chapter bodies are newline-separated plain
+# text, which the json_api strategy renders into <p> paragraphs.
+#
+# Book id lives in the URL query string: /novel?id=<hex> (or /reader?novel=<hex>).
+name: novelarchive
+base_url: https://novelarchive.cc
+enumeration: json_api
+book_url_regex: "[?&](?:id|novel)=(?P<book>[0-9a-fA-F]+)"
+list_url_template: "{base_url}/api/novels/{book}"
+chapter_url_template: "{base_url}/api/novels/{book}/chapters/{number}"
+json_chapters_path: "novel.chapter_names"
+json_content_path: "chapter.content"
+json_title_path: "novel.title"
+json_author_path: "novel.author"
+json_cover_path: "novel.cover_url"
