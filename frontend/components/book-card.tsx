@@ -95,16 +95,21 @@ export function BookCard({
   const [menu, setMenu] = useState(false);
   const [shown, setShown] = useState(false); // popover enter animation
   const [newName, setNewName] = useState("");
-  const menuRef = useRef<HTMLDivElement>(null);
-  const btnRef = useRef<HTMLButtonElement>(null);
+  const cardRef = useRef<HTMLDivElement | null>(null);
+  // Compose dnd-kit's node ref with our own so we can measure the card.
+  const setRefs = (el: HTMLDivElement | null) => {
+    setNodeRef(el);
+    cardRef.current = el;
+  };
 
   useEffect(() => {
     if (!menu) return;
     const onDown = (e: MouseEvent) => {
-      const t = e.target as Node;
-      // Ignore clicks on the popover itself or the toggle button (so the button
-      // just toggles instead of the outside-handler closing it first).
-      if (menuRef.current?.contains(t) || btnRef.current?.contains(t)) return;
+      // Ignore any interaction with THIS card — the popover, the ⋮ button, and
+      // a right-click that (re)opens the menu all live inside it, so the
+      // outside-handler never closes-then-reopens. Clicking a different card or
+      // elsewhere on the page still closes it.
+      if (cardRef.current?.contains(e.target as Node)) return;
       setMenu(false);
     };
     const onKey = (e: KeyboardEvent) => e.key === "Escape" && setMenu(false);
@@ -158,10 +163,15 @@ export function BookCard({
 
   return (
     <div
-      ref={setNodeRef}
+      ref={setRefs}
       style={style}
       {...attributes}
       {...listeners}
+      onContextMenu={(e) => {
+        // Right-click opens the same options menu as the ⋮ button.
+        e.preventDefault();
+        setMenu(true);
+      }}
       className={cn(
         // select-none: the card is a drag handle, so never let a fast
         // press-and-drag start a text selection instead of a drag.
@@ -179,7 +189,6 @@ export function BookCard({
       </Link>
 
       <button
-        ref={btnRef}
         type="button"
         aria-label="Novel options"
         onPointerDown={(e) => e.stopPropagation()}
@@ -198,7 +207,6 @@ export function BookCard({
 
       {menu && (
         <div
-          ref={menuRef}
           onPointerDown={(e) => e.stopPropagation()}
           onClick={(e) => e.preventDefault()}
           className={cn(
