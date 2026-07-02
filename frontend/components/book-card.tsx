@@ -5,6 +5,7 @@ import { CSS } from "@dnd-kit/utilities";
 import { Check, MoreVertical, Plus, Trash2 } from "lucide-react";
 import Link from "next/link";
 import { useEffect, useRef, useState } from "react";
+import { createPortal } from "react-dom";
 
 import { useConfirm } from "@/components/confirm-dialog";
 import { StarRating } from "@/components/star-rating";
@@ -95,24 +96,31 @@ export function BookCard({
   const [menu, setMenu] = useState(false);
   const [shown, setShown] = useState(false); // popover enter animation
   const [newName, setNewName] = useState("");
-  // Card-relative popover position for a right-click; null = anchored top-right
-  // (the ⋮ button).
-  const [menuAt, setMenuAt] = useState<{ x: number; y: number } | null>(null);
+  const [mounted, setMounted] = useState(false); // portal target is client-only
+  // Viewport position + transform origin for the popover (portaled to <body> so
+  // no ancestor — e.g. the grid's overflow-clip — can crop it).
+  const [menuAt, setMenuAt] = useState<{ x: number; y: number; origin: "tl" | "tr" } | null>(
+    null
+  );
   const cardRef = useRef<HTMLDivElement | null>(null);
+  const menuRef = useRef<HTMLDivElement | null>(null);
   // Compose dnd-kit's node ref with our own so we can measure the card.
   const setRefs = (el: HTMLDivElement | null) => {
     setNodeRef(el);
     cardRef.current = el;
   };
 
+  useEffect(() => setMounted(true), []);
+
   useEffect(() => {
     if (!menu) return;
     const onDown = (e: MouseEvent) => {
-      // Ignore any interaction with THIS card — the popover, the ⋮ button, and
-      // a right-click that (re)opens the menu all live inside it, so the
-      // outside-handler never closes-then-reopens. Clicking a different card or
-      // elsewhere on the page still closes it.
-      if (cardRef.current?.contains(e.target as Node)) return;
+      // Ignore interaction with THIS card or the (portaled) menu — the ⋮ button
+      // and a right-click that (re)opens the menu live in the card, the popover
+      // lives at the body — so the outside-handler never closes-then-reopens.
+      // Clicking a different card or elsewhere still closes it.
+      const t = e.target as Node;
+      if (cardRef.current?.contains(t) || menuRef.current?.contains(t)) return;
       setMenu(false);
     };
     const onKey = (e: KeyboardEvent) => e.key === "Escape" && setMenu(false);
@@ -130,6 +138,12 @@ export function BookCard({
     const id = requestAnimationFrame(() => setShown(true));
     return () => cancelAnimationFrame(id);
   }, [menu]);
+
+  // Clamp a desired viewport position so the ~224x300 popover stays on-screen.
+  const placeMenu = (x: number, y: number) => ({
+    x: Math.max(8, Math.min(x, window.innerWidth - 224 - 8)),
+    y: Math.max(8, Math.min(y, window.innerHeight - 300 - 8)),
+  });
 
   const inSet = new Set(book.collection_ids);
   const toggle = (id: number) =>
@@ -173,16 +187,8 @@ export function BookCard({
       onContextMenu={(e) => {
         // Right-click opens the same options menu, positioned at the cursor.
         e.preventDefault();
-        const rect = cardRef.current?.getBoundingClientRect();
-        if (rect) {
-          const W = 224; // w-56
-          const H = 300; // approx menu height, for edge clamping
-          let x = e.clientX;
-          let y = e.clientY;
-          if (x + W > window.innerWidth) x = window.innerWidth - W - 8;
-          if (y + H > window.innerHeight) y = window.innerHeight - H - 8;
-          setMenuAt({ x: x - rect.left, y: y - rect.top });
-        }
+        const p = placeMenu(e.clientX, e.clientY);
+        setMenuAt({ ...p, origin: "tl" });
         setMenu(true);
       }}
       className={cn(
@@ -208,7 +214,10 @@ export function BookCard({
         onClick={(e) => {
           e.preventDefault();
           e.stopPropagation();
-          setMenuAt(null); // ⋮ anchors the menu to the corner
+          // ⋮ drops the menu from the button, right-aligned to it.
+          const r = e.currentTarget.getBoundingClientRect();
+          const p = placeMenu(r.right - 224, r.bottom + 4);
+          setMenuAt({ ...p, origin: "tr" });
           setMenu((v) => !v);
         }}
         className={cn(
@@ -219,15 +228,17 @@ export function BookCard({
         <MoreVertical size={16} />
       </button>
 
-      {menu && (
+      {menu && menuAt && mounted && createPortal(
         <div
+          ref={menuRef}
           onPointerDown={(e) => e.stopPropagation()}
           onClick={(e) => e.preventDefault()}
-          style={menuAt ? { left: menuAt.x, top: menuAt.y } : undefined}
+          onContextMenu={(e) => e.preventDefault()}
+          style={{ left: menuAt.x, top: menuAt.y }}
           className={cn(
-            "absolute z-40 w-56 select-text rounded-md border border-border bg-card p-1 shadow-xl",
+            "fixed z-50 w-56 select-text rounded-md border border-border bg-card p-1 shadow-xl",
             "transition-[opacity,transform] duration-150 ease-out",
-            menuAt ? "origin-top-left" : "right-2 top-10 origin-top-right",
+            menuAt.origin === "tl" ? "origin-top-left" : "origin-top-right",
             shown ? "scale-100 opacity-100" : "scale-95 opacity-0"
           )}
         >
@@ -288,7 +299,8 @@ export function BookCard({
           >
             <Trash2 size={14} /> Delete novel
           </button>
-        </div>
+        </div>,
+        document.body
       )}
     </div>
   );
