@@ -1,6 +1,6 @@
 "use client";
 
-import { Settings } from "lucide-react";
+import { BookUp, Settings, X } from "lucide-react";
 import { useRouter } from "next/navigation";
 import { useEffect, useRef, useState } from "react";
 
@@ -9,7 +9,7 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { Field } from "@/components/ui/field";
 import { Input } from "@/components/ui/input";
-import { useCreateJob, useSites } from "@/lib/queries";
+import { useCreateJob, useImportEpubs, useSites } from "@/lib/queries";
 
 function hostOf(url: string): string {
   try {
@@ -173,7 +173,110 @@ export default function NewScrapePage() {
           </form>
         </CardContent>
       </Card>
+
+      <ImportCard />
     </>
+  );
+}
+
+function ImportCard() {
+  const router = useRouter();
+  const importEpubs = useImportEpubs();
+  const [files, setFiles] = useState<File[]>([]);
+  const inputRef = useRef<HTMLInputElement>(null);
+
+  function addFiles(list: FileList | null) {
+    if (!list) return;
+    const picked = Array.from(list).filter((f) =>
+      f.name.toLowerCase().endsWith(".epub")
+    );
+    // De-dupe by name+size so re-picking the same file doesn't double it.
+    setFiles((prev) => {
+      const seen = new Set(prev.map((f) => `${f.name}:${f.size}`));
+      return [...prev, ...picked.filter((f) => !seen.has(`${f.name}:${f.size}`))];
+    });
+  }
+
+  async function onImport() {
+    if (!files.length) return;
+    const book = await importEpubs.mutateAsync(files);
+    router.push(`/book/${book.id}`);
+  }
+
+  return (
+    <Card className="mt-6 max-w-xl">
+      <CardContent className="pt-6">
+        <p className="kicker mb-1">Import EPUB</p>
+        <p className="mb-4 text-sm text-muted-foreground">
+          Read your own EPUBs here. Title, author and cover are read from the
+          first file; each file becomes a volume. Add more later from the book
+          page.
+        </p>
+
+        <input
+          ref={inputRef}
+          type="file"
+          accept=".epub,application/epub+zip"
+          multiple
+          className="hidden"
+          onChange={(e) => {
+            addFiles(e.target.files);
+            e.target.value = ""; // allow re-selecting the same file
+          }}
+        />
+
+        <div className="space-y-4">
+          <Button
+            type="button"
+            variant="outline"
+            onClick={() => inputRef.current?.click()}
+          >
+            <BookUp size={16} className="mr-2" />
+            Choose EPUB file(s)
+          </Button>
+
+          {files.length > 0 && (
+            <ul className="space-y-1 text-sm">
+              {files.map((f, i) => (
+                <li
+                  key={`${f.name}:${f.size}`}
+                  className="flex items-center justify-between gap-2 rounded-sm bg-muted px-3 py-1.5"
+                >
+                  <span className="truncate font-mono">{f.name}</span>
+                  <button
+                    type="button"
+                    aria-label={`Remove ${f.name}`}
+                    className="shrink-0 text-muted-foreground hover:text-foreground cursor-pointer"
+                    onClick={() =>
+                      setFiles((prev) => prev.filter((_, j) => j !== i))
+                    }
+                  >
+                    <X size={14} />
+                  </button>
+                </li>
+              ))}
+            </ul>
+          )}
+
+          {importEpubs.isError && (
+            <p className="text-sm text-destructive" role="alert">
+              {(importEpubs.error as Error).message}
+            </p>
+          )}
+
+          <Button
+            type="button"
+            size="lg"
+            disabled={!files.length || importEpubs.isPending}
+            onClick={onImport}
+          >
+            {importEpubs.isPending
+              ? "Importing…"
+              : `Import ${files.length || ""} EPUB${files.length === 1 ? "" : "s"}`.trim()}
+          </Button>
+        </div>
+      </CardContent>
+    </Card>
   );
 }
 

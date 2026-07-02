@@ -14,7 +14,7 @@ from contextlib import asynccontextmanager
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
-from .api import books, collections, config, jobs, sites, stats, tts
+from .api import books, collections, config, imports, jobs, sites, stats, tts
 from .db import engine, init_db
 from .jobs.manager import JobManager
 from .maintenance import cache_pruner_loop
@@ -60,6 +60,7 @@ app.add_middleware(
 
 app.include_router(jobs.router, prefix="/api/jobs", tags=["jobs"])
 app.include_router(books.router, prefix="/api/books", tags=["books"])
+app.include_router(imports.router, prefix="/api", tags=["import"])
 app.include_router(collections.router, prefix="/api/collections", tags=["collections"])
 app.include_router(config.router, prefix="/api/settings", tags=["settings"])
 app.include_router(sites.router, prefix="/api/sites", tags=["sites"])

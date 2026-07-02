@@ -41,6 +41,24 @@ async function req<T>(path: string, init?: RequestInit): Promise<T> {
   return res.json() as Promise<T>;
 }
 
+// Multipart upload — must NOT set Content-Type (the browser adds the boundary).
+async function upload<T>(path: string, files: File[]): Promise<T> {
+  const form = new FormData();
+  for (const f of files) form.append("files", f);
+  const res = await fetch(`${API_BASE}${path}`, { method: "POST", body: form });
+  if (!res.ok) {
+    let detail = res.statusText;
+    try {
+      const body = await res.json();
+      detail = body.detail ?? detail;
+    } catch {
+      /* non-JSON error body */
+    }
+    throw new ApiError(res.status, detail);
+  }
+  return res.json() as Promise<T>;
+}
+
 export const api = {
   getSites: () => req<Site[]>("/api/sites"),
   getStats: () => req<Stats>("/api/stats"),
@@ -65,6 +83,9 @@ export const api = {
     }),
   updateBookChapters: (id: number) =>
     req<Job>(`/api/books/${id}/update`, { method: "POST" }),
+  importEpubs: (files: File[]) => upload<Book>("/api/import", files),
+  addEpubs: (id: number, files: File[]) =>
+    upload<Book>(`/api/books/${id}/import`, files),
   setBookCollections: (id: number, collectionIds: number[]) =>
     req<Book>(`/api/books/${id}/collections`, {
       method: "PUT",

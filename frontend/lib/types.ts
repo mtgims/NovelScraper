@@ -53,6 +53,7 @@ export interface Book {
   sort_order: number;
   rating: number | null;
   can_update: boolean;
+  imported: boolean;
   collection_ids: number[];
   volumes: Volume[];
 }

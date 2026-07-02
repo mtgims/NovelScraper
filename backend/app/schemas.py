@@ -89,6 +89,7 @@ class BookRead(BaseModel):
     sort_order: int = 0
     rating: Optional[int] = None
     can_update: bool = False   # true when we have a source_url to re-scrape from
+    imported: bool = False     # user-imported EPUB(s); can append more EPUBs
     collection_ids: List[int] = []
     volumes: List[VolumeRead] = []
 

@@ -2,6 +2,7 @@
 
 import {
   BookOpen,
+  BookUp,
   Check,
   CheckCheck,
   ChevronLeft,
@@ -26,6 +27,7 @@ import { Progress } from "@/components/ui/progress";
 import { Skeleton } from "@/components/ui/skeleton";
 import { coverUrl, downloadAllUrl, downloadUrl } from "@/lib/api";
 import {
+  useAddEpubs,
   useBook,
   useChapters,
   useDeleteBook,
@@ -175,6 +177,7 @@ export default function BookDetailPage() {
               Update
             </Button>
           )}
+          {book.imported && <AddEpubButton id={book.id} />}
           <a href={downloadAllUrl(book.id)}>
             <Button variant="outline" size="sm">
               <DownloadCloud size={15} /> All
@@ -379,6 +382,43 @@ export default function BookDetailPage() {
           onClose={() => setMenu(null)}
         />
       )}
+    </>
+  );
+}
+
+function AddEpubButton({ id }: { id: number }) {
+  const addEpubs = useAddEpubs(id);
+  const inputRef = useRef<HTMLInputElement>(null);
+  return (
+    <>
+      <input
+        ref={inputRef}
+        type="file"
+        accept=".epub,application/epub+zip"
+        multiple
+        className="hidden"
+        onChange={(e) => {
+          const files = Array.from(e.target.files ?? []).filter((f) =>
+            f.name.toLowerCase().endsWith(".epub")
+          );
+          e.target.value = "";
+          if (files.length) addEpubs.mutate(files);
+        }}
+      />
+      <Button
+        variant="outline"
+        size="sm"
+        disabled={addEpubs.isPending}
+        onClick={() => inputRef.current?.click()}
+        title={
+          addEpubs.isError
+            ? (addEpubs.error as Error).message
+            : "Add more EPUB volumes to this imported novel"
+        }
+      >
+        <BookUp size={15} className={cn(addEpubs.isPending && "animate-pulse")} />
+        {addEpubs.isPending ? "Adding…" : "Add EPUB"}
+      </Button>
     </>
   );
 }

@@ -92,6 +92,7 @@ class Book(SQLModel, table=True):
     rating: Optional[int] = Field(default=None)       # 1-5 stars; None = unrated
     source_url: Optional[str] = Field(default=None)   # original URL, for re-scrape/update
     updated_at: Optional[datetime] = Field(default=None)  # last successful scrape/update
+    imported: bool = Field(default=False)  # user-imported EPUB(s), not scraped
 
 
 class Collection(SQLModel, table=True):

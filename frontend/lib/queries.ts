@@ -185,6 +185,27 @@ export function useUpdateBookChapters(bookId: number) {
   });
 }
 
+export function useImportEpubs() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (files: File[]) => api.importEpubs(files),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ["books"] }),
+  });
+}
+
+export function useAddEpubs(bookId: number) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (files: File[]) => api.addEpubs(bookId, files),
+    onSuccess: (book) => {
+      qc.setQueryData(["book", bookId], book);
+      qc.invalidateQueries({ queryKey: ["books"] });
+      qc.invalidateQueries({ queryKey: ["chapters", bookId] });
+      qc.invalidateQueries({ queryKey: ["progress", bookId] });
+    },
+  });
+}
+
 export function useSettings() {
   return useQuery({ queryKey: ["settings"], queryFn: api.getSettings });
 }

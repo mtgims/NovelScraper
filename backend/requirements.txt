@@ -8,6 +8,7 @@ PyYAML>=6.0
 # api layer
 fastapi>=0.115
 uvicorn[standard]>=0.30
+python-multipart>=0.0.9   # multipart/form-data (EPUB upload)
 sse-starlette>=2.1
 sqlmodel>=0.0.22
 
