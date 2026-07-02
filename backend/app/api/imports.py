@@ -96,7 +96,8 @@ async def import_epubs(files: List[UploadFile] = File(...),
     session.add(book)
     session.commit()
     session.refresh(book)
-    persist_epubs(session, book.id, parsed, start_position=0, start_volume=1)
+    persist_epubs(session, book.id, parsed, start_position=0, start_volume=1,
+                  image_dir=str(settings.image_dir))
     session.refresh(book)
     return _book_read(session, book)
 
@@ -120,7 +121,8 @@ async def add_epubs(book_id: int, files: List[UploadFile] = File(...),
     start_volume = (session.exec(
         select(func.max(Volume.number)).where(Volume.book_id == book_id)
     ).one() or 0) + 1
-    persist_epubs(session, book_id, parsed, start_position, start_volume)
+    persist_epubs(session, book_id, parsed, start_position, start_volume,
+                  image_dir=str(settings.image_dir))
     book.updated_at = datetime.now(timezone.utc)
     session.add(book)
     session.commit()

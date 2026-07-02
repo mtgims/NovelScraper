@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import io
 import os
+import re
 import shutil
 import zipfile
 from collections import defaultdict
@@ -378,6 +379,22 @@ def book_cover(book_id: int, session: Session = Depends(get_session)):
     return FileResponse(book.cover_path)
 
 
+# Illustration filenames are "{16-hex-hash}{ext}" — constrain to that shape so a
+# crafted name can't escape the book's image directory (path traversal).
+_IMAGE_NAME_RE = re.compile(r"^[A-Za-z0-9]{1,64}\.(jpg|jpeg|png|webp|gif|svg)$")
+
+
+@router.get("/{book_id}/images/{name}")
+def book_image(book_id: int, name: str):
+    """Serve an imported EPUB's stored illustration."""
+    if not _IMAGE_NAME_RE.match(name):
+        raise HTTPException(status_code=404, detail="No image")
+    path = settings.image_dir / str(book_id) / name
+    if not path.is_file():
+        raise HTTPException(status_code=404, detail="No image")
+    return FileResponse(path)
+
+
 @router.get("/{book_id}/download-all")
 def download_all(book_id: int, session: Session = Depends(get_session)):
     book = session.get(Book, book_id)
@@ -481,9 +498,9 @@ def delete_book(book_id: int, session: Session = Depends(get_session)):
     session.exec(
         delete(BookCollectionLink).where(BookCollectionLink.book_id == book_id)
     )
-    # Best-effort: drop cached TTS audio for this book.
-    audio_dir = settings.audio_dir / str(book_id)
-    if audio_dir.exists():
-        shutil.rmtree(audio_dir, ignore_errors=True)
+    # Best-effort: drop cached TTS audio + imported illustrations for this book.
+    for extra in (settings.audio_dir / str(book_id), settings.image_dir / str(book_id)):
+        if extra.exists():
+            shutil.rmtree(extra, ignore_errors=True)
     session.delete(book)
     session.commit()

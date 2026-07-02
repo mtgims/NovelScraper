@@ -30,6 +30,7 @@ class Settings:
         self.output_dir = self.data_dir / "output"
         self.cache_dir = self.data_dir / "cache"
         self.cover_dir = self.data_dir / "covers"
+        self.image_dir = self.data_dir / "images"         # imported EPUB illustrations
         self.audio_dir = self.data_dir / "audio"          # cached TTS audio
         self.model_dir = Path(
             os.getenv("NOVELSCRAPER_MODEL_DIR", BACKEND_DIR / "models"))
@@ -70,6 +71,7 @@ class Settings:
         self.output_dir.mkdir(parents=True, exist_ok=True)
         self.cache_dir.mkdir(parents=True, exist_ok=True)
         self.cover_dir.mkdir(parents=True, exist_ok=True)
+        self.image_dir.mkdir(parents=True, exist_ok=True)
         self.audio_dir.mkdir(parents=True, exist_ok=True)
 
 

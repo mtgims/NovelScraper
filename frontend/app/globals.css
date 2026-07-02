@@ -122,6 +122,14 @@
     padding: 0.05em 0.1em 0 0;
     color: var(--accent);
   }
+  /* Illustrations (imported light-novel art): fit the column, centered. */
+  .prose-reading img {
+    display: block;
+    max-width: 100%;
+    height: auto;
+    margin: 1.6em auto;
+    border-radius: 2px;
+  }
 }
 
 @layer utilities {

@@ -8,13 +8,15 @@ sanitizer the scraper uses (strips scripts, event handlers, javascript: URLs).
 
 from __future__ import annotations
 
+import hashlib
 import logging
 import os
+import posixpath
 import re
 import uuid
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
-from typing import List, Optional, Tuple
+from typing import Dict, List, Optional, Tuple
 
 import ebooklib
 from bs4 import BeautifulSoup
@@ -27,6 +29,13 @@ from .scraper.parser import _sanitize, count_words
 logger = logging.getLogger(__name__)
 
 _IMG_EXTS = {".jpg", ".jpeg", ".png", ".webp", ".gif"}
+_MEDIA_EXT = {
+    "image/jpeg": ".jpg", "image/jpg": ".jpg", "image/png": ".png",
+    "image/webp": ".webp", "image/gif": ".gif", "image/svg+xml": ".svg",
+}
+# Placeholder scheme written into chapter <img> srcs at parse time; persist_epubs
+# rewrites it to /api/books/{id}/images/ once the book id is known.
+IMG_SENTINEL = "na-image:"
 
 
 @dataclass
@@ -36,12 +45,20 @@ class ImportedChapter:
 
 
 @dataclass
+class ImportedImage:
+    name: str          # "{hash}{ext}" — the stored filename
+    data: bytes
+    content_type: str
+
+
+@dataclass
 class ImportedEpub:
     title: str
     author: str
     cover_bytes: Optional[bytes]
     cover_ext: str
     chapters: List[ImportedChapter]
+    images: Dict[str, ImportedImage] = field(default_factory=dict)  # name -> image
 
 
 def _meta(book: epub.EpubBook, ns: str, name: str) -> Optional[str]:
@@ -80,6 +97,52 @@ def _find_cover(book: epub.EpubBook) -> Tuple[Optional[bytes], str]:
     return None, ".jpg"
 
 
+def _img_ext(item) -> str:
+    ext = os.path.splitext(getattr(item, "file_name", "") or "")[1].lower()
+    if ext in _IMG_EXTS or ext == ".svg":
+        return ext
+    return _MEDIA_EXT.get((getattr(item, "media_type", "") or "").lower(), ".jpg")
+
+
+def _epub_images(book: epub.EpubBook) -> Dict[str, object]:
+    """Map each embedded image's normalized in-EPUB path to its item."""
+    out: Dict[str, object] = {}
+    for item in book.get_items_of_type(ebooklib.ITEM_IMAGE):
+        name = (getattr(item, "file_name", "") or "").lstrip("/")
+        if name:
+            out[posixpath.normpath(name)] = item
+    return out
+
+
+def _rewrite_images(node, chapter_path: str, image_items: Dict[str, object],
+                    collected: Dict[str, ImportedImage]) -> None:
+    """Point each <img> at a stored copy of the EPUB image (deduplicated by
+    content hash). Unresolvable/external images are left for the reader to
+    handle (drop or keep absolute URLs)."""
+    base_dir = posixpath.dirname((chapter_path or "").lstrip("/"))
+    for img in node.find_all("img"):
+        src = (img.get("src") or "").strip()
+        if not src or src.startswith(("http://", "https://", "data:")):
+            continue  # external/inline — leave as-is
+        clean = src.split("#")[0].split("?")[0]
+        resolved = posixpath.normpath(posixpath.join(base_dir, clean))
+        item = image_items.get(resolved)
+        if item is None:  # fall back to a basename match
+            base = posixpath.basename(resolved)
+            item = next((v for k, v in image_items.items()
+                         if posixpath.basename(k) == base), None)
+        if item is None:
+            del img["src"]  # broken reference — reader will drop it
+            continue
+        data = item.get_content()
+        name = f"{hashlib.sha256(data).hexdigest()[:16]}{_img_ext(item)}"
+        collected.setdefault(name, ImportedImage(
+            name=name, data=data,
+            content_type=(getattr(item, "media_type", "") or "image/jpeg"),
+        ))
+        img["src"] = IMG_SENTINEL + name
+
+
 def _chapter_title(soup: BeautifulSoup, fallback: str) -> str:
     t = soup.find("title")
     if t and t.get_text(strip=True):
@@ -97,8 +160,10 @@ def parse_epub(path: str) -> ImportedEpub:
     title = _meta(book, "DC", "title") or Path(path).stem
     author = _meta(book, "DC", "creator") or "Unknown Author"
     cover_bytes, cover_ext = _find_cover(book)
+    image_items = _epub_images(book)
 
     chapters: List[ImportedChapter] = []
+    images: Dict[str, ImportedImage] = {}
     for entry in book.spine:
         idref = entry[0] if isinstance(entry, (tuple, list)) else entry
         linear = entry[1] if isinstance(entry, (tuple, list)) and len(entry) > 1 else "yes"
@@ -112,6 +177,7 @@ def parse_epub(path: str) -> ImportedEpub:
         soup = BeautifulSoup(item.get_content().decode("utf-8", "ignore"), "html.parser")
         body = soup.find("body") or soup
         _sanitize(body)
+        _rewrite_images(body, getattr(item, "file_name", ""), image_items, images)
         html = body.decode_contents().strip()
         if not BeautifulSoup(html, "html.parser").get_text(strip=True):
             continue  # blank page
@@ -122,7 +188,7 @@ def parse_epub(path: str) -> ImportedEpub:
 
     if not chapters:
         raise ValueError("No readable chapters found in this EPUB")
-    return ImportedEpub(title, author, cover_bytes, cover_ext, chapters)
+    return ImportedEpub(title, author, cover_bytes, cover_ext, chapters, images)
 
 
 def make_slug(title: str) -> str:
@@ -141,14 +207,33 @@ def save_cover(cover_bytes: Optional[bytes], cover_ext: str, slug: str,
     return str(path)
 
 
+def save_images(images: Dict[str, ImportedImage], book_id: int,
+                image_dir: str) -> None:
+    """Write an EPUB's images under the book's image dir, deduplicated by their
+    hash-based filename (so a repeated ornament is stored once)."""
+    if not images:
+        return
+    dest = Path(image_dir) / str(book_id)
+    dest.mkdir(parents=True, exist_ok=True)
+    for img in images.values():
+        path = dest / img.name
+        if not path.exists():
+            path.write_bytes(img.data)
+
+
 def persist_epubs(session: Session, book_id: int, parsed: List[ImportedEpub],
-                  start_position: int, start_volume: int) -> None:
+                  start_position: int, start_volume: int,
+                  image_dir: Optional[str] = None) -> None:
     """Append parsed EPUBs to a book as volumes of chapters, continuing the
-    existing position/volume numbering."""
+    existing position/volume numbering. Illustrations are stored under
+    image_dir and their <img> srcs resolved to /api/books/{id}/images/…."""
+    img_base = f"/api/books/{book_id}/images/"
     position = start_position
     vol_no = start_volume - 1
     for pe in parsed:
         vol_no += 1
+        if image_dir:
+            save_images(pe.images, book_id, image_dir)
         session.add(Volume(
             book_id=book_id, number=vol_no,
             title=pe.title or f"Volume {vol_no}",
@@ -156,9 +241,10 @@ def persist_epubs(session: Session, book_id: int, parsed: List[ImportedEpub],
         ))
         for ch in pe.chapters:
             position += 1
+            content = ch.content.replace(IMG_SENTINEL, img_base)
             session.add(Chapter(
                 book_id=book_id, position=position, volume_number=vol_no,
-                number="", title=ch.title, content=ch.content,
-                word_count=count_words(ch.content),
+                number="", title=ch.title, content=content,
+                word_count=count_words(content),
             ))
     session.commit()

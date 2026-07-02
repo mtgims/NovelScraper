@@ -8,28 +8,30 @@ import { useCallback, useEffect, useRef, useState } from "react";
 
 import { Button } from "@/components/ui/button";
 import { TtsPlayer, type TtsPlayerHandle } from "@/components/tts-player";
-import { api } from "@/lib/api";
+import { api, API_BASE } from "@/lib/api";
 import { useChapter, useProgress } from "@/lib/queries";
 import { cn } from "@/lib/utils";
 
 const SIZE_KEY = "ns-reading-scale";
 
-// Drop images whose src isn't absolute (http(s)/data). Imported EPUB chapters
-// reference intra-EPUB image paths (e.g. "images/foo.jpg") that we don't store,
-// so they render as broken icons and — having no dimensions — keep resizing the
-// page as they 404, which destabilizes scrolling. Scraped chapters use absolute
-// URLs and are kept.
-function stripBrokenImages(html: string): string {
+// Resolve chapter <img> sources:
+//  - stored imported illustrations ("/api/books/{id}/images/…") -> absolute
+//    backend URL so they load (API_BASE may be a different origin).
+//  - already-absolute (http(s)/data) -> keep (e.g. scraped images).
+//  - anything else (stray relative EPUB paths we don't store) -> drop, since it
+//    would 404 and, having no dimensions, keep resizing the page.
+function prepareImages(html: string): string {
   if (typeof window === "undefined" || !html.includes("<img")) return html;
   const doc = new DOMParser().parseFromString(html, "text/html");
-  let removed = false;
   doc.querySelectorAll("img").forEach((img) => {
-    if (!/^(https?:|data:)/i.test(img.getAttribute("src") || "")) {
+    const src = img.getAttribute("src") || "";
+    if (src.startsWith("/api/")) {
+      img.setAttribute("src", `${API_BASE}${src}`);
+    } else if (!/^(https?:|data:)/i.test(src)) {
       img.remove();
-      removed = true;
     }
   });
-  return removed ? doc.body.innerHTML : html;
+  return doc.body.innerHTML;
 }
 
 export default function ReaderPage() {
@@ -124,7 +126,7 @@ export default function ReaderPage() {
     if (!chapter?.content) return;
     let alive = true;
     import("dompurify").then((m) => {
-      if (alive) setClean(stripBrokenImages(m.default.sanitize(chapter.content)));
+      if (alive) setClean(prepareImages(m.default.sanitize(chapter.content)));
     });
     return () => {
       alive = false;
