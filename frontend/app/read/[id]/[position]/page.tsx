@@ -7,6 +7,7 @@ import { useParams, useRouter } from "next/navigation";
 import { useCallback, useEffect, useRef, useState } from "react";
 
 import { Button } from "@/components/ui/button";
+import { ThemeMenu } from "@/components/theme-picker";
 import { TtsPlayer, type TtsPlayerHandle } from "@/components/tts-player";
 import { api, API_BASE } from "@/lib/api";
 import { useChapter, useProgress } from "@/lib/queries";
@@ -63,6 +64,7 @@ export default function ReaderPage() {
   // True once the user has initiated scrolling themselves (wheel/touch/keys), so
   // restore never fights them (e.g. while broken images/fonts grow the page).
   const userScrolledRef = useRef(false);
+  const articleRef = useRef<HTMLElement>(null);
 
   // Scroll the document to a fraction of its scrollable height. Used for both
   // restore-on-open and preserving position when the TTS read-along closes.
@@ -149,36 +151,53 @@ export default function ReaderPage() {
     }
   }, [bookId, position]);
 
-  // Restore scroll (once) when returning to the last-read chapter; if the
-  // chapter fits on screen (not scrollable), count it as read.
+  // Restore scroll (once) when returning to the last-read chapter.
   //
-  // Re-apply the saved *fraction* a few times as the page settles: measuring
-  // scrollHeight the instant `clean` renders often reads a too-small height
-  // (web fonts / layout still growing), so a single scrollTo lands near the top.
-  // Re-applying the fraction against the final height puts us back in place.
+  // Illustrations and web fonts load asynchronously and change scrollHeight for
+  // seconds after the first paint. A fraction applied against a still-growing
+  // page lands wrong (too high, or drifting down as it grows). So instead of
+  // re-applying blindly, we wait for the layout to *settle* (a ResizeObserver
+  // debounced ~220ms) and then scroll to the saved fraction once. A brief grace
+  // window means an accidental early wheel/touch doesn't cancel the restore
+  // (the cause of "always starts at the beginning"); after it, a real scroll is
+  // respected so we never fight active reading.
   useEffect(() => {
     if (restoredRef.current || clean === null || !progress) return;
     restoredRef.current = true;
-    const doc = document.documentElement;
-    if (doc.scrollHeight - doc.clientHeight <= 4) {
-      markRead();
-      return;
+
+    if (position === progress.last_position && progress.scroll > 0) {
+      const frac = progress.scroll;
+      const startedAt = Date.now();
+      let settle = 0;
+      const schedule = () => {
+        const grace = Date.now() - startedAt < 1200;
+        if (userScrolledRef.current && !grace) return; // user took over
+        clearTimeout(settle);
+        settle = window.setTimeout(() => {
+          if (!userScrolledRef.current || grace) scrollToFraction(frac);
+        }, 220);
+      };
+      schedule();
+      let observer: ResizeObserver | null = null;
+      if (articleRef.current && typeof ResizeObserver !== "undefined") {
+        observer = new ResizeObserver(schedule);
+        observer.observe(articleRef.current);
+      }
+      const stop = window.setTimeout(() => observer?.disconnect(), 6000);
+      return () => {
+        clearTimeout(settle);
+        clearTimeout(stop);
+        observer?.disconnect();
+      };
     }
-    if (position !== progress.last_position || !(progress.scroll > 0)) return;
-    if (userScrolledRef.current) return; // user is already reading — don't yank
-    const frac = progress.scroll;
-    // Re-apply only while the user hasn't taken over, so a growing page (fonts,
-    // late images) can't turn the restore into an auto-scroll that fights them.
-    const apply = () => {
-      if (!userScrolledRef.current) scrollToFraction(frac);
-    };
-    apply();
-    const raf = requestAnimationFrame(apply);
-    const timers = [60, 250, 600].map((ms) => window.setTimeout(apply, ms));
-    return () => {
-      cancelAnimationFrame(raf);
-      timers.forEach(clearTimeout);
-    };
+
+    // Nothing to restore: once the layout has settled, if the chapter isn't
+    // scrollable, count it as read (short chapters never hit the bottom).
+    const t = window.setTimeout(() => {
+      const doc = document.documentElement;
+      if (doc.scrollHeight - doc.clientHeight <= 4) markRead();
+    }, 800);
+    return () => clearTimeout(t);
   }, [clean, progress, position, markRead, scrollToFraction]);
 
   // When the TTS player closes, the content swaps from the read-along back to
@@ -248,7 +267,7 @@ export default function ReaderPage() {
     return <p className="text-destructive">Chapter not found.</p>;
 
   return (
-    <article className="mx-auto max-w-reading pb-28">
+    <article ref={articleRef} className="mx-auto max-w-reading pb-28">
       {/* Chapter reading progress (how far through this chapter). */}
       <div className="fixed left-0 top-0 z-40 h-1 w-full bg-transparent">
         <div
@@ -257,14 +276,17 @@ export default function ReaderPage() {
         />
       </div>
 
-      <div className="mb-10 flex items-center justify-between">
+      {/* Sticky reader toolbar — keeps "Contents", theme and text size reachable
+          anywhere in the chapter, not just at the top. */}
+      <div className="sticky top-0 z-30 mb-8 flex items-center justify-between gap-2 border-b border-border/60 bg-background/85 py-2.5 backdrop-blur supports-[backdrop-filter]:bg-background/70">
         <Link
           href={`/book/${bookId}`}
           className="kicker inline-flex items-center gap-1.5 hover:text-foreground transition-colors"
         >
           <ChevronLeft size={14} /> Contents
         </Link>
-        <div className="flex items-center gap-3">
+        <div className="flex items-center gap-1.5">
+          <ThemeMenu />
           <div className="flex items-center gap-1">
             <Button variant="ghost" size="icon" aria-label="Decrease text size"
               onClick={() => setSize(scale - 0.1)}>
@@ -275,7 +297,7 @@ export default function ReaderPage() {
               <Plus size={14} />
             </Button>
           </div>
-          <span className="kicker">Ch. {chapter.number || position}</span>
+          <span className="kicker hidden sm:inline">Ch. {chapter.number || position}</span>
         </div>
       </div>
 

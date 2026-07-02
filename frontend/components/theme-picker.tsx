@@ -1,50 +1,101 @@
 "use client";
 
+import { Palette } from "lucide-react";
 import { useTheme } from "next-themes";
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 
 import { cn } from "@/lib/utils";
 
-const THEMES = [
+export const THEMES = [
   { name: "light", label: "Light", bg: "#ffffff", accent: "#4f46e5", ring: "#e4e4e7" },
   { name: "dark", label: "Dark", bg: "#0a0a0b", accent: "#818cf8", ring: "#2a2a2e" },
   { name: "purple", label: "Purple", bg: "#140f1c", accent: "#a855f7", ring: "#342843" },
   { name: "blue", label: "Blue", bg: "#0a1020", accent: "#3b82f6", ring: "#22314c" },
 ];
 
-export function ThemePicker() {
+/** The row of theme swatch buttons, shared by the sidebar picker and the
+ *  in-reader popover. */
+export function ThemeSwatches() {
   const { theme, setTheme } = useTheme();
   const [mounted, setMounted] = useState(false);
   useEffect(() => setMounted(true), []);
 
   return (
+    <div className="flex gap-2">
+      {THEMES.map((t) => {
+        const active = mounted && theme === t.name;
+        return (
+          <button
+            key={t.name}
+            type="button"
+            onClick={() => setTheme(t.name)}
+            aria-label={`${t.label} theme`}
+            aria-pressed={active}
+            title={t.label}
+            className={cn(
+              "h-7 w-7 rounded-full border-2 flex items-center justify-center transition-transform duration-150 ease-out cursor-pointer hover:scale-110",
+              active ? "border-accent" : "border-transparent"
+            )}
+            style={{ backgroundColor: t.bg, boxShadow: `inset 0 0 0 1px ${t.ring}` }}
+          >
+            <span
+              className="h-2.5 w-2.5 rounded-full"
+              style={{ backgroundColor: t.accent }}
+            />
+          </button>
+        );
+      })}
+    </div>
+  );
+}
+
+/** Sidebar theme picker (labelled block). */
+export function ThemePicker() {
+  return (
     <div>
       <p className="kicker mb-2 px-1">Theme</p>
-      <div className="flex gap-2">
-        {THEMES.map((t) => {
-          const active = mounted && theme === t.name;
-          return (
-            <button
-              key={t.name}
-              type="button"
-              onClick={() => setTheme(t.name)}
-              aria-label={`${t.label} theme`}
-              aria-pressed={active}
-              title={t.label}
-              className={cn(
-                "h-7 w-7 rounded-full border-2 flex items-center justify-center transition-transform duration-150 ease-out cursor-pointer hover:scale-110",
-                active ? "border-accent" : "border-transparent"
-              )}
-              style={{ backgroundColor: t.bg, boxShadow: `inset 0 0 0 1px ${t.ring}` }}
-            >
-              <span
-                className="h-2.5 w-2.5 rounded-full"
-                style={{ backgroundColor: t.accent }}
-              />
-            </button>
-          );
-        })}
-      </div>
+      <ThemeSwatches />
+    </div>
+  );
+}
+
+/** Compact palette button + popover — for places without the sidebar (the
+ *  reader). */
+export function ThemeMenu() {
+  const [open, setOpen] = useState(false);
+  const ref = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    if (!open) return;
+    const onDown = (e: MouseEvent) => {
+      if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false);
+    };
+    const onKey = (e: KeyboardEvent) => e.key === "Escape" && setOpen(false);
+    window.addEventListener("mousedown", onDown);
+    window.addEventListener("keydown", onKey);
+    return () => {
+      window.removeEventListener("mousedown", onDown);
+      window.removeEventListener("keydown", onKey);
+    };
+  }, [open]);
+
+  return (
+    <div className="relative" ref={ref}>
+      <button
+        type="button"
+        onClick={() => setOpen((v) => !v)}
+        aria-label="Theme"
+        aria-expanded={open}
+        title="Theme"
+        className="flex h-8 w-8 items-center justify-center rounded-sm text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
+      >
+        <Palette size={16} />
+      </button>
+      {open && (
+        <div className="absolute right-0 top-10 z-50 rounded-md border border-border bg-card p-3 shadow-xl">
+          <p className="kicker mb-2">Theme</p>
+          <ThemeSwatches />
+        </div>
+      )}
     </div>
   );
 }
