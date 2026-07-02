@@ -36,7 +36,7 @@ class AdaptiveRateLimiter:
 
     def __init__(self, base_interval: float, jitter: float = 0.0,
                  max_interval: float = 8.0, min_interval: float = 0.0,
-                 adaptive: bool = True) -> None:
+                 adaptive: bool = True, budget_reserve: int = 0) -> None:
         self._min = max(0.0, min_interval)
         self._max = max(self._min, max_interval)
         self._interval = min(self._max, max(self._min, base_interval))
@@ -52,18 +52,44 @@ class AdaptiveRateLimiter:
         # only resets once it stops receiving requests actually gets the silence
         # it needs. Set from a server Retry-After / RateLimit-Reset.
         self._cooldown_until = 0.0
+        # Proactive pacing: when a site advertises its budget via RateLimit-*
+        # headers, spread the remaining budget over the remaining window instead
+        # of bursting into the wall. 0 = no advertised budget (stays dormant).
+        self._budget_reserve = max(0, budget_reserve)
+        self._proactive_interval = 0.0
 
     async def acquire(self) -> None:
         async with self._lock:
             now = time.monotonic()
+            # Space by whichever is slower: the adaptive interval or the
+            # budget-derived proactive interval.
+            interval = max(self._interval, self._proactive_interval)
             # Gate on the per-request interval AND any active hard cooldown.
             start_at = max(now, self._next_allowed, self._cooldown_until)
-            extra = (random.uniform(0.0, self._jitter * self._interval)
-                     if self._jitter and self._interval else 0.0)
-            self._next_allowed = start_at + self._interval + extra
+            extra = (random.uniform(0.0, self._jitter * interval)
+                     if self._jitter and interval else 0.0)
+            self._next_allowed = start_at + interval + extra
         wait = start_at - time.monotonic()
         if wait > 0:
             await asyncio.sleep(wait)
+
+    def on_budget(self, remaining: Optional[float], reset: Optional[float]) -> None:
+        """Proactively pace from a server's advertised rate-limit budget
+        (IETF RateLimit-Remaining / RateLimit-Reset, in seconds). Keeps a small
+        reserve for in-flight requests whose consumption isn't reflected yet;
+        once the reserve is reached, stop until the window resets (reusing the
+        cooldown gate) rather than racing the last few requests into a 429."""
+        if remaining is None or reset is None or reset < 0:
+            return  # site doesn't advertise a budget -> stay dormant
+        usable = remaining - self._budget_reserve
+        if usable <= 0:
+            # Out of headroom: wait for the window to refill.
+            cd = min(reset, MAX_COOLDOWN_SECONDS)
+            self._cooldown_until = max(self._cooldown_until, time.monotonic() + cd)
+            self._proactive_interval = 0.0
+        else:
+            # Spread the usable budget evenly over the time left in the window.
+            self._proactive_interval = min(reset / usable, self._max)
 
     def on_rate_limited(self, retry_after: Optional[float] = None) -> None:
         """A 429/503 was seen: open a hard cooldown for the server-specified

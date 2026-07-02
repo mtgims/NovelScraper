@@ -43,6 +43,23 @@ MAX_REDIRECTS = 10
 NETWORK_ERRORS = (RequestsError, CurlError)
 
 
+def _read_budget(resp):
+    """Extract an advertised rate-limit budget from a response, if present:
+    (remaining_requests, seconds_until_reset). Supports the IETF RateLimit-*
+    headers and the common X-RateLimit-* variant. Missing -> (None, None)."""
+    headers = resp.headers
+    rem = headers.get("RateLimit-Remaining") or headers.get("X-RateLimit-Remaining")
+    rst = headers.get("RateLimit-Reset") or headers.get("X-RateLimit-Reset")
+    remaining = None
+    if rem is not None:
+        try:
+            remaining = float(str(rem).strip())
+        except ValueError:
+            remaining = None
+    reset = parse_retry_after(rst)  # delta-seconds (or HTTP-date) -> seconds
+    return remaining, reset
+
+
 class AsyncFetcher:
     """Use as an async context manager so the HTTP session is always closed."""
 
@@ -52,7 +69,10 @@ class AsyncFetcher:
         self._semaphore = asyncio.Semaphore(config.max_concurrency)
         self._limiter = AdaptiveRateLimiter(
             config.delay, config.jitter,
-            max_interval=config.max_interval, adaptive=config.adaptive_pacing)
+            max_interval=config.max_interval, adaptive=config.adaptive_pacing,
+            # Reserve one slot per possibly-in-flight request: the advertised
+            # RateLimit-Remaining is stale by up to that many when we read it.
+            budget_reserve=config.max_concurrency)
         self._robots: Optional[RobotsChecker] = None
         self._cache_dir = Path(config.cache_dir) if config.cache_dir else None
 
@@ -174,6 +194,10 @@ class AsyncFetcher:
                 continue
             if status < 400:
                 self._limiter.on_success()
+                if self.config.respect_retry_after:
+                    # Proactively pace off an advertised rate-limit budget so we
+                    # glide to the window edge instead of bursting into a 429.
+                    self._limiter.on_budget(*_read_budget(resp))
                 return self._cap_and_decode(resp, binary)
             if status in RETRYABLE_STATUS:
                 retry_after = None
