@@ -95,6 +95,9 @@ export function BookCard({
   const [menu, setMenu] = useState(false);
   const [shown, setShown] = useState(false); // popover enter animation
   const [newName, setNewName] = useState("");
+  // Card-relative popover position for a right-click; null = anchored top-right
+  // (the ⋮ button).
+  const [menuAt, setMenuAt] = useState<{ x: number; y: number } | null>(null);
   const cardRef = useRef<HTMLDivElement | null>(null);
   // Compose dnd-kit's node ref with our own so we can measure the card.
   const setRefs = (el: HTMLDivElement | null) => {
@@ -168,8 +171,18 @@ export function BookCard({
       {...attributes}
       {...listeners}
       onContextMenu={(e) => {
-        // Right-click opens the same options menu as the ⋮ button.
+        // Right-click opens the same options menu, positioned at the cursor.
         e.preventDefault();
+        const rect = cardRef.current?.getBoundingClientRect();
+        if (rect) {
+          const W = 224; // w-56
+          const H = 300; // approx menu height, for edge clamping
+          let x = e.clientX;
+          let y = e.clientY;
+          if (x + W > window.innerWidth) x = window.innerWidth - W - 8;
+          if (y + H > window.innerHeight) y = window.innerHeight - H - 8;
+          setMenuAt({ x: x - rect.left, y: y - rect.top });
+        }
         setMenu(true);
       }}
       className={cn(
@@ -195,6 +208,7 @@ export function BookCard({
         onClick={(e) => {
           e.preventDefault();
           e.stopPropagation();
+          setMenuAt(null); // ⋮ anchors the menu to the corner
           setMenu((v) => !v);
         }}
         className={cn(
@@ -209,9 +223,11 @@ export function BookCard({
         <div
           onPointerDown={(e) => e.stopPropagation()}
           onClick={(e) => e.preventDefault()}
+          style={menuAt ? { left: menuAt.x, top: menuAt.y } : undefined}
           className={cn(
-            "absolute right-2 top-10 z-40 w-56 origin-top-right select-text rounded-md border border-border bg-card p-1 shadow-xl",
+            "absolute z-40 w-56 select-text rounded-md border border-border bg-card p-1 shadow-xl",
             "transition-[opacity,transform] duration-150 ease-out",
+            menuAt ? "origin-top-left" : "right-2 top-10 origin-top-right",
             shown ? "scale-100 opacity-100" : "scale-95 opacity-0"
           )}
         >
