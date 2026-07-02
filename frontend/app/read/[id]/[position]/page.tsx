@@ -238,6 +238,7 @@ export default function ReaderPage() {
         onSegments={setSegments}
         onHighlight={setHighlight}
         onComplete={markRead}
+        getReadingFraction={() => fracRef.current}
       />
 
       {segments ? (

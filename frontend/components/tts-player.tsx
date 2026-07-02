@@ -59,10 +59,13 @@ type Props = {
   onSegments: (paragraphs: string[][] | null) => void;
   onHighlight: (globalSentenceIndex: number | null) => void;
   onComplete?: () => void;
+  // Current reading position as a 0..1 fraction of the chapter, so narration can
+  // start where the reader is rather than at the top.
+  getReadingFraction?: () => number;
 };
 
 export const TtsPlayer = forwardRef<TtsPlayerHandle, Props>(function TtsPlayer(
-  { bookId, position, onSegments, onHighlight, onComplete },
+  { bookId, position, onSegments, onHighlight, onComplete, getReadingFraction },
   ref
 ) {
   const { data: info } = useVoices();
@@ -235,31 +238,33 @@ export const TtsPlayer = forwardRef<TtsPlayerHandle, Props>(function TtsPlayer(
     [play]
   );
 
-  // Jump narration to a clicked sentence: locate its chunk + intra-chunk offset.
+  // Point narration at a global sentence index: set the chunk + intra-chunk
+  // offset (without starting playback). Returns false if the index isn't found.
+  const locateSentence = useCallback((globalIndex: number): boolean => {
+    const chunks = chunksRef.current;
+    for (let i = 0; i < chunks.length; i++) {
+      if (chunks[i].includes(globalIndex)) {
+        const ch = chunks[i];
+        const totalLen = ch.reduce((s, k) => s + (lensRef.current[k] || 1), 0);
+        let before = 0;
+        for (const k of ch) {
+          if (k === globalIndex) break;
+          before += lensRef.current[k] || 1;
+        }
+        pendingFrac.current = totalLen > 0 ? before / totalLen : 0;
+        chunkIdx.current = i;
+        return true;
+      }
+    }
+    return false;
+  }, []);
+
+  // Jump narration to a clicked sentence.
   const seekToSentence = useCallback(
     (globalIndex: number) => {
-      const chunks = chunksRef.current;
-      if (!chunks.length) return;
-      let c = -1;
-      for (let i = 0; i < chunks.length; i++) {
-        if (chunks[i].includes(globalIndex)) {
-          c = i;
-          break;
-        }
-      }
-      if (c < 0) return;
-      const ch = chunks[c];
-      const totalLen = ch.reduce((s, k) => s + (lensRef.current[k] || 1), 0);
-      let before = 0;
-      for (const k of ch) {
-        if (k === globalIndex) break;
-        before += lensRef.current[k] || 1;
-      }
-      pendingFrac.current = totalLen > 0 ? before / totalLen : 0;
-      chunkIdx.current = c;
-      void play();
+      if (locateSentence(globalIndex)) void play();
     },
-    [play]
+    [locateSentence, play]
   );
 
   useImperativeHandle(ref, () => ({ seekToSentence }), [seekToSentence]);
@@ -357,8 +362,15 @@ export const TtsPlayer = forwardRef<TtsPlayerHandle, Props>(function TtsPlayer(
         ch.reduce((sum, k) => sum + (lensRef.current[k] || 1), 0)
       );
       onSegments(m.paragraphs);
-      chunkIdx.current = 0;
-      pendingFrac.current = null;
+      // Begin narration from roughly where the reader is (mapping the scroll
+      // fraction to a sentence), falling back to the start of the chapter.
+      const total = flatRef.current.length;
+      const frac = Math.max(0, Math.min(1, getReadingFraction?.() ?? 0));
+      const target = total > 0 ? Math.min(total - 1, Math.round(frac * total)) : 0;
+      if (!(frac > 0.001) || !locateSentence(target)) {
+        chunkIdx.current = 0;
+        pendingFrac.current = null;
+      }
       revokeBrowserCache();
       chunkDurRef.current.clear();
       setElapsedSec(0);
@@ -371,7 +383,7 @@ export const TtsPlayer = forwardRef<TtsPlayerHandle, Props>(function TtsPlayer(
     } catch {
       setMode("idle");
     }
-  }, [bookId, position, play, onSegments, revokeBrowserCache]);
+  }, [bookId, position, play, onSegments, revokeBrowserCache, locateSentence, getReadingFraction]);
 
   if (info === undefined) return null;
   if (!serverAvailable && !browserSupported) return null;
