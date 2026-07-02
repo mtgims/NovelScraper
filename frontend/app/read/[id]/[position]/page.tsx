@@ -14,6 +14,24 @@ import { cn } from "@/lib/utils";
 
 const SIZE_KEY = "ns-reading-scale";
 
+// Drop images whose src isn't absolute (http(s)/data). Imported EPUB chapters
+// reference intra-EPUB image paths (e.g. "images/foo.jpg") that we don't store,
+// so they render as broken icons and — having no dimensions — keep resizing the
+// page as they 404, which destabilizes scrolling. Scraped chapters use absolute
+// URLs and are kept.
+function stripBrokenImages(html: string): string {
+  if (typeof window === "undefined" || !html.includes("<img")) return html;
+  const doc = new DOMParser().parseFromString(html, "text/html");
+  let removed = false;
+  doc.querySelectorAll("img").forEach((img) => {
+    if (!/^(https?:|data:)/i.test(img.getAttribute("src") || "")) {
+      img.remove();
+      removed = true;
+    }
+  });
+  return removed ? doc.body.innerHTML : html;
+}
+
 export default function ReaderPage() {
   const params = useParams<{ id: string; position: string }>();
   const bookId = Number(params.id);
@@ -40,6 +58,9 @@ export default function ReaderPage() {
   // mount→unmount→mount in dev) that would clobber the stored position before a
   // real scroll/restore has happened.
   const movedRef = useRef(false);
+  // True once the user has initiated scrolling themselves (wheel/touch/keys), so
+  // restore never fights them (e.g. while broken images/fonts grow the page).
+  const userScrolledRef = useRef(false);
 
   // Scroll the document to a fraction of its scrollable height. Used for both
   // restore-on-open and preserving position when the TTS read-along closes.
@@ -60,6 +81,29 @@ export default function ReaderPage() {
     localStorage.setItem(SIZE_KEY, String(clamped));
   }, []);
 
+  // Note when the user starts scrolling themselves, so restore backs off.
+  useEffect(() => {
+    const intent = () => {
+      userScrolledRef.current = true;
+    };
+    const onKey = (e: KeyboardEvent) => {
+      if (
+        ["ArrowDown", "ArrowUp", "PageDown", "PageUp", "Home", "End", " ", "Spacebar"].includes(
+          e.key
+        )
+      )
+        userScrolledRef.current = true;
+    };
+    window.addEventListener("wheel", intent, { passive: true });
+    window.addEventListener("touchmove", intent, { passive: true });
+    window.addEventListener("keydown", onKey);
+    return () => {
+      window.removeEventListener("wheel", intent);
+      window.removeEventListener("touchmove", intent);
+      window.removeEventListener("keydown", onKey);
+    };
+  }, []);
+
   // Keep the currently-narrated sentence in view.
   useEffect(() => {
     if (highlight == null) return;
@@ -74,12 +118,13 @@ export default function ReaderPage() {
     markedRef.current = false;
     restoredRef.current = false;
     movedRef.current = false;
+    userScrolledRef.current = false;
     fracRef.current = 0;
     setChapterPct(0);
     if (!chapter?.content) return;
     let alive = true;
     import("dompurify").then((m) => {
-      if (alive) setClean(m.default.sanitize(chapter.content));
+      if (alive) setClean(stripBrokenImages(m.default.sanitize(chapter.content)));
     });
     return () => {
       alive = false;
@@ -118,8 +163,13 @@ export default function ReaderPage() {
       return;
     }
     if (position !== progress.last_position || !(progress.scroll > 0)) return;
+    if (userScrolledRef.current) return; // user is already reading — don't yank
     const frac = progress.scroll;
-    const apply = () => scrollToFraction(frac);
+    // Re-apply only while the user hasn't taken over, so a growing page (fonts,
+    // late images) can't turn the restore into an auto-scroll that fights them.
+    const apply = () => {
+      if (!userScrolledRef.current) scrollToFraction(frac);
+    };
     apply();
     const raf = requestAnimationFrame(apply);
     const timers = [60, 250, 600].map((ms) => window.setTimeout(apply, ms));
