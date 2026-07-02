@@ -176,10 +176,23 @@ class AsyncFetcher:
                 self._limiter.on_success()
                 return self._cap_and_decode(resp, binary)
             if status in RETRYABLE_STATUS:
+                retry_after = None
+                if self.config.respect_retry_after:
+                    # Prefer Retry-After; fall back to the IETF RateLimit reset
+                    # (seconds) that limiters like express-rate-limit also send.
+                    retry_after = parse_retry_after(resp.headers.get("Retry-After"))
+                    if retry_after is None:
+                        retry_after = parse_retry_after(resp.headers.get("RateLimit-Reset"))
                 if status in RATE_LIMIT_STATUS:
-                    self._limiter.on_rate_limited()
-                retry_after = (parse_retry_after(resp.headers.get("Retry-After"))
-                               if self.config.respect_retry_after else None)
+                    # Hand the server's cooldown to the limiter so ALL workers go
+                    # silent for the whole window — a fixed-window limiter only
+                    # recovers if it stops receiving requests, which a per-request
+                    # slowdown (with other requests still in flight) never gives it.
+                    self._limiter.on_rate_limited(retry_after)
+                    if retry_after and retry_after > 0:
+                        logger.warning("rate limited (HTTP %d) at %s; cooling down "
+                                       "%.0fs before continuing", status, current,
+                                       retry_after)
                 raise RetryableFetchError(
                     f"HTTP {status} for {current}", url=current,
                     status=status, retry_after=retry_after)
@@ -207,6 +220,12 @@ class AsyncFetcher:
                         f"Network error for {url}: {e}", url=url)
 
             if attempt <= self.config.max_retries:
+                if retry_after and retry_after > 0:
+                    # The server gave an explicit cooldown; the limiter now gates
+                    # every worker until it elapses (see on_rate_limited), so just
+                    # loop — sleeping the (backoff-capped) delay here too would
+                    # only double the wait.
+                    continue
                 delay = compute_backoff(
                     attempt,
                     base=self.config.backoff_base,

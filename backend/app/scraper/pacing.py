@@ -16,6 +16,11 @@ from typing import Awaitable, Callable, Dict, Optional
 from urllib.parse import urljoin, urlparse
 from urllib.robotparser import RobotFileParser
 
+# Upper bound on a server-requested cooldown, so a hostile or misconfigured
+# Retry-After (e.g. 86400) can't stall a scrape indefinitely. Long enough to
+# honor real multi-minute fixed windows (e.g. 300s).
+MAX_COOLDOWN_SECONDS = 600.0
+
 
 class AdaptiveRateLimiter:
     """Spaces request *starts* by an interval that adapts to the site.
@@ -42,11 +47,17 @@ class AdaptiveRateLimiter:
         self._success_streak = 0
         self._last_backoff = 0.0
         self._limited = False  # has this site rate-limited us yet?
+        # A hard cooldown deadline (monotonic time). While in the future, EVERY
+        # caller waits for it before its request — so a fixed-window limiter that
+        # only resets once it stops receiving requests actually gets the silence
+        # it needs. Set from a server Retry-After / RateLimit-Reset.
+        self._cooldown_until = 0.0
 
     async def acquire(self) -> None:
         async with self._lock:
             now = time.monotonic()
-            start_at = max(now, self._next_allowed)
+            # Gate on the per-request interval AND any active hard cooldown.
+            start_at = max(now, self._next_allowed, self._cooldown_until)
             extra = (random.uniform(0.0, self._jitter * self._interval)
                      if self._jitter and self._interval else 0.0)
             self._next_allowed = start_at + self._interval + extra
@@ -54,12 +65,20 @@ class AdaptiveRateLimiter:
         if wait > 0:
             await asyncio.sleep(wait)
 
-    def on_rate_limited(self) -> None:
-        """A 429/503 was seen: slow down. Bursts of concurrent 429s are coalesced
-        into a single backoff step."""
+    def on_rate_limited(self, retry_after: Optional[float] = None) -> None:
+        """A 429/503 was seen: open a hard cooldown for the server-specified
+        window (if any) and slow the steady-state rate. Bursts of concurrent
+        429s are coalesced into a single interval backoff step, but each one
+        still extends the cooldown to the latest deadline."""
+        now = time.monotonic()
+        # Honor an explicit cooldown regardless of adaptive pacing — it's a
+        # direct server instruction, and it's what lets a fixed-window limiter
+        # recover instead of being kept pinned by continued requests.
+        if retry_after and retry_after > 0:
+            capped = min(retry_after, MAX_COOLDOWN_SECONDS)
+            self._cooldown_until = max(self._cooldown_until, now + capped)
         if not self._adaptive:
             return
-        now = time.monotonic()
         # Coalesce a whole burst of concurrent 429s (plus their retries a couple
         # of seconds later) into a single backoff step, so one burst doesn't
         # ratchet the interval up several times.
