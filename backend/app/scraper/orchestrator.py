@@ -23,7 +23,6 @@ from .metadata import extract_metadata
 from .models import Book, Chapter, ScrapeResult, VolumeResult
 from .parser import parse_chapter_content
 from .site_profile import SiteProfile
-from .writers.epub import write_epub
 
 logger = logging.getLogger(__name__)
 
@@ -138,10 +137,14 @@ async def scrape_book(book_slug: str, profile: SiteProfile, config: ScraperConfi
                 continue
             if progress:
                 progress("building", {"volume": vol_no, "chapters": len(fetched)})
-            # write_epub is CPU/IO-bound and synchronous; run it off the loop so
-            # concurrent jobs (future job manager) aren't blocked during packaging.
-            volume = await asyncio.to_thread(
-                write_epub, book, fetched, vol_no, config.output_dir)
+            # EPUBs are built on demand at download time (from the stored
+            # chapters), not written here — so a volume is just metadata now.
+            volume = VolumeResult(
+                number=vol_no,
+                title=f"{book.display_title()} - Volume {vol_no}",
+                path="",
+                chapter_count=sum(1 for ch in fetched if ch.has_content),
+            )
             volumes.append(volume)
             if on_volume is not None:
                 on_volume(book, volume, fetched)

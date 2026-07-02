@@ -317,10 +317,9 @@ class JobManager:
         so a cancelled job still leaves the completed volumes readable). Returns
         the updated running position."""
         with Session(self.engine) as s:
-            size = os.path.getsize(volume.path) if os.path.exists(volume.path) else 0
+            # EPUBs are generated on demand, so there's no stored file/size.
             s.add(Volume(book_id=book_id, number=volume.number, title=volume.title,
-                         path=volume.path, chapter_count=volume.chapter_count,
-                         size_bytes=size))
+                         path="", chapter_count=volume.chapter_count, size_bytes=0))
             for ch in chapters:
                 if not ch.content:
                     continue

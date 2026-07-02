@@ -10,11 +10,12 @@ from collections import defaultdict
 from datetime import datetime, timezone
 from typing import List, Optional
 
-from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi import APIRouter, Depends, HTTPException, Query, Response
 from fastapi.responses import FileResponse, StreamingResponse
 from sqlmodel import Session, delete, select
 
 from ..db import get_session
+from ..scraper.writers.epub import build_epub_bytes, epub_filename
 from ..models import (
     ArchivedProgress,
     Book,
@@ -385,15 +386,16 @@ def download_all(book_id: int, session: Session = Depends(get_session)):
     volumes = session.exec(
         select(Volume).where(Volume.book_id == book_id).order_by(Volume.number)
     ).all()
-    available = [v for v in volumes if os.path.exists(v.path)]
-    if not available:
-        raise HTTPException(status_code=410, detail="No EPUB files available")
+    if not volumes:
+        raise HTTPException(status_code=404, detail="No volumes")
 
-    # Zip is built in memory; a book's EPUBs total a few MB (fine single-user).
+    # Build each volume's EPUB in memory and zip them. Fine single-user.
     buffer = io.BytesIO()
     with zipfile.ZipFile(buffer, "w", zipfile.ZIP_DEFLATED) as zf:
-        for vol in available:
-            zf.write(vol.path, arcname=os.path.basename(vol.path))
+        for vol in volumes:
+            data = _build_volume_epub(session, book, vol.number)
+            if data is not None:
+                zf.writestr(epub_filename(book.slug, vol.number), data)
     buffer.seek(0)
 
     safe = "".join(c if c.isalnum() or c in "-_" else "_" for c in book.slug)
@@ -406,17 +408,35 @@ def download_all(book_id: int, session: Session = Depends(get_session)):
 
 @router.get("/{book_id}/download")
 def download_volume(book_id: int, volume: int, session: Session = Depends(get_session)):
+    book = session.get(Book, book_id)
     vol = session.exec(
         select(Volume).where(Volume.book_id == book_id, Volume.number == volume)
     ).first()
-    if vol is None:
+    if book is None or vol is None:
         raise HTTPException(status_code=404, detail="Volume not found")
-    if not os.path.exists(vol.path):
-        raise HTTPException(status_code=410, detail="EPUB file is no longer available")
-    return FileResponse(
-        vol.path,
+    data = _build_volume_epub(session, book, volume)
+    if data is None:
+        raise HTTPException(status_code=404, detail="Volume has no chapters")
+    filename = epub_filename(book.slug, volume)
+    return Response(
+        content=data,
         media_type="application/epub+zip",
-        filename=os.path.basename(vol.path),
+        headers={"Content-Disposition": f'attachment; filename="{filename}"'},
+    )
+
+
+def _build_volume_epub(session: Session, book: Book, volume: int):
+    """Build a volume's EPUB in memory from its stored chapters (on demand)."""
+    chapters = session.exec(
+        select(Chapter)
+        .where(Chapter.book_id == book.id, Chapter.volume_number == volume)
+        .order_by(Chapter.position)
+    ).all()
+    if not chapters:
+        return None
+    return build_epub_bytes(
+        book.title or book.slug, book.author, book.language, book.slug,
+        chapters, volume,
     )
 
 

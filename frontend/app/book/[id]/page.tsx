@@ -34,7 +34,7 @@ import {
   useUpdateBookChapters,
   useUpdateProgress,
 } from "@/lib/queries";
-import { cn, formatBytes } from "@/lib/utils";
+import { cn } from "@/lib/utils";
 
 export default function BookDetailPage() {
   const params = useParams<{ id: string }>();
@@ -284,7 +284,7 @@ export default function BookDetailPage() {
                   <span>
                     Vol {vol.number}{" "}
                     <span className="kicker">
-                      · {formatBytes(vol.size_bytes)}
+                      · {vol.chapter_count} ch
                     </span>
                   </span>
                   <Download size={15} className="text-muted-foreground" />

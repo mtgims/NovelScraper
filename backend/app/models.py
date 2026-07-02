@@ -6,16 +6,42 @@ These are the persisted entities backing the API.
 
 from __future__ import annotations
 
+import gzip
 from datetime import datetime, timezone
 from enum import Enum
 from typing import List, Optional
 
-from sqlalchemy import JSON, Column
+from sqlalchemy import JSON, Column, LargeBinary
+from sqlalchemy.types import TypeDecorator
 from sqlmodel import Field, SQLModel
 
 
 def utcnow() -> datetime:
     return datetime.now(timezone.utc)
+
+
+class CompressedText(TypeDecorator):
+    """A text column stored gzip-compressed as a BLOB — transparent to Python
+    code (still a str). Chapter HTML compresses ~3x. Reads tolerate legacy
+    uncompressed (TEXT) rows, so the schema migrates in place."""
+
+    impl = LargeBinary
+    cache_ok = True
+
+    def process_bind_param(self, value, dialect):
+        if value is None:
+            return None
+        return gzip.compress(value.encode("utf-8"), 6)
+
+    def process_result_value(self, value, dialect):
+        if value is None:
+            return None
+        if isinstance(value, str):
+            return value  # legacy uncompressed row
+        data = bytes(value)
+        if data[:2] == b"\x1f\x8b":  # gzip magic
+            return gzip.decompress(data).decode("utf-8")
+        return data.decode("utf-8")
 
 
 class JobStatus(str, Enum):
@@ -119,7 +145,8 @@ class Chapter(SQLModel, table=True):
     volume_number: int
     number: str = ""              # the site's chapter label (may be non-numeric)
     title: str = ""
-    content: str = ""            # sanitized chapter HTML
+    # Sanitized chapter HTML, stored gzip-compressed (transparent — still a str).
+    content: str = Field(default="", sa_column=Column(CompressedText()))
     word_count: Optional[int] = None  # None until computed/backfilled
 
 

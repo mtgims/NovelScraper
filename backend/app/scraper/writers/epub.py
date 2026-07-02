@@ -1,20 +1,21 @@
-"""EPUB output writer.
+"""EPUB output builder.
 
-Chapters without content are skipped. Filenames use the chapter's position in
-the volume (not the scraped chapter number) to avoid collisions when numbers
-are missing or duplicated.
+EPUBs are built in memory on demand (at download time) from stored chapters
+rather than saved to disk — the chapter text already lives in the database, so
+storing the EPUB too would just duplicate it. Chapters without content are
+skipped. Filenames use the chapter's position in the volume (not the scraped
+chapter number) to avoid collisions when numbers are missing or duplicated.
 """
 
 from __future__ import annotations
 
 import html
+import os
 import re
-from pathlib import Path
+import tempfile
 from typing import List
 
 from ebooklib import epub
-
-from ..models import Book, Chapter, VolumeResult
 
 
 def _safe_filename(name: str) -> str:
@@ -22,33 +23,39 @@ def _safe_filename(name: str) -> str:
     return cleaned or "item"
 
 
-def _heading(chapter: Chapter, position: int) -> str:
+def epub_filename(slug: str, volume_number: int) -> str:
+    return f"{_safe_filename(slug)}-volume-{volume_number}.epub"
+
+
+def _heading(number: str, title: str, position: int) -> str:
     parts = []
-    if chapter.number:
-        parts.append(f"Chapter {chapter.number}")
-    if chapter.title:
-        parts.append(chapter.title)
+    if number:
+        parts.append(f"Chapter {number}")
+    if title:
+        parts.append(title)
     return ": ".join(parts) or f"Chapter {position}"
 
 
-def write_epub(book: Book, chapters: List[Chapter], volume_number: int,
-               output_dir: str) -> VolumeResult:
+def build_epub_bytes(title: str, author: str, language: str, slug: str,
+                     chapters: List, volume_number: int) -> bytes:
+    """Build a volume's EPUB in memory. ``chapters`` is any sequence of objects
+    with ``content``, ``number`` and ``title`` attributes (scraped or DB rows)."""
     epub_book = epub.EpubBook()
-    vol_title = f"{book.display_title()} - Volume {volume_number}"
-    epub_book.set_identifier(_safe_filename(f"{book.slug}-vol{volume_number}"))
+    vol_title = f"{title} - Volume {volume_number}"
+    epub_book.set_identifier(_safe_filename(f"{slug}-vol{volume_number}"))
     epub_book.set_title(vol_title)
-    epub_book.set_language(book.language)
-    epub_book.add_author(book.author)
+    epub_book.set_language(language or "en")
+    epub_book.add_author(author or "Unknown Author")
 
     epub_chapters = []
     for position, chapter in enumerate(chapters, start=1):
         if not chapter.content:
             continue
-        heading = _heading(chapter, position)
+        heading = _heading(chapter.number, chapter.title, position)
         item = epub.EpubHtml(
             title=heading,
             file_name=f"chapter_{position:04d}.xhtml",
-            lang=book.language,
+            lang=language or "en",
         )
         # No XML prolog: ebooklib's nav/page-list generation parses the body
         # with lxml's HTML parser, which rejects a leading <?xml ?> declaration.
@@ -66,14 +73,15 @@ def write_epub(book: Book, chapters: List[Chapter], volume_number: int,
     epub_book.add_item(epub.EpubNav())
     epub_book.spine = ["nav", *epub_chapters]
 
-    out_dir = Path(output_dir)
-    out_dir.mkdir(parents=True, exist_ok=True)
-    filepath = out_dir / f"{_safe_filename(book.slug)}-volume-{volume_number}.epub"
-    epub.write_epub(str(filepath), epub_book)
-
-    return VolumeResult(
-        number=volume_number,
-        title=vol_title,
-        path=str(filepath),
-        chapter_count=len(epub_chapters),
-    )
+    # ebooklib writes to a path; use a temp file, read the bytes back, discard it.
+    fd, tmp = tempfile.mkstemp(suffix=".epub")
+    os.close(fd)
+    try:
+        epub.write_epub(tmp, epub_book)
+        with open(tmp, "rb") as f:
+            return f.read()
+    finally:
+        try:
+            os.remove(tmp)
+        except OSError:
+            pass

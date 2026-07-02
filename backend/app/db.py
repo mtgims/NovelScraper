@@ -81,6 +81,46 @@ def _backfill_book_source_urls() -> None:
         ))
 
 
+def _compress_chapter_content() -> None:
+    """One-time: compress chapter HTML still stored as plain TEXT (from before
+    the column used CompressedText), then VACUUM to reclaim the freed space."""
+    import gzip
+
+    with engine.begin() as conn:
+        rows = conn.execute(
+            text("SELECT id, content FROM chapter WHERE typeof(content) = 'text'")
+        ).fetchall()
+        if not rows:
+            return
+        for cid, content in rows:
+            if content is not None:
+                conn.execute(
+                    text("UPDATE chapter SET content = :c WHERE id = :id"),
+                    {"c": gzip.compress(content.encode("utf-8"), 6), "id": cid},
+                )
+        logger.info("compressed %d chapter(s) of content", len(rows))
+    # VACUUM must run outside a transaction.
+    with engine.connect().execution_options(isolation_level="AUTOCOMMIT") as conn:
+        conn.exec_driver_sql("VACUUM")
+
+
+def _cleanup_stored_epubs() -> None:
+    """EPUBs are now built on demand, so any previously-written .epub files are
+    dead weight — remove them to reclaim the space (they regenerate on download)."""
+    out = settings.output_dir
+    if not out.exists():
+        return
+    freed = 0
+    for f in out.rglob("*.epub"):
+        try:
+            freed += f.stat().st_size
+            f.unlink()
+        except OSError:
+            pass
+    if freed:
+        logger.info("removed stored EPUBs, reclaimed %.1f MB", freed / 1e6)
+
+
 def init_db() -> None:
     settings.ensure_dirs()
     # Import models so they register on SQLModel.metadata before create_all.
@@ -89,6 +129,8 @@ def init_db() -> None:
     SQLModel.metadata.create_all(engine)
     _migrate_add_columns()
     _backfill_book_source_urls()
+    _compress_chapter_content()
+    _cleanup_stored_epubs()
 
 
 def get_session():
