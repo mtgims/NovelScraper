@@ -47,7 +47,9 @@ export function BookCardView({
         )}
       </div>
       <div className="min-w-0 p-4">
-        <h2 className="font-display text-lg leading-snug line-clamp-2 break-words">
+        {/* Fixed 2-line title height so short and long titles take the same
+            space and every card is the same size. */}
+        <h2 className="min-h-[3.1rem] font-display text-lg leading-snug line-clamp-2 break-words">
           {book.title}
         </h2>
         <p className="mt-1 text-sm text-muted-foreground line-clamp-1 break-words">
@@ -56,11 +58,12 @@ export function BookCardView({
         <p className="kicker mt-3">
           {book.volumes.length} vol{book.volumes.length === 1 ? "" : "s"} · {book.site}
         </p>
-        {book.rating ? (
-          <div className="mt-2">
+        {/* Row is always reserved so rated and unrated cards match in height. */}
+        <div className="mt-2 h-4">
+          {book.rating ? (
             <StarRating value={book.rating} readOnly size={13} />
-          </div>
-        ) : null}
+          ) : null}
+        </div>
       </div>
     </Card>
   );
