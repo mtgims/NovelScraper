@@ -453,7 +453,7 @@ def _build_volume_epub(session: Session, book: Book, volume: int):
         return None
     return build_epub_bytes(
         book.title or book.slug, book.author, book.language, book.slug,
-        chapters, volume,
+        chapters, volume, book_id=book.id, image_dir=str(settings.image_dir),
     )
 
 
