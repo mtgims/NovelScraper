@@ -15,7 +15,15 @@ from fastapi.responses import FileResponse, StreamingResponse
 from sqlmodel import Session, delete, select
 
 from ..db import get_session
-from ..models import Book, BookCollectionLink, Chapter, Collection, ReadingProgress, Volume
+from ..models import (
+    ArchivedProgress,
+    Book,
+    BookCollectionLink,
+    Chapter,
+    Collection,
+    ReadingProgress,
+    Volume,
+)
 from ..scraper.parser import count_words
 from ..settings import settings
 from ..tts import DEFAULT_VOICE, build_chunks, chunk_to_text, segment_paragraphs, tts
@@ -438,6 +446,17 @@ def delete_book(book_id: int, session: Session = Depends(get_session)):
         select(ReadingProgress).where(ReadingProgress.book_id == book_id)
     ).first()
     if prog is not None:
+        # Archive progress by (site, slug) so re-scraping this novel later
+        # restores where the reader left off.
+        arch = session.get(ArchivedProgress, (book.site, book.slug))
+        if arch is None:
+            arch = ArchivedProgress(site=book.site, slug=book.slug)
+        arch.source_url = book.source_url
+        arch.last_position = prog.last_position
+        arch.scroll = prog.scroll
+        arch.read_positions = list(prog.read_positions)
+        arch.updated_at = datetime.now(timezone.utc)
+        session.add(arch)
         session.delete(prog)
     session.exec(
         delete(BookCollectionLink).where(BookCollectionLink.book_id == book_id)

@@ -18,7 +18,7 @@ from typing import Any, Dict, Optional
 from sqlalchemy import func
 from sqlmodel import Session, select
 
-from ..models import Book, Chapter, Job, JobStatus, Volume
+from ..models import ArchivedProgress, Book, Chapter, Job, JobStatus, ReadingProgress, Volume
 from ..scraper import ScraperConfig, SiteProfile, resolve_book_url, scrape_book
 from ..scraper.models import Chapter as ScrapedChapter
 from ..scraper.models import VolumeResult as ScrapedVolume
@@ -291,6 +291,24 @@ class JobManager:
             for old_c in s.exec(select(Chapter).where(Chapter.book_id == book.id)).all():
                 s.delete(old_c)
             s.commit()
+
+            # Restore reading progress archived when this novel was last deleted
+            # (only if the book has none yet, so a normal re-scrape isn't clobbered).
+            has_progress = s.exec(
+                select(ReadingProgress).where(ReadingProgress.book_id == book.id)
+            ).first()
+            if has_progress is None:
+                arch = s.get(ArchivedProgress, (job.site, job.book_slug))
+                if arch is not None:
+                    s.add(ReadingProgress(
+                        book_id=book.id,
+                        last_position=arch.last_position,
+                        scroll=arch.scroll,
+                        read_positions=list(arch.read_positions),
+                    ))
+                    s.commit()
+                    logger.info("restored archived progress for %s/%s",
+                                job.site, job.book_slug)
             return book.id
 
     def _persist_volume(self, book_id: int, volume: ScrapedVolume,

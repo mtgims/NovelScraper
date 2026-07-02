@@ -89,6 +89,19 @@ class Setting(SQLModel, table=True):
     value: str
 
 
+class ArchivedProgress(SQLModel, table=True):
+    """Reading progress retained after a book is deleted, keyed by (site, slug)
+    so it can be auto-restored if the same novel is scraped again later. Book ids
+    change across delete+re-scrape, but site+slug (derived from the URL) don't."""
+    site: str = Field(primary_key=True)
+    slug: str = Field(primary_key=True)
+    source_url: Optional[str] = None
+    last_position: int = 1
+    scroll: float = 0.0
+    read_positions: List[int] = Field(default_factory=list, sa_column=Column(JSON))
+    updated_at: datetime = Field(default_factory=utcnow)
+
+
 class Volume(SQLModel, table=True):
     id: Optional[int] = Field(default=None, primary_key=True)
     book_id: int = Field(foreign_key="book.id", index=True)
