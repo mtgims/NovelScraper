@@ -35,6 +35,19 @@ export default function ReaderPage() {
   const restoredRef = useRef(false);
   const fracRef = useRef(0);
   const lastSaveRef = useRef(0);
+  const hadSegmentsRef = useRef(false);
+  // Guards the scroll save from writing a premature 0 (e.g. React StrictMode's
+  // mount→unmount→mount in dev) that would clobber the stored position before a
+  // real scroll/restore has happened.
+  const movedRef = useRef(false);
+
+  // Scroll the document to a fraction of its scrollable height. Used for both
+  // restore-on-open and preserving position when the TTS read-along closes.
+  const scrollToFraction = useCallback((frac: number) => {
+    const doc = document.documentElement;
+    const max = doc.scrollHeight - doc.clientHeight;
+    if (max > 4) window.scrollTo(0, frac * max);
+  }, []);
 
   // --- reading size (persisted) ---
   useEffect(() => {
@@ -60,6 +73,8 @@ export default function ReaderPage() {
     setClean(null);
     markedRef.current = false;
     restoredRef.current = false;
+    movedRef.current = false;
+    fracRef.current = 0;
     setChapterPct(0);
     if (!chapter?.content) return;
     let alive = true;
@@ -89,19 +104,44 @@ export default function ReaderPage() {
 
   // Restore scroll (once) when returning to the last-read chapter; if the
   // chapter fits on screen (not scrollable), count it as read.
+  //
+  // Re-apply the saved *fraction* a few times as the page settles: measuring
+  // scrollHeight the instant `clean` renders often reads a too-small height
+  // (web fonts / layout still growing), so a single scrollTo lands near the top.
+  // Re-applying the fraction against the final height puts us back in place.
   useEffect(() => {
     if (restoredRef.current || clean === null || !progress) return;
     restoredRef.current = true;
-    const el = document.documentElement;
-    const max = el.scrollHeight - el.clientHeight;
-    if (max <= 4) {
+    const doc = document.documentElement;
+    if (doc.scrollHeight - doc.clientHeight <= 4) {
       markRead();
       return;
     }
-    if (position === progress.last_position && progress.scroll > 0) {
-      window.scrollTo(0, progress.scroll * max);
-    }
-  }, [clean, progress, position, markRead]);
+    if (position !== progress.last_position || !(progress.scroll > 0)) return;
+    const frac = progress.scroll;
+    const apply = () => scrollToFraction(frac);
+    apply();
+    const raf = requestAnimationFrame(apply);
+    const timers = [60, 250, 600].map((ms) => window.setTimeout(apply, ms));
+    return () => {
+      cancelAnimationFrame(raf);
+      timers.forEach(clearTimeout);
+    };
+  }, [clean, progress, position, markRead, scrollToFraction]);
+
+  // When the TTS player closes, the content swaps from the read-along back to
+  // the plain chapter (a different height), which would otherwise shift or
+  // clamp the scroll to the bottom. Preserve the reading position by re-applying
+  // the current fraction against the new layout.
+  useEffect(() => {
+    const had = hadSegmentsRef.current;
+    hadSegmentsRef.current = segments !== null;
+    if (!had || segments !== null) return;
+    const frac = fracRef.current;
+    scrollToFraction(frac);
+    const raf = requestAnimationFrame(() => scrollToFraction(frac));
+    return () => cancelAnimationFrame(raf);
+  }, [segments, scrollToFraction]);
 
   // Track scroll: chapter progress bar, throttled save, mark-read at the bottom.
   useEffect(() => {
@@ -110,6 +150,7 @@ export default function ReaderPage() {
       const max = el.scrollHeight - el.clientHeight;
       const frac = max > 0 ? Math.min(1, el.scrollTop / max) : 0;
       fracRef.current = frac;
+      movedRef.current = true;
       setChapterPct(frac);
       const now = Date.now();
       if (now - lastSaveRef.current > 3000) {
@@ -123,9 +164,13 @@ export default function ReaderPage() {
     window.addEventListener("scroll", onScroll, { passive: true });
     return () => {
       window.removeEventListener("scroll", onScroll);
-      api
-        .updateProgress(bookId, { last_position: position, scroll: fracRef.current })
-        .catch(() => {});
+      // Only persist scroll once something real has moved it, so a transient
+      // unmount can't overwrite the saved position with 0.
+      if (movedRef.current) {
+        api
+          .updateProgress(bookId, { last_position: position, scroll: fracRef.current })
+          .catch(() => {});
+      }
     };
   }, [bookId, position, markRead]);
 
