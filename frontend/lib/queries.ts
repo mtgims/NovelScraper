@@ -166,11 +166,44 @@ export function useSetBookCollections() {
   });
 }
 
-export function useReorderBooks() {
+export function useSetRating(bookId: number) {
   const qc = useQueryClient();
   return useMutation({
+    mutationFn: (rating: number) => api.setRating(bookId, rating),
+    onSuccess: (book) => {
+      qc.setQueryData(["book", bookId], book);
+      qc.invalidateQueries({ queryKey: ["books"] });
+    },
+  });
+}
+
+export function useUpdateBookChapters(bookId: number) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: () => api.updateBookChapters(bookId),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ["jobs"] }),
+  });
+}
+
+export function useSettings() {
+  return useQuery({ queryKey: ["settings"], queryFn: api.getSettings });
+}
+
+export function useUpdateSettings() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (body: Partial<import("./types").AppSettings>) =>
+      api.updateSettings(body),
+    onSuccess: (data) => qc.setQueryData(["settings"], data),
+  });
+}
+
+export function useReorderBooks() {
+  // No cache invalidation: the library applies the new order optimistically and
+  // the backend is now the source of truth. Refetching here would re-render the
+  // grid and re-register every sortable card, making the next drag feel laggy.
+  return useMutation({
     mutationFn: (orderedIds: number[]) => api.reorderBooks(orderedIds),
-    onSuccess: () => qc.invalidateQueries({ queryKey: ["books"] }),
   });
 }
 

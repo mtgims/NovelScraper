@@ -51,6 +51,10 @@ class Settings:
         # Max scrapes running at once (each scrape is itself internally concurrent).
         self.max_concurrent_jobs = int(os.getenv("NOVELSCRAPER_MAX_JOBS", "2"))
 
+        # Auto-update: how often (hours) to re-scrape books for new chapters.
+        # 0 disables the scheduler; the manual "Update" button always works.
+        self.auto_update_hours = int(os.getenv("NOVELSCRAPER_AUTO_UPDATE_HOURS", "0"))
+
         # SSRF guard escape hatch — only for local testing against 127.0.0.1.
         self.allow_private_hosts = _env_bool("NOVELSCRAPER_ALLOW_PRIVATE_HOSTS", False)
 

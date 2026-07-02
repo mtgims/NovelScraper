@@ -140,20 +140,44 @@
   }
 }
 
-/* Collection-switch transition for the library grid. */
-@keyframes fadeInUp {
+/* Directional collection-switch transition for the library grid: the grid
+   slides in from the side of the tab you moved toward. */
+/* Opacity finishes early (~35%) so the rest is a clearly-visible horizontal
+   glide rather than a fade; the larger offset makes the direction obvious. */
+@keyframes slideInFromLeft {
   from {
     opacity: 0;
-    transform: translateY(8px);
+    transform: translateX(-44px);
+  }
+  35% {
+    opacity: 1;
   }
   to {
     opacity: 1;
-    transform: translateY(0);
+    transform: translateX(0);
   }
 }
 
-.animate-fade-in-up {
-  animation: fadeInUp 0.28s cubic-bezier(0.2, 0, 0, 1);
+@keyframes slideInFromRight {
+  from {
+    opacity: 0;
+    transform: translateX(44px);
+  }
+  35% {
+    opacity: 1;
+  }
+  to {
+    opacity: 1;
+    transform: translateX(0);
+  }
+}
+
+.animate-slide-in-left {
+  animation: slideInFromLeft 0.34s cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+.animate-slide-in-right {
+  animation: slideInFromRight 0.34s cubic-bezier(0.22, 1, 0.36, 1);
 }
 
 @media (prefers-reduced-motion: reduce) {

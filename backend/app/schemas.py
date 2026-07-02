@@ -85,9 +85,16 @@ class BookRead(BaseModel):
     language: str
     has_cover: bool = False
     created_at: datetime
+    updated_at: Optional[datetime] = None
     sort_order: int = 0
+    rating: Optional[int] = None
+    can_update: bool = False   # true when we have a source_url to re-scrape from
     collection_ids: List[int] = []
     volumes: List[VolumeRead] = []
+
+
+class BookUpdate(BaseModel):
+    rating: Optional[int] = Field(default=None, ge=0, le=5)  # 0 clears the rating
 
 
 class CollectionRead(BaseModel):
@@ -113,6 +120,15 @@ class BookCollectionsUpdate(BaseModel):
 
 class BookReorder(BaseModel):
     ordered_ids: List[int]
+
+
+class AppSettings(BaseModel):
+    auto_update_hours: int
+
+
+class AppSettingsUpdate(BaseModel):
+    # Hours between automatic new-chapter checks; 0 disables the scheduler.
+    auto_update_hours: Optional[int] = Field(default=None, ge=0, le=8760)
 
 
 class SiteRead(BaseModel):

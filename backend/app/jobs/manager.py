@@ -15,6 +15,7 @@ import uuid
 from datetime import datetime, timezone
 from typing import Any, Dict, Optional
 
+from sqlalchemy import func
 from sqlmodel import Session, select
 
 from ..models import Book, Chapter, Job, JobStatus, Volume
@@ -55,7 +56,7 @@ class JobManager:
 
     # --- public API ------------------------------------------------------
 
-    def submit(self, data: JobCreate) -> Job:
+    def submit(self, data: JobCreate, incremental: bool = False) -> Job:
         # Resolve the pasted URL to a site profile + book id (raises
         # UnsupportedSourceError / ProfileError, handled by the endpoint).
         profile, slug = resolve_book_url(data.url, self.profiles)
@@ -79,6 +80,7 @@ class JobManager:
                 chapters_per_volume=data.chapters_per_volume or 100,
                 delay=data.delay,
                 concurrency=data.concurrency,
+                incremental=incremental,
             )
             s.add(job)
             s.commit()
@@ -144,11 +146,20 @@ class JobManager:
                 live = {"total": 0, "fetched": 0, "skipped": 0,
                         "phase": "enumerating", "volume": 0}
                 self._live[job_id] = live
-                # Book is created lazily on the first completed volume, so a job
-                # cancelled/failed before any output neither creates an empty book
-                # nor destroys a previously-scraped one. Old data is replaced only
-                # once this run actually produces a volume.
-                state = {"book_id": None, "position": 0}
+                # For an incremental update, resume from what's already saved:
+                # start_position = highest saved chapter, start_volume = next
+                # volume number. The book already exists so we append to it.
+                start_position, start_volume = 0, 1
+                existing_book_id = None
+                if job.incremental:
+                    start_position, start_volume, existing_book_id = \
+                        self._update_offsets(job)
+
+                # Book is created lazily on the first completed volume (fresh
+                # scrape), so a job cancelled/failed before any output neither
+                # creates an empty book nor destroys a previously-scraped one.
+                # For updates the book already exists, so book_id is set upfront.
+                state = {"book_id": existing_book_id, "position": start_position}
 
                 def on_volume(book, volume: ScrapedVolume,
                               chapters: list[ScrapedChapter]) -> None:
@@ -179,7 +190,12 @@ class JobManager:
 
                 result = await scrape_book(job.book_slug, profile, config,
                                            on_progress, on_volume,
-                                           source_url=job.source_url)
+                                           source_url=job.source_url,
+                                           start_position=start_position,
+                                           start_volume=start_volume)
+                # Record the check time even when an update found no new chapters.
+                if state["book_id"] is not None:
+                    self._touch_book(state["book_id"])
                 self._update(
                     job_id, status=JobStatus.completed.value, phase="done",
                     total_chapters=result.total_chapters,
@@ -221,6 +237,32 @@ class JobManager:
             s.add(job)
             s.commit()
 
+    def _update_offsets(self, job: Job) -> tuple[int, int, Optional[int]]:
+        """For an incremental update: (highest saved chapter position, next
+        volume number, existing book id). Zeros/None if the book doesn't exist
+        yet (falls back to a full scrape)."""
+        with Session(self.engine) as s:
+            book = s.exec(
+                select(Book).where(Book.slug == job.book_slug, Book.site == job.site)
+            ).first()
+            if book is None:
+                return 0, 1, None
+            max_pos = s.exec(
+                select(func.max(Chapter.position)).where(Chapter.book_id == book.id)
+            ).one()
+            max_vol = s.exec(
+                select(func.max(Volume.number)).where(Volume.book_id == book.id)
+            ).one()
+            return (max_pos or 0), (max_vol or 0) + 1, book.id
+
+    def _touch_book(self, book_id: int) -> None:
+        with Session(self.engine) as s:
+            book = s.get(Book, book_id)
+            if book is not None:
+                book.updated_at = _utcnow()
+                s.add(book)
+                s.commit()
+
     def _prepare_book(self, job: Job, scraped) -> int:
         """Get-or-create the book row (with scraped metadata) and clear any prior
         volumes/chapters so a re-scrape replaces them. Returns the book id."""
@@ -228,13 +270,18 @@ class JobManager:
             book = s.exec(
                 select(Book).where(Book.slug == job.book_slug, Book.site == job.site)
             ).first()
-            if book is None:
+            is_new = book is None
+            if is_new:
                 book = Book(slug=job.book_slug, site=job.site)
             book.title = scraped.display_title()
             book.author = scraped.author
             book.language = scraped.language
             book.cover_path = scraped.cover_path
-            book.created_at = _utcnow()
+            if is_new:
+                book.created_at = _utcnow()  # preserve add-date on re-scrape/update
+            if job.source_url:
+                book.source_url = job.source_url  # remember it so we can update later
+            book.updated_at = _utcnow()
             s.add(book)
             s.commit()
             s.refresh(book)

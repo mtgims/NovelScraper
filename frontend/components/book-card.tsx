@@ -7,6 +7,7 @@ import Link from "next/link";
 import { useEffect, useRef, useState } from "react";
 
 import { useConfirm } from "@/components/confirm-dialog";
+import { StarRating } from "@/components/star-rating";
 import { Card } from "@/components/ui/card";
 import { coverUrl } from "@/lib/api";
 import {
@@ -55,6 +56,11 @@ export function BookCardView({
         <p className="kicker mt-3">
           {book.volumes.length} vol{book.volumes.length === 1 ? "" : "s"} · {book.site}
         </p>
+        {book.rating ? (
+          <div className="mt-2">
+            <StarRating value={book.rating} readOnly size={13} />
+          </div>
+        ) : null}
       </div>
     </Card>
   );
@@ -84,13 +90,19 @@ export function BookCard({
   const confirm = useConfirm();
 
   const [menu, setMenu] = useState(false);
+  const [shown, setShown] = useState(false); // popover enter animation
   const [newName, setNewName] = useState("");
   const menuRef = useRef<HTMLDivElement>(null);
+  const btnRef = useRef<HTMLButtonElement>(null);
 
   useEffect(() => {
     if (!menu) return;
     const onDown = (e: MouseEvent) => {
-      if (menuRef.current && !menuRef.current.contains(e.target as Node)) setMenu(false);
+      const t = e.target as Node;
+      // Ignore clicks on the popover itself or the toggle button (so the button
+      // just toggles instead of the outside-handler closing it first).
+      if (menuRef.current?.contains(t) || btnRef.current?.contains(t)) return;
+      setMenu(false);
     };
     const onKey = (e: KeyboardEvent) => e.key === "Escape" && setMenu(false);
     window.addEventListener("mousedown", onDown);
@@ -99,6 +111,13 @@ export function BookCard({
       window.removeEventListener("mousedown", onDown);
       window.removeEventListener("keydown", onKey);
     };
+  }, [menu]);
+
+  // Grow-in the popover when it opens.
+  useEffect(() => {
+    if (!menu) return void setShown(false);
+    const id = requestAnimationFrame(() => setShown(true));
+    return () => cancelAnimationFrame(id);
   }, [menu]);
 
   const inSet = new Set(book.collection_ids);
@@ -141,7 +160,9 @@ export function BookCard({
       {...attributes}
       {...listeners}
       className={cn(
-        "group relative touch-none",
+        // select-none: the card is a drag handle, so never let a fast
+        // press-and-drag start a text selection instead of a drag.
+        "group relative touch-none select-none",
         // While dragging, this stays as a dimmed placeholder; the DragOverlay
         // renders the lifted card that follows the cursor.
         isDragging && "opacity-40"
@@ -155,6 +176,7 @@ export function BookCard({
       </Link>
 
       <button
+        ref={btnRef}
         type="button"
         aria-label="Novel options"
         onPointerDown={(e) => e.stopPropagation()}
@@ -176,7 +198,11 @@ export function BookCard({
           ref={menuRef}
           onPointerDown={(e) => e.stopPropagation()}
           onClick={(e) => e.preventDefault()}
-          className="absolute right-2 top-10 z-40 w-56 rounded-md border border-border bg-card p-1 shadow-xl"
+          className={cn(
+            "absolute right-2 top-10 z-40 w-56 origin-top-right select-text rounded-md border border-border bg-card p-1 shadow-xl",
+            "transition-[opacity,transform] duration-150 ease-out",
+            shown ? "scale-100 opacity-100" : "scale-95 opacity-0"
+          )}
         >
           <p className="kicker px-2 pb-1 pt-1.5">Collections</p>
           <div className="max-h-44 overflow-y-auto">

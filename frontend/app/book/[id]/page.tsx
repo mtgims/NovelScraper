@@ -9,6 +9,7 @@ import {
   Download,
   DownloadCloud,
   Play,
+  RefreshCw,
   RotateCcw,
   Trash2,
 } from "lucide-react";
@@ -18,6 +19,7 @@ import { type MouseEvent as ReactMouseEvent, useEffect, useRef, useState } from 
 
 import { useConfirm } from "@/components/confirm-dialog";
 import { PageHeader } from "@/components/page-header";
+import { StarRating } from "@/components/star-rating";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { Progress } from "@/components/ui/progress";
@@ -28,6 +30,8 @@ import {
   useChapters,
   useDeleteBook,
   useProgress,
+  useSetRating,
+  useUpdateBookChapters,
   useUpdateProgress,
 } from "@/lib/queries";
 import { cn, formatBytes } from "@/lib/utils";
@@ -41,7 +45,10 @@ export default function BookDetailPage() {
   const { data: progress } = useProgress(id);
   const updateProgress = useUpdateProgress(id);
   const deleteBook = useDeleteBook();
+  const setRating = useSetRating(id);
+  const updateChapters = useUpdateBookChapters(id);
   const confirm = useConfirm();
+  const [updateMsg, setUpdateMsg] = useState<string | null>(null);
 
   // Anchor for range selection: the last-toggled chapter and the state it was
   // set to. Shift/Ctrl-clicking another mark applies that state to the range.
@@ -141,6 +148,33 @@ export default function BookDetailPage() {
               {hasStarted ? "Continue" : "Read"}
             </Button>
           </Link>
+          {book.can_update && (
+            <Button
+              variant="outline"
+              size="sm"
+              disabled={updateChapters.isPending}
+              onClick={() => {
+                // Optimistic: an update is now in progress either way. A 409
+                // ("already running") is expected on a double-fire and is fine;
+                // only a genuine failure replaces the message.
+                setUpdateMsg("Checking for new chapters — see Progress.");
+                updateChapters.mutate(undefined, {
+                  onError: (e) => {
+                    if (!/already running/i.test((e as Error).message)) {
+                      setUpdateMsg("Couldn't start an update. Please try again.");
+                    }
+                  },
+                });
+              }}
+              title="Re-scrape the source for new chapters"
+            >
+              <RefreshCw
+                size={15}
+                className={cn(updateChapters.isPending && "animate-spin")}
+              />
+              Update
+            </Button>
+          )}
           <a href={downloadAllUrl(book.id)}>
             <Button variant="outline" size="sm">
               <DownloadCloud size={15} /> All
@@ -151,6 +185,21 @@ export default function BookDetailPage() {
           </Button>
         </div>
       </PageHeader>
+
+      <div className="mb-8 flex flex-wrap items-center gap-x-4 gap-y-2">
+        <StarRating
+          value={book.rating}
+          onChange={(r) => setRating.mutate(r)}
+        />
+        {updateMsg && (
+          <span className="kicker text-muted-foreground">
+            {updateMsg}{" "}
+            <Link href="/jobs" className="text-accent hover:underline">
+              Progress →
+            </Link>
+          </span>
+        )}
+      </div>
 
       {/* Novel reading progress + bulk controls */}
       {progress && progress.total_chapters > 0 && (

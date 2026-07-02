@@ -1,4 +1,5 @@
 import type {
+  AppSettings,
   Book,
   Chapter,
   ChapterListItem,
@@ -57,6 +58,13 @@ export const api = {
   getBook: (id: number) => req<Book>(`/api/books/${id}`),
   deleteBook: (id: number) =>
     req<void>(`/api/books/${id}`, { method: "DELETE" }),
+  setRating: (id: number, rating: number) =>
+    req<Book>(`/api/books/${id}`, {
+      method: "PATCH",
+      body: JSON.stringify({ rating }),
+    }),
+  updateBookChapters: (id: number) =>
+    req<Job>(`/api/books/${id}/update`, { method: "POST" }),
   setBookCollections: (id: number, collectionIds: number[]) =>
     req<Book>(`/api/books/${id}/collections`, {
       method: "PUT",
@@ -80,6 +88,12 @@ export const api = {
     }),
   deleteCollection: (id: number) =>
     req<void>(`/api/collections/${id}`, { method: "DELETE" }),
+  getSettings: () => req<AppSettings>("/api/settings"),
+  updateSettings: (body: Partial<AppSettings>) =>
+    req<AppSettings>("/api/settings", {
+      method: "PUT",
+      body: JSON.stringify(body),
+    }),
   getChapters: (bookId: number) =>
     req<ChapterListItem[]>(`/api/books/${bookId}/chapters`),
   getChapter: (bookId: number, position: number) =>

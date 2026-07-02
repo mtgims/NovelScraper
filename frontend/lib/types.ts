@@ -49,7 +49,10 @@ export interface Book {
   language: string;
   has_cover: boolean;
   created_at: string;
+  updated_at: string | null;
   sort_order: number;
+  rating: number | null;
+  can_update: boolean;
   collection_ids: number[];
   volumes: Volume[];
 }
@@ -58,6 +61,10 @@ export interface Collection {
   id: number;
   name: string;
   sort_order: number;
+}
+
+export interface AppSettings {
+  auto_update_hours: number;
 }
 
 export interface Site {

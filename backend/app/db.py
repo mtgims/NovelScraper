@@ -59,6 +59,28 @@ def _migrate_add_columns() -> None:
                     )
 
 
+def _backfill_book_source_urls() -> None:
+    """Books scraped before source_url existed have it NULL, so the update
+    feature can't re-scrape them. Recover the URL from the job that scraped them
+    (matched by slug + site) where that job record still exists."""
+    with engine.begin() as conn:
+        conn.execute(text(
+            """
+            UPDATE book SET source_url = (
+                SELECT j.source_url FROM job j
+                WHERE j.book_slug = book.slug AND j.site = book.site
+                  AND j.source_url IS NOT NULL
+                LIMIT 1
+            )
+            WHERE source_url IS NULL AND EXISTS (
+                SELECT 1 FROM job j
+                WHERE j.book_slug = book.slug AND j.site = book.site
+                  AND j.source_url IS NOT NULL
+            )
+            """
+        ))
+
+
 def init_db() -> None:
     settings.ensure_dirs()
     # Import models so they register on SQLModel.metadata before create_all.
@@ -66,6 +88,7 @@ def init_db() -> None:
 
     SQLModel.metadata.create_all(engine)
     _migrate_add_columns()
+    _backfill_book_source_urls()
 
 
 def get_session():

@@ -8,6 +8,7 @@ import {
   PanelLeft,
   PanelLeftClose,
   PlusSquare,
+  Settings,
 } from "lucide-react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
@@ -23,6 +24,7 @@ const NAV = [
   { href: "/new", label: "New Scrape", icon: PlusSquare },
   { href: "/jobs", label: "Progress", icon: Activity },
   { href: "/stats", label: "Statistics", icon: BarChart3 },
+  { href: "/settings", label: "Settings", icon: Settings },
 ];
 
 function NavLink({

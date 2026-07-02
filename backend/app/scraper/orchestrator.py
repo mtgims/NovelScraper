@@ -87,15 +87,22 @@ async def _fetch_content(fetcher: AsyncFetcher, profile: SiteProfile,
     return chapter
 
 
-def _volumes(chapters: List[Chapter], size: int):
+def _volumes(chapters: List[Chapter], size: int, start_no: int = 1):
     for index in range(0, len(chapters), size):
-        yield index // size + 1, chapters[index:index + size]
+        yield start_no + index // size, chapters[index:index + size]
 
 
 async def scrape_book(book_slug: str, profile: SiteProfile, config: ScraperConfig,
                       progress: ProgressCb = None,
                       on_volume: VolumeCb = None,
-                      source_url: Optional[str] = None) -> ScrapeResult:
+                      source_url: Optional[str] = None,
+                      start_position: int = 0,
+                      start_volume: int = 1) -> ScrapeResult:
+    """Scrape a book. For an incremental update, pass ``start_position`` (the
+    highest chapter position already saved) and ``start_volume`` (next volume
+    number): enumeration still runs to discover the full list, but only chapters
+    past ``start_position`` are fetched and packaged, as volumes numbered from
+    ``start_volume``."""
     book = Book(slug=book_slug)
     volumes: List[VolumeResult] = []
     skipped = 0
@@ -110,7 +117,18 @@ async def scrape_book(book_slug: str, profile: SiteProfile, config: ScraperConfi
         total = len(chapters)
         logger.info("found %d chapters", total)
 
-        for vol_no, vol_chapters in _volumes(chapters, config.chapters_per_volume):
+        # Incremental update: enumeration returns chapters in reading order, so
+        # the ones we already have are the first `start_position` entries — skip
+        # them and only fetch/package what's past that.
+        new_chapters = chapters[start_position:] if start_position > 0 else chapters
+        if start_position > 0:
+            logger.info("update: %d new chapter(s) past position %d",
+                        len(new_chapters), start_position)
+            if progress:
+                progress("enumerating", {"found": total})
+
+        for vol_no, vol_chapters in _volumes(
+                new_chapters, config.chapters_per_volume, start_volume):
             tasks = [_fetch_content(fetcher, profile, ch, progress)
                      for ch in vol_chapters]
             fetched = await asyncio.gather(*tasks)

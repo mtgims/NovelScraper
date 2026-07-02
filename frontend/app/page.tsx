@@ -29,6 +29,28 @@ import { EmptyState } from "@/components/ui/empty-state";
 import { BookCardSkeleton } from "@/components/ui/skeleton";
 import { useBooks, useCollections, useReorderBooks } from "@/lib/queries";
 import type { Book } from "@/lib/types";
+import { cn } from "@/lib/utils";
+
+/**
+ * A drag ends with a trailing `click` that the browser fires wherever the
+ * pointer landed — which, after a reorder, is often a *different* card than the
+ * one dragged. That click would open a novel. Swallow exactly the next click
+ * (capture phase, anywhere) so a drop never navigates; the timeout releases it
+ * if no click follows.
+ */
+function suppressNextClick() {
+  const handler = (ev: MouseEvent) => {
+    ev.preventDefault();
+    ev.stopPropagation();
+    cleanup();
+  };
+  const cleanup = () => {
+    document.removeEventListener("click", handler, true);
+    clearTimeout(timer);
+  };
+  const timer = window.setTimeout(cleanup, 350);
+  document.addEventListener("click", handler, true);
+}
 
 export default function LibraryPage() {
   const { data: books, isLoading, isError } = useBooks();
@@ -36,6 +58,7 @@ export default function LibraryPage() {
   const reorder = useReorderBooks();
 
   const [tab, setTab] = useState<TabValue>("all");
+  const [slideDir, setSlideDir] = useState<"left" | "right">("right");
   const [orderIds, setOrderIds] = useState<number[]>([]);
   const [activeId, setActiveId] = useState<number | null>(null);
   const dragging = useRef(false);
@@ -46,9 +69,17 @@ export default function LibraryPage() {
     useSensor(KeyboardSensor, { coordinateGetter: sortableKeyboardCoordinates })
   );
 
-  // Keep local order synced with the server, except mid-drag.
+  // Keep local order synced with the server, except mid-drag. Keep the same
+  // array reference when the order is unchanged so we don't needlessly
+  // re-register the sortable cards (which would make the next drag feel laggy).
   useEffect(() => {
-    if (books && !dragging.current) setOrderIds(books.map((b) => b.id));
+    if (!books || dragging.current) return;
+    const serverOrder = books.map((b) => b.id);
+    setOrderIds((prev) =>
+      prev.length === serverOrder.length && prev.every((id, i) => id === serverOrder[i])
+        ? prev
+        : serverOrder
+    );
   }, [books]);
 
   // If the active collection is deleted, fall back to All.
@@ -57,6 +88,17 @@ export default function LibraryPage() {
       setTab("all");
     }
   }, [collections, tab]);
+
+  // Order of the tab bar (All + collections); used to slide the grid in the
+  // direction of the tab you pick — enter from the left when moving to a
+  // left-of-current collection, from the right when moving right.
+  const tabOrder = ["all", ...(collections ?? []).map((c) => String(c.id))];
+  const selectTab = (next: TabValue) => {
+    const from = tabOrder.indexOf(String(tab));
+    const to = tabOrder.indexOf(String(next));
+    setSlideDir(to < from ? "left" : "right");
+    setTab(next);
+  };
 
   const byId = new Map((books ?? []).map((b) => [b.id, b]));
   const ordered = orderIds
@@ -82,6 +124,7 @@ export default function LibraryPage() {
   const onDragEnd = (e: DragEndEvent) => {
     dragging.current = false;
     setActiveId(null);
+    suppressNextClick(); // a drag always ends with a trailing click — swallow it
     const { active, over } = e;
     if (!over || active.id === over.id) return;
     const from = visibleIds.indexOf(Number(active.id));
@@ -113,7 +156,7 @@ export default function LibraryPage() {
         <CollectionTabs
           collections={collections ?? []}
           active={tab}
-          onSelect={setTab}
+          onSelect={selectTab}
           counts={counts}
         />
       )}
@@ -161,17 +204,25 @@ export default function LibraryPage() {
           onDragCancel={() => {
             dragging.current = false;
             setActiveId(null);
+            suppressNextClick();
           }}
         >
           <SortableContext items={visibleIds} strategy={rectSortingStrategy}>
-            {/* keyed by tab so switching collections replays the fade/slide */}
-            <div
-              key={String(tab)}
-              className="grid animate-fade-in-up gap-5 sm:grid-cols-2 lg:grid-cols-3"
-            >
-              {visible.map((book) => (
-                <BookCard key={book.id} book={book} collections={collections ?? []} />
-              ))}
+            {/* overflow-x-clip contains the slide so it can't add a scrollbar,
+                while keeping vertical overflow (card menus) visible. Keyed by
+                tab so switching collections replays the directional slide. */}
+            <div className="overflow-x-clip">
+              <div
+                key={String(tab)}
+                className={cn(
+                  "grid gap-5 sm:grid-cols-2 lg:grid-cols-3",
+                  slideDir === "left" ? "animate-slide-in-left" : "animate-slide-in-right"
+                )}
+              >
+                {visible.map((book) => (
+                  <BookCard key={book.id} book={book} collections={collections ?? []} />
+                ))}
+              </div>
             </div>
           </SortableContext>
           <DragOverlay dropAnimation={{ duration: 200, easing: "cubic-bezier(0.2,0,0,1)" }}>

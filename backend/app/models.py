@@ -38,6 +38,7 @@ class Job(SQLModel, table=True):
     chapters_per_volume: int = 100
     delay: Optional[float] = None
     concurrency: Optional[int] = None
+    incremental: bool = False     # update mode: fetch only new chapters, append
 
     # progress / outcome
     total_chapters: int = 0
@@ -62,6 +63,9 @@ class Book(SQLModel, table=True):
     created_at: datetime = Field(default_factory=utcnow)
     # Manual library order (drag-to-reorder). Ties fall back to created_at desc.
     sort_order: int = Field(default=0)
+    rating: Optional[int] = Field(default=None)       # 1-5 stars; None = unrated
+    source_url: Optional[str] = Field(default=None)   # original URL, for re-scrape/update
+    updated_at: Optional[datetime] = Field(default=None)  # last successful scrape/update
 
 
 class Collection(SQLModel, table=True):
@@ -76,6 +80,13 @@ class Collection(SQLModel, table=True):
 class BookCollectionLink(SQLModel, table=True):
     book_id: int = Field(foreign_key="book.id", primary_key=True)
     collection_id: int = Field(foreign_key="collection.id", primary_key=True)
+
+
+class Setting(SQLModel, table=True):
+    """Simple persisted key/value app settings (editable from the UI), as opposed
+    to the env-only Settings in app.settings."""
+    key: str = Field(primary_key=True)
+    value: str
 
 
 class Volume(SQLModel, table=True):

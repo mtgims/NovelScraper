@@ -19,12 +19,17 @@ from ..models import Book, BookCollectionLink, Chapter, Collection, ReadingProgr
 from ..scraper.parser import count_words
 from ..settings import settings
 from ..tts import DEFAULT_VOICE, build_chunks, chunk_to_text, segment_paragraphs, tts
+from ..jobs.manager import DuplicateJobError, JobManager
+from .deps import get_manager
 from ..schemas import (
     BookCollectionsUpdate,
     BookRead,
     BookReorder,
+    BookUpdate,
     ChapterListItem,
     ChapterRead,
+    JobCreate,
+    JobRead,
     ProgressUpdate,
     ReadingProgressRead,
     VolumeRead,
@@ -98,8 +103,15 @@ def _book_read(session: Session, book: Book) -> BookRead:
     volumes = session.exec(
         select(Volume).where(Volume.book_id == book.id).order_by(Volume.number)
     ).all()
+    links = session.exec(
+        select(BookCollectionLink.collection_id).where(
+            BookCollectionLink.book_id == book.id
+        )
+    ).all()
     data = BookRead.model_validate(book)
     data.has_cover = _has_cover(book)
+    data.can_update = bool(book.source_url)
+    data.collection_ids = list(links)
     data.volumes = [VolumeRead.model_validate(v) for v in volumes]
     return data
 
@@ -130,6 +142,7 @@ def list_books(session: Session = Depends(get_session)):
     for book in books:
         data = BookRead.model_validate(book)
         data.has_cover = _has_cover(book)
+        data.can_update = bool(book.source_url)
         data.volumes = by_book.get(book.id, [])
         data.collection_ids = colls_by_book.get(book.id, [])
         result.append(data)
@@ -177,6 +190,37 @@ def get_book(book_id: int, session: Session = Depends(get_session)):
     if book is None:
         raise HTTPException(status_code=404, detail="Book not found")
     return _book_read(session, book)
+
+
+@router.patch("/{book_id}", response_model=BookRead)
+def update_book(book_id: int, body: BookUpdate, session: Session = Depends(get_session)):
+    """Edit book metadata (currently just the rating)."""
+    book = session.get(Book, book_id)
+    if book is None:
+        raise HTTPException(status_code=404, detail="Book not found")
+    if body.rating is not None:
+        book.rating = body.rating or None  # 0 clears the rating
+    session.add(book)
+    session.commit()
+    session.refresh(book)
+    return _book_read(session, book)
+
+
+@router.post("/{book_id}/update", response_model=JobRead, status_code=202)
+async def update_book_chapters(book_id: int, manager: JobManager = Depends(get_manager),
+                               session: Session = Depends(get_session)):
+    """Re-scrape the book from its original URL to pull in new chapters. Reuses
+    the normal scrape pipeline; rating, collections and reading progress live on
+    the book row and are preserved."""
+    book = session.get(Book, book_id)
+    if book is None:
+        raise HTTPException(status_code=404, detail="Book not found")
+    if not book.source_url:
+        raise HTTPException(status_code=400, detail="No source URL to update from")
+    try:
+        return manager.submit(JobCreate(url=book.source_url), incremental=True)
+    except DuplicateJobError:
+        raise HTTPException(status_code=409, detail="An update is already running")
 
 
 @router.get("/{book_id}/chapters", response_model=List[ChapterListItem])
