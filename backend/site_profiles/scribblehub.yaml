@@ -1,0 +1,31 @@
+# scribblehub.com — WordPress site. The chapter list (TOC) is served by the
+# admin-ajax.php endpoint via POST (a plain GET is 403'd); pagenum=-1 returns the
+# whole list in one response, newest-first, so reverse_chapters flips it to
+# reading order. Series metadata comes from the series page (source_url); chapter
+# text lives in #chp_raw.
+#
+# Book id is the numeric series id: /series/{id}/{slug}/
+name: scribblehub
+base_url: https://www.scribblehub.com
+enumeration: paginated
+book_url_regex: "/series/(?P<book>\\d+)"
+
+list_url_template: "{base_url}/wp-admin/admin-ajax.php"
+list_method: POST
+list_post_data:
+  action: wi_getreleases_pagination
+  pagenum: "-1"
+  mypostid: "{book}"
+list_container_selector: "ol.toc_ol"
+link_selector: "a.toc_a"
+reverse_chapters: true
+
+content_selector: "#chp_raw"
+
+book_title_selector: ".fic_title"
+book_author_selector: ".auth_name_fic"
+book_cover_selector: ".fic_image img"
+
+strip_selectors:
+  - script
+  - style

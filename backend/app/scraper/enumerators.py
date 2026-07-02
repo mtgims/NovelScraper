@@ -39,7 +39,15 @@ async def enumerate_paginated(fetcher: AsyncFetcher, profile: SiteProfile,
         url = _format_url(profile.list_url_template, profile.base_url, book.slug, page)
         # List pages are volatile (new chapters appear), so don't serve them
         # from cache; only chapter content is cached.
-        html = await fetcher.get_text(url, use_cache=False)
+        if profile.list_method.upper() == "POST":
+            data = {
+                k: v.format(base_url=profile.base_url.rstrip("/"),
+                            book=book.slug, page=page)
+                for k, v in (profile.list_post_data or {}).items()
+            }
+            html = await fetcher.post_text(url, data)
+        else:
+            html = await fetcher.get_text(url, use_cache=False)
         page_chapters = parse_chapter_list(html, profile)
         if not page_chapters:
             break
@@ -128,4 +136,8 @@ async def enumerate_chapters(fetcher: AsyncFetcher, profile: SiteProfile,
     strategy = _STRATEGIES.get(profile.enumeration)
     if strategy is None:  # validated by SiteProfile, but guard anyway
         raise ValueError(f"No enumerator for strategy '{profile.enumeration}'")
-    return await strategy(fetcher, profile, book, progress)
+    chapters = await strategy(fetcher, profile, book, progress)
+    if profile.reverse_chapters:
+        # TOC listed newest-first -> flip to oldest-first reading order.
+        chapters.reverse()
+    return chapters

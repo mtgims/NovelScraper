@@ -74,6 +74,14 @@ class SiteProfile:
     link_selector: str = "a"
     chapter_no_selector: Optional[str] = None
     chapter_title_selector: Optional[str] = None  # title element within a list item
+    # Some chapter lists are served by an AJAX endpoint that requires a POST
+    # (e.g. WordPress admin-ajax.php). Set list_method: POST and provide
+    # list_post_data; its values are templated with {base_url}/{book}/{page}.
+    list_method: str = "GET"
+    list_post_data: Optional[Dict[str, str]] = None
+    # Reverse the enumerated order for TOCs listed newest-first, so downstream
+    # sees oldest-first reading order.
+    reverse_chapters: bool = False
 
     # How to get each chapter's URL from the matched list item. Default reads the
     # href attribute; some sites put the URL in onclick/data-* — set link_attr to
@@ -130,6 +138,9 @@ class SiteProfile:
             )
         if self.max_pages < 1:
             raise ProfileError(f"Profile '{self.name}': max_pages must be >= 1")
+        if self.list_method.upper() not in ("GET", "POST"):
+            raise ProfileError(
+                f"Profile '{self.name}': list_method must be GET or POST")
         if self.enumeration == "paginated":
             missing = [k for k in ("list_url_template", "list_container_selector")
                        if not getattr(self, k)]

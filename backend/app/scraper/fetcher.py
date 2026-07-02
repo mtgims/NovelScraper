@@ -146,15 +146,21 @@ class AsyncFetcher:
         digest = hashlib.sha256(url.encode("utf-8")).hexdigest()
         return self._cache_dir / f"{digest}.html"
 
-    async def _request(self, url: str, binary: bool = False):
+    async def _request(self, url: str, binary: bool = False, data=None):
         """One logical fetch, following redirects manually so every hop is
         SSRF-validated. Raises RetryableFetchError (transient) or FetchError
         (fatal: bad status, oversize, disallowed target, too many redirects).
+
+        When ``data`` is given the initial request is a POST; a redirect drops
+        the body and continues as GET (standard POST->GET redirect semantics).
         """
         assert self._session is not None
         current = url
         for _ in range(MAX_REDIRECTS + 1):
-            resp = await self._session.get(current, allow_redirects=False)
+            if data is not None:
+                resp = await self._session.post(current, data=data, allow_redirects=False)
+            else:
+                resp = await self._session.get(current, allow_redirects=False)
             status = resp.status_code
             if status in REDIRECT_STATUS:
                 location = resp.headers.get("Location")
@@ -164,6 +170,7 @@ class AsyncFetcher:
                         status=status)
                 current = urljoin(current, location)
                 await self._validate_url(current)  # fatal if internal/non-http
+                data = None  # a redirected POST follows as GET
                 continue
             if status < 400:
                 self._limiter.on_success()
@@ -180,7 +187,7 @@ class AsyncFetcher:
                              status=status)
         raise FetchError(f"Too many redirects starting at {url}", url=url)
 
-    async def _fetch_with_retry(self, url: str, binary: bool = False):
+    async def _fetch_with_retry(self, url: str, binary: bool = False, data=None):
         assert self._session is not None
         # Validate once up front — a fatal validation error must not be retried.
         await self._validate_url(url)
@@ -192,7 +199,7 @@ class AsyncFetcher:
             async with self._semaphore:
                 await self._limiter.acquire()
                 try:
-                    return await self._request(url, binary=binary)
+                    return await self._request(url, binary=binary, data=data)
                 except RetryableFetchError as e:
                     last_exc, retry_after = e, e.retry_after
                 except NETWORK_ERRORS as e:
@@ -234,6 +241,14 @@ class AsyncFetcher:
             except OSError as e:
                 logger.warning("failed to write cache for %s: %s", url, e)
         return text
+
+    async def post_text(self, url: str, data: dict) -> str:
+        """POST form data and return the response text. Not cached (these
+        responses are dynamic); robots, SSRF validation, retries and backoff
+        all still apply. Used for AJAX chapter lists (e.g. admin-ajax.php)."""
+        if self._robots is not None and not await self._robots.allowed(url):
+            raise FetchError(f"Disallowed by robots.txt: {url}", url=url)
+        return await self._fetch_with_retry(url, data=data)
 
     async def get_bytes(self, url: str) -> bytes:
         """Fetch a URL as raw bytes (e.g. a cover image). No cache; SSRF-guarded
