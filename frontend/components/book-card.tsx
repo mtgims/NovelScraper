@@ -232,6 +232,14 @@ export function BookCard({
         <div
           ref={menuRef}
           onPointerDown={(e) => e.stopPropagation()}
+          // The menu is portaled to <body>, so React re-dispatches its events up
+          // to this card — where dnd-kit's keyboard sensor listens. Without this,
+          // typing Space/Enter in the input below leaks to the sensor: Space gets
+          // preventDefault'd (so it never types) and starts a phantom drag. Keep
+          // Escape flowing so the window handler can still close the menu.
+          onKeyDown={(e) => {
+            if (e.key !== "Escape") e.stopPropagation();
+          }}
           onClick={(e) => e.preventDefault()}
           onContextMenu={(e) => e.preventDefault()}
           style={{ left: menuAt.x, top: menuAt.y }}
