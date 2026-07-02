@@ -3,17 +3,52 @@
 // no synthesis work — it only serves the text manifest. Falls back to the
 // server engine (see tts-player) when WebGPU isn't available.
 //
-// The model (~163MB fp16) downloads once and is cached by the browser (Cache
-// Storage, managed by transformers.js), so only the first Listen pays for it.
+// The model downloads once and is cached by the browser (Cache Storage, managed
+// by transformers.js), so only the first Listen pays for it. The precision
+// (dtype) is chosen from the GPU's capabilities — see pickDtype.
 
 import type { KokoroTTS } from "kokoro-js";
 
 const MODEL_ID = "onnx-community/Kokoro-82M-v1.0-ONNX";
-const DTYPE = "fp16" as const; // balance of quality / size / WebGPU reliability
+
+// fp16 (~163MB) is the best size/speed balance but needs the adapter's
+// `shader-f16` feature. q8 (~90MB, 8-bit quantized) needs no f16 and runs on far
+// more GPUs — notably some mobile ones — at virtually identical speech quality.
+type Dtype = "fp16" | "q8";
+
+interface GpuAdapterLike {
+  features: { has(name: string): boolean };
+}
+interface GpuLike {
+  requestAdapter(): Promise<GpuAdapterLike | null>;
+}
+
+function gpu(): GpuLike | null {
+  if (typeof navigator === "undefined" || !("gpu" in navigator)) return null;
+  return (navigator as unknown as { gpu: GpuLike }).gpu;
+}
 
 /** True if the browser exposes the WebGPU API at all. Safe during SSR. */
 export function browserTtsSupported(): boolean {
-  return typeof navigator !== "undefined" && "gpu" in navigator;
+  return gpu() !== null;
+}
+
+// Request the WebGPU adapter once and reuse it (both the usability check and the
+// dtype choice need it; requesting twice is wasteful).
+let adapterPromise: Promise<GpuAdapterLike | null> | null = null;
+function getAdapter(): Promise<GpuAdapterLike | null> {
+  if (!adapterPromise) {
+    adapterPromise = (async () => {
+      const g = gpu();
+      if (!g) return null;
+      try {
+        return await g.requestAdapter();
+      } catch {
+        return null;
+      }
+    })();
+  }
+  return adapterPromise;
 }
 
 /**
@@ -23,14 +58,18 @@ export function browserTtsSupported(): boolean {
  * async check confirms a real adapter before we route audio to the browser.
  */
 export async function browserTtsUsable(): Promise<boolean> {
-  if (!browserTtsSupported()) return false;
-  try {
-    const gpu = (navigator as unknown as { gpu: { requestAdapter(): Promise<unknown> } }).gpu;
-    const adapter = await gpu.requestAdapter();
-    return !!adapter;
-  } catch {
-    return false;
-  }
+  return (await getAdapter()) !== null;
+}
+
+/**
+ * Pick the model precision from the GPU's capabilities. fp16 requires the
+ * `shader-f16` WebGPU feature; when the adapter doesn't expose it (common on
+ * some mobile GPUs) we drop to q8 rather than letting fp16 synthesis throw and
+ * bounce the user to the server. This keeps TTS on-device on more hardware.
+ */
+async function pickDtype(): Promise<Dtype> {
+  const adapter = await getAdapter();
+  return adapter?.features.has("shader-f16") ? "fp16" : "q8";
 }
 
 let enginePromise: Promise<KokoroTTS> | null = null;
@@ -68,8 +107,9 @@ export function loadBrowserTts(): Promise<KokoroTTS> {
   if (!enginePromise) {
     enginePromise = (async () => {
       const { KokoroTTS } = await import("kokoro-js");
+      const dtype = await pickDtype();
       const tts = await KokoroTTS.from_pretrained(MODEL_ID, {
-        dtype: DTYPE,
+        dtype,
         device: "webgpu",
         progress_callback: (p: unknown) => {
           const e = p as { file?: string; loaded?: number; total?: number };
