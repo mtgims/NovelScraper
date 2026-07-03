@@ -62,10 +62,15 @@ type Props = {
   // Current reading position as a 0..1 fraction of the chapter, so narration can
   // start where the reader is rather than at the top.
   getReadingFraction?: () => number;
+  // Metadata for the OS media session (lock screen / notification controls).
+  mediaTitle?: string;
+  mediaSubtitle?: string;
+  mediaArtwork?: string;
 };
 
 export const TtsPlayer = forwardRef<TtsPlayerHandle, Props>(function TtsPlayer(
-  { bookId, position, onSegments, onHighlight, onComplete, getReadingFraction },
+  { bookId, position, onSegments, onHighlight, onComplete, getReadingFraction,
+    mediaTitle, mediaSubtitle, mediaArtwork },
   ref
 ) {
   const { data: info } = useVoices();
@@ -350,6 +355,98 @@ export const TtsPlayer = forwardRef<TtsPlayerHandle, Props>(function TtsPlayer(
 
   // Stop when the chapter changes.
   useEffect(() => stop, [position, stop]);
+
+  // --- OS media session: lock screen / notification controls + background ---
+  // Actions are read through a ref so the (once-registered) handlers always call
+  // the latest state without re-binding.
+  const mediaActionsRef = useRef<Record<string, () => void>>({});
+  mediaActionsRef.current = {
+    play: () => {
+      const a = audioRef.current;
+      if (a && mode !== "playing") a.play().then(() => setMode("playing")).catch(() => {});
+    },
+    pause: () => {
+      const a = audioRef.current;
+      if (a && mode === "playing") {
+        a.pause();
+        setMode("paused");
+      }
+    },
+    prev: () => goChunk(chunkIdx.current - 1),
+    next: () => goChunk(chunkIdx.current + 1),
+  };
+
+  useEffect(() => {
+    if (typeof navigator === "undefined" || !("mediaSession" in navigator)) return;
+    const ms = navigator.mediaSession;
+    const bind = (action: MediaSessionAction, key: string) => {
+      try {
+        ms.setActionHandler(action, () => mediaActionsRef.current[key]?.());
+      } catch {
+        /* action unsupported */
+      }
+    };
+    bind("play", "play");
+    bind("pause", "pause");
+    bind("previoustrack", "prev");
+    bind("nexttrack", "next");
+    bind("seekbackward", "prev");
+    bind("seekforward", "next");
+    return () => {
+      (
+        ["play", "pause", "previoustrack", "nexttrack", "seekbackward", "seekforward"] as MediaSessionAction[]
+      ).forEach((a) => {
+        try {
+          ms.setActionHandler(a, null);
+        } catch {
+          /* ignore */
+        }
+      });
+    };
+  }, []);
+
+  // Metadata + playback state (drives what the lock screen shows).
+  useEffect(() => {
+    if (typeof navigator === "undefined" || !("mediaSession" in navigator)) return;
+    const ms = navigator.mediaSession;
+    const active = mode !== "idle";
+    if (active) {
+      try {
+        ms.metadata = new MediaMetadata({
+          title: mediaTitle || "Narration",
+          artist: mediaSubtitle || "NovelScraper",
+          album: mediaSubtitle || "NovelScraper",
+          artwork: mediaArtwork
+            ? [
+                { src: mediaArtwork, sizes: "256x384", type: "image/jpeg" },
+                { src: mediaArtwork, sizes: "512x768", type: "image/jpeg" },
+              ]
+            : [],
+        });
+      } catch {
+        /* MediaMetadata unsupported */
+      }
+    } else {
+      ms.metadata = null;
+    }
+    ms.playbackState = mode === "playing" ? "playing" : mode === "paused" ? "paused" : "none";
+  }, [mode, mediaTitle, mediaSubtitle, mediaArtwork]);
+
+  // Progress bar on the lock screen (from the estimated elapsed/total).
+  useEffect(() => {
+    if (typeof navigator === "undefined" || !("mediaSession" in navigator)) return;
+    const ms = navigator.mediaSession;
+    if (mode === "idle" || totalSec <= 0 || typeof ms.setPositionState !== "function") return;
+    try {
+      ms.setPositionState({
+        duration: Math.max(totalSec, elapsedSec, 0.001),
+        position: Math.max(0, Math.min(elapsedSec, totalSec)),
+        playbackRate: speed || 1,
+      });
+    } catch {
+      /* setPositionState unsupported */
+    }
+  }, [mode, elapsedSec, totalSec, speed]);
 
   const start = useCallback(async () => {
     setMode("loading");

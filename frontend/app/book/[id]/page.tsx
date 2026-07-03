@@ -143,7 +143,7 @@ export default function BookDetailPage() {
       </Link>
 
       <PageHeader title={book.title} kicker={`${book.author} · ${book.site}`}>
-        <div className="flex gap-2">
+        <div className="flex flex-wrap gap-2">
           <Link href={`/read/${book.id}/${resumeAt}`}>
             <Button size="sm">
               {hasStarted ? <Play size={15} /> : <BookOpen size={15} />}

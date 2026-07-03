@@ -12,11 +12,11 @@ export function PageHeader({
   return (
     <header className="mb-10">
       {kicker && <p className="kicker mb-3">{kicker}</p>}
-      <div className="rule-accent flex items-end justify-between gap-4 pt-4">
-        <h1 className="min-w-0 font-display text-4xl md:text-5xl tracking-tight leading-none break-words">
+      <div className="rule-accent flex flex-col items-start gap-3 pt-4 sm:flex-row sm:items-end sm:justify-between sm:gap-4">
+        <h1 className="min-w-0 font-display text-3xl sm:text-4xl md:text-5xl tracking-tight leading-none break-words">
           {title}
         </h1>
-        {children && <div className="shrink-0 pb-1">{children}</div>}
+        {children && <div className="w-full shrink-0 sm:w-auto sm:pb-1">{children}</div>}
       </div>
     </header>
   );

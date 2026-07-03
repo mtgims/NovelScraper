@@ -5,10 +5,12 @@ import {
   BarChart3,
   BookMarked,
   Library,
+  Menu,
   PanelLeft,
   PanelLeftClose,
   PlusSquare,
   Settings,
+  X,
 } from "lucide-react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
@@ -32,17 +34,20 @@ function NavLink({
   label,
   icon: Icon,
   active,
+  onNavigate,
 }: {
   href: string;
   label: string;
   icon: typeof Library;
   active: boolean;
+  onNavigate?: () => void;
 }) {
   return (
     <Link
       href={href}
+      onClick={onNavigate}
       className={cn(
-        "group flex items-center gap-3 px-3 py-2 text-sm rounded-sm border-l-2 transition-colors duration-150 ease-out",
+        "group flex items-center gap-3 rounded-sm border-l-2 px-3 py-2.5 text-sm transition-colors duration-150 ease-out",
         active
           ? "bg-accent-soft text-foreground border-accent"
           : "text-muted-foreground hover:text-foreground hover:bg-muted/60 border-transparent"
@@ -51,9 +56,7 @@ function NavLink({
       <Icon
         size={17}
         className={cn(
-          active
-            ? "text-accent"
-            : "text-muted-foreground group-hover:text-foreground"
+          active ? "text-accent" : "text-muted-foreground group-hover:text-foreground"
         )}
       />
       <span>{label}</span>
@@ -63,22 +66,22 @@ function NavLink({
 
 export function AppShell({ children }: { children: ReactNode }) {
   const pathname = usePathname();
+  // Desktop: collapsible grid sidebar. Mobile: off-canvas drawer.
   const [collapsed, setCollapsed] = useState(false);
-  // `ready` gates the transitions so restoring a collapsed sidebar on load snaps
-  // into place instead of animating open→closed on every refresh.
+  const [mobileOpen, setMobileOpen] = useState(false);
   const [ready, setReady] = useState(false);
 
   const inReader = pathname.startsWith("/read/");
 
-  // Collapse automatically inside the reader for a distraction-free page;
-  // elsewhere use the saved preference. Runs on navigation (client-only, so no
-  // hydration mismatch).
+  // On navigation: collapse the desktop sidebar inside the reader (else use the
+  // saved preference), and always close the mobile drawer.
   useEffect(() => {
     const pref = localStorage.getItem(SIDEBAR_KEY) === "1";
     setCollapsed(inReader || pref);
+    setMobileOpen(false);
     const id = requestAnimationFrame(() => setReady(true));
     return () => cancelAnimationFrame(id);
-  }, [inReader]);
+  }, [inReader, pathname]);
 
   const setSidebar = (next: boolean) => {
     setCollapsed(next);
@@ -91,64 +94,101 @@ export function AppShell({ children }: { children: ReactNode }) {
     <div
       className={cn(
         "min-h-dvh md:grid",
-        ready && "transition-[grid-template-columns] duration-300 ease-in-out",
+        ready && "md:transition-[grid-template-columns] md:duration-300 md:ease-in-out",
         collapsed ? "md:grid-cols-[0rem_1fr]" : "md:grid-cols-[16rem_1fr]"
       )}
     >
-      {/* Always mounted so the collapse can animate. The column width animates to
-          0; the inner keeps a fixed 16rem width and is clipped by overflow-hidden
-          so its content doesn't reflow mid-animation. */}
+      {/* Mobile drawer backdrop. */}
+      <div
+        aria-hidden
+        onClick={() => setMobileOpen(false)}
+        className={cn(
+          "fixed inset-0 z-40 bg-black/50 transition-opacity duration-300 md:hidden",
+          mobileOpen ? "opacity-100" : "pointer-events-none opacity-0"
+        )}
+      />
+
+      {/* Sidebar: off-canvas drawer on mobile, sticky grid column on desktop. */}
       <aside
         className={cn(
-          "overflow-hidden border-border md:sticky md:top-0 md:h-dvh md:border-r",
-          collapsed ? "hidden md:flex md:border-r-0" : "flex border-b md:border-b-0"
+          "fixed inset-y-0 left-0 z-50 w-72 max-w-[85vw] border-r border-border bg-background shadow-xl transition-transform duration-300 ease-in-out",
+          mobileOpen ? "translate-x-0" : "-translate-x-full",
+          "md:sticky md:top-0 md:z-auto md:h-dvh md:w-auto md:max-w-none md:translate-x-0 md:overflow-hidden md:bg-transparent md:shadow-none md:transition-none",
+          collapsed && "md:border-r-0"
         )}
       >
         <div
           className={cn(
-            "flex w-full flex-col md:w-64",
-            collapsed && "pointer-events-none"
+            "flex h-full w-full flex-col md:w-64",
+            collapsed && "md:pointer-events-none"
           )}
         >
-          <div className="flex items-center justify-between gap-2 px-5 py-6 border-b border-border">
-            <Link href="/" className="flex min-w-0 items-center gap-2">
+          <div className="flex items-center justify-between gap-2 border-b border-border px-5 py-5 md:py-6">
+            <Link
+              href="/"
+              onClick={() => setMobileOpen(false)}
+              className="flex min-w-0 items-center gap-2"
+            >
               <BookMarked size={20} className="shrink-0 text-accent" />
-              <span className="truncate font-display text-xl tracking-tight">
-                NovelScraper
-              </span>
+              <span className="truncate font-display text-xl tracking-tight">NovelScraper</span>
             </Link>
+            {/* Mobile: close drawer. Desktop: collapse sidebar. */}
+            <button
+              type="button"
+              onClick={() => setMobileOpen(false)}
+              aria-label="Close menu"
+              className="shrink-0 rounded-sm p-1 text-muted-foreground transition-colors hover:bg-muted hover:text-foreground md:hidden"
+            >
+              <X size={20} />
+            </button>
             <button
               type="button"
               onClick={() => setSidebar(true)}
               aria-label="Hide sidebar"
               title="Hide sidebar"
-              className="shrink-0 rounded-sm p-1 text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
+              className="hidden shrink-0 rounded-sm p-1 text-muted-foreground transition-colors hover:bg-muted hover:text-foreground md:inline-flex"
             >
               <PanelLeftClose size={18} />
             </button>
           </div>
 
-          <nav className="flex-1 px-3 py-4 space-y-1">
+          <nav className="flex-1 space-y-1 overflow-y-auto px-3 py-4">
             {NAV.map((item) => (
               <NavLink
                 key={item.href}
                 {...item}
-                active={
-                  item.exact
-                    ? pathname === item.href
-                    : pathname.startsWith(item.href)
-                }
+                active={item.exact ? pathname === item.href : pathname.startsWith(item.href)}
+                onNavigate={() => setMobileOpen(false)}
               />
             ))}
           </nav>
 
-          <div className="p-4 border-t border-border">
+          <div className="border-t border-border p-4">
             <ThemePicker />
           </div>
         </div>
       </aside>
 
       <main className="min-w-0">
+        {/* Mobile top bar (not in the reader, which has its own toolbar). */}
+        {!inReader && (
+          <header className="sticky top-0 z-30 flex items-center gap-3 border-b border-border bg-background/90 px-4 py-2.5 backdrop-blur md:hidden">
+            <button
+              type="button"
+              onClick={() => setMobileOpen(true)}
+              aria-label="Open menu"
+              className="rounded-sm p-1 text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
+            >
+              <Menu size={22} />
+            </button>
+            <Link href="/" className="flex items-center gap-2">
+              <BookMarked size={18} className="text-accent" />
+              <span className="font-display text-lg tracking-tight">NovelScraper</span>
+            </Link>
+          </header>
+        )}
+
+        {/* Desktop: show the collapsed sidebar again. */}
         <button
           type="button"
           onClick={() => setSidebar(false)}
@@ -157,17 +197,18 @@ export function AppShell({ children }: { children: ReactNode }) {
           aria-hidden={!collapsed}
           tabIndex={collapsed ? 0 : -1}
           className={cn(
-            "fixed left-3 top-3 z-50 rounded-md border border-border bg-card/95 p-1.5 text-muted-foreground shadow-sm backdrop-blur hover:text-foreground",
+            "fixed left-3 top-3 z-30 hidden rounded-md border border-border bg-card/95 p-1.5 text-muted-foreground shadow-sm backdrop-blur hover:text-foreground md:block",
             ready && "transition-opacity duration-200",
             collapsed ? "opacity-100 delay-150" : "pointer-events-none opacity-0"
           )}
         >
           <PanelLeft size={18} />
         </button>
+
         <div
           className={cn(
-            "mx-auto max-w-5xl px-6 py-10 md:px-12 md:py-14",
-            collapsed && "pt-16 md:pt-14"
+            "mx-auto max-w-5xl px-4 py-6 sm:px-6 md:px-12 md:py-14",
+            collapsed && "md:pt-16"
           )}
         >
           {children}

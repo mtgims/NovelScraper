@@ -1,4 +1,4 @@
-import type { Metadata } from "next";
+import type { Metadata, Viewport } from "next";
 import {
   JetBrains_Mono,
   Playfair_Display,
@@ -28,10 +28,19 @@ const mono = JetBrains_Mono({
 export const metadata: Metadata = {
   title: "NovelScraper",
   description: "Scrape web novels into a private, typeset library.",
+  // Behave like an installable app on mobile (full-screen when added to home).
+  appleWebApp: { capable: true, statusBarStyle: "black-translucent", title: "NovelScraper" },
   // The app ships its own themes (next-themes). Tell the Dark Reader extension
   // to leave the page alone — otherwise it rewrites the DOM before React
   // hydrates, causing hydration-mismatch errors (the dev overlay's red badge).
   other: { "darkreader-lock": "1" },
+};
+
+export const viewport: Viewport = {
+  width: "device-width",
+  initialScale: 1,
+  // Draw under the notch / rounded corners on phones.
+  viewportFit: "cover",
 };
 
 export default function RootLayout({

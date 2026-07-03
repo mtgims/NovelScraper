@@ -8,8 +8,8 @@ import { useCallback, useEffect, useRef, useState } from "react";
 
 import { Button } from "@/components/ui/button";
 import { TtsPlayer, type TtsPlayerHandle } from "@/components/tts-player";
-import { api, API_BASE } from "@/lib/api";
-import { useChapter, useChapters, useProgress } from "@/lib/queries";
+import { api, API_BASE, coverUrl } from "@/lib/api";
+import { useBook, useChapter, useChapters, useProgress } from "@/lib/queries";
 import { cn } from "@/lib/utils";
 
 const SIZE_KEY = "ns-reading-scale";
@@ -76,6 +76,7 @@ export default function ReaderPage() {
   const qc = useQueryClient();
 
   const { data: chapter, isLoading, isError } = useChapter(bookId, position);
+  const { data: book } = useBook(bookId);
   const { data: progress } = useProgress(bookId);
   const { data: chapterList } = useChapters(bookId);
   const [clean, setClean] = useState<string | null>(null);
@@ -417,6 +418,9 @@ export default function ReaderPage() {
         onHighlight={setHighlight}
         onComplete={markRead}
         getReadingFraction={() => fracRef.current}
+        mediaTitle={chapter.title || `Chapter ${chapter.number || position}`}
+        mediaSubtitle={book?.title}
+        mediaArtwork={book?.has_cover ? coverUrl(bookId) : undefined}
       />
 
       {/* Only shown while narrating and the user has scrolled away from the

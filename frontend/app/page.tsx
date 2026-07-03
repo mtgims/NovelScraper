@@ -162,7 +162,7 @@ export default function LibraryPage() {
       )}
 
       {isLoading && (
-        <div className="grid gap-5 sm:grid-cols-2 lg:grid-cols-3">
+        <div className="grid grid-cols-2 gap-3 sm:gap-5 lg:grid-cols-3">
           {Array.from({ length: 6 }).map((_, i) => (
             <BookCardSkeleton key={i} />
           ))}
@@ -215,7 +215,7 @@ export default function LibraryPage() {
               <div
                 key={String(tab)}
                 className={cn(
-                  "grid gap-5 sm:grid-cols-2 lg:grid-cols-3",
+                  "grid grid-cols-2 gap-3 sm:gap-5 lg:grid-cols-3",
                   slideDir === "left" ? "animate-slide-in-left" : "animate-slide-in-right"
                 )}
               >
