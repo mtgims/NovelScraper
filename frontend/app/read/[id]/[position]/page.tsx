@@ -87,13 +87,20 @@ export default function ReaderPage() {
   const playerRef = useRef<TtsPlayerHandle>(null);
   const articleRef = useRef<HTMLElement>(null);
   const markedRef = useRef(false);
-  const restoredRef = useRef(false);
   const fracRef = useRef(0);            // current reading fraction (for TTS + save)
   const hadSegmentsRef = useRef(false); // previous read-along state (TTS close)
-  // Saving is gated until the restore has run (or the user has scrolled), so a
-  // scroll event fired at the top before restore can't overwrite the stored
-  // position with 0.
-  const saveEnabledRef = useRef(false);
+  // The saved position to restore to, captured synchronously per chapter before
+  // anything can overwrite it.
+  const targetRef = useRef(0);
+  // Timestamp of the last real user scroll input (wheel/touch/keys). Only
+  // user-caused scrolls are persisted — this excludes the framework's
+  // scroll-to-top on navigation, which otherwise overwrote the saved position
+  // with 0 on the way out (the actual bug behind "only browser-back works").
+  const lastUserIntentRef = useRef(0);
+  // Set when the user scrolls themselves — cancels a pending restore so it never
+  // fights active reading. A shared ref (not a per-effect flag) so it survives
+  // StrictMode's double-invoke and effect re-runs.
+  const restoreCancelledRef = useRef(false);
 
   const scrollToFraction = useCallback((frac: number) => {
     const doc = document.documentElement;
@@ -120,13 +127,47 @@ export default function ReaderPage() {
       ?.scrollIntoView({ block: "center", behavior: "smooth" });
   }, [highlight]);
 
+  // The user starting to scroll themselves means: their position is now real
+  // (enable saving, even if the async restore hasn't run yet) and any pending
+  // restore should stand down. Mounted independently of content so it's active
+  // immediately, before dompurify/restore.
+  useEffect(() => {
+    const takeOver = () => {
+      restoreCancelledRef.current = true;
+      lastUserIntentRef.current = Date.now();
+    };
+    const onKey = (e: KeyboardEvent) => {
+      if (
+        ["ArrowDown", "ArrowUp", "PageDown", "PageUp", "Home", "End", " ", "Spacebar"].includes(
+          e.key
+        )
+      )
+        takeOver();
+    };
+    window.addEventListener("wheel", takeOver, { passive: true });
+    window.addEventListener("touchmove", takeOver, { passive: true });
+    window.addEventListener("keydown", onKey);
+    return () => {
+      window.removeEventListener("wheel", takeOver);
+      window.removeEventListener("touchmove", takeOver);
+      window.removeEventListener("keydown", onKey);
+    };
+  }, []);
+
   // --- sanitize content (client-only); reset per-chapter state ---
   useEffect(() => {
     setClean(null);
     markedRef.current = false;
-    restoredRef.current = false;
-    saveEnabledRef.current = false;
+    restoreCancelledRef.current = false;
+    lastUserIntentRef.current = 0;
     fracRef.current = 0;
+    // Capture the saved position for THIS chapter now, before any scroll event
+    // can overwrite it.
+    try {
+      targetRef.current = parseFloat(localStorage.getItem(posKey(bookId, position)) || "0") || 0;
+    } catch {
+      targetRef.current = 0;
+    }
     setChapterPct(0);
     if (!chapter?.content) return;
     let alive = true;
@@ -136,7 +177,7 @@ export default function ReaderPage() {
     return () => {
       alive = false;
     };
-  }, [chapter?.content]);
+  }, [chapter?.content, bookId, position]);
 
   const markRead = useCallback(() => {
     if (markedRef.current) return;
@@ -155,22 +196,17 @@ export default function ReaderPage() {
     }
   }, [bookId, position]);
 
-  // Restore the saved position for THIS chapter, once, after layout settles.
+  // Restore the saved position for THIS chapter, after layout settles (images +
+  // fonts change the page height for a while). Idempotent and cancel-aware, so
+  // it's safe to run more than once (StrictMode / clean changes) and never
+  // fights a user who has already started scrolling.
   useEffect(() => {
-    if (restoredRef.current || clean === null) return;
-    restoredRef.current = true;
+    if (clean === null) return;
 
-    let target = 0;
-    try {
-      target = parseFloat(localStorage.getItem(posKey(bookId, position)) || "0") || 0;
-    } catch {
-      /* localStorage unavailable */
-    }
-
-    // Nothing to restore: enable saving immediately; if the chapter fits on one
-    // screen (never scrolled), count it as read once laid out.
+    const target = targetRef.current;
+    // Nothing to restore: mark short chapters read once laid out (they never
+    // reach the scroll-to-bottom mark).
     if (!(target > 0)) {
-      saveEnabledRef.current = true;
       waitForContentReady(articleRef.current, 1500).then(() => {
         const doc = document.documentElement;
         if (doc.scrollHeight - doc.clientHeight <= 4) markRead();
@@ -178,40 +214,29 @@ export default function ReaderPage() {
       return;
     }
 
-    // Restore, but never fight the user: if they start scrolling themselves
-    // before the (async) restore fires, cancel it and let their position save.
-    let cancelled = false;
-    const cancel = () => {
-      if (cancelled) return;
-      cancelled = true;
-      saveEnabledRef.current = true;
+    // Relentlessly re-assert the target for a short window. Deliberately robust
+    // to timing: it beats the framework's scroll-to-top on navigation,
+    // StrictMode's double-invoke, and late layout (re-applying the *fraction*
+    // tracks the page growing as images load). Stops the instant the user
+    // scrolls (restoreCancelledRef) so it never fights reading.
+    let raf = 0;
+    const start = performance.now();
+    const tick = () => {
+      if (restoreCancelledRef.current) return;
+      scrollToFraction(target);
+      if (performance.now() - start < 1500) raf = requestAnimationFrame(tick);
     };
-    const onKey = (e: KeyboardEvent) => {
-      if (
-        ["ArrowDown", "ArrowUp", "PageDown", "PageUp", "Home", "End", " ", "Spacebar"].includes(
-          e.key
-        )
-      )
-        cancel();
-    };
-    window.addEventListener("wheel", cancel, { passive: true });
-    window.addEventListener("touchmove", cancel, { passive: true });
-    window.addEventListener("keydown", onKey);
-
+    raf = requestAnimationFrame(tick);
+    // Slow images can finish after the loop window; apply once more when ready.
+    let stale = false;
     waitForContentReady(articleRef.current).then(() => {
-      if (!cancelled) scrollToFraction(target);
-      // Enable saving only now, so the restore itself is what gets persisted
-      // (idempotent) rather than a transient pre-restore position.
-      saveEnabledRef.current = true;
+      if (!stale && !restoreCancelledRef.current) scrollToFraction(target);
     });
-
     return () => {
-      cancelled = true;
-      window.removeEventListener("wheel", cancel);
-      window.removeEventListener("touchmove", cancel);
-      window.removeEventListener("keydown", onKey);
+      cancelAnimationFrame(raf);
+      stale = true;
     };
-  }, [clean, bookId, position, markRead, scrollToFraction]);
+  }, [clean, markRead, scrollToFraction]);
 
   // When the TTS player closes, the content swaps from the read-along back to
   // the plain chapter (a different height); re-apply the current fraction so the
@@ -238,7 +263,12 @@ export default function ReaderPage() {
         const frac = max > 4 ? Math.min(1, el.scrollTop / max) : 0;
         fracRef.current = frac;
         setChapterPct(frac);
-        if (saveEnabledRef.current) {
+        // Persist only scrolls the user actually caused — a scroll event within
+        // ~300ms of real wheel/touch/key input. Wheel/trackpad momentum keeps
+        // firing wheel events, so this bridges the gap between them without being
+        // wide enough to catch the framework's scroll-to-top on navigation
+        // (which happens well after you've stopped scrolling and clicked a link).
+        if (Date.now() - lastUserIntentRef.current < 300) {
           try {
             localStorage.setItem(posKey(bookId, position), frac.toFixed(4));
           } catch {
