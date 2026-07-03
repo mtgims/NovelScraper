@@ -59,13 +59,6 @@ export function useProgress(bookId: number) {
     queryKey: ["progress", bookId],
     queryFn: () => api.getProgress(bookId),
     enabled: Number.isFinite(bookId),
-    // The reader keeps this cache authoritative via setQueryData on every scroll
-    // save, and mutations invalidate it explicitly. Don't auto-refetch on mount/
-    // focus: a refetch racing the just-fired save PUT can read the old scroll
-    // (0) and clobber the cache, so re-entering a chapter would start at the top.
-    refetchOnMount: false,
-    refetchOnWindowFocus: false,
-    staleTime: Infinity,
   });
 }
 
