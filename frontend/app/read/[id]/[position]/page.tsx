@@ -7,10 +7,10 @@ import { useParams, useRouter } from "next/navigation";
 import { useCallback, useEffect, useRef, useState } from "react";
 
 import { Button } from "@/components/ui/button";
-import { ThemeMenu } from "@/components/theme-picker";
 import { TtsPlayer, type TtsPlayerHandle } from "@/components/tts-player";
 import { api, API_BASE } from "@/lib/api";
 import { useChapter, useProgress } from "@/lib/queries";
+import type { ReadingProgress } from "@/lib/types";
 import { cn } from "@/lib/utils";
 
 const SIZE_KEY = "ns-reading-scale";
@@ -144,6 +144,20 @@ export default function ReaderPage() {
       .catch(() => {});
   }, [bookId, position, qc]);
 
+  // Persist scroll to the backend AND the query cache. Updating the cache is
+  // essential: on client-side re-entry (Contents -> Continue, no reload) the
+  // reader reads progress from the cache — if we only wrote the backend, it
+  // would read the stale cached scroll (0) and never restore, landing at the top.
+  const persistScroll = useCallback(
+    (frac: number) => {
+      api.updateProgress(bookId, { last_position: position, scroll: frac }).catch(() => {});
+      qc.setQueryData<ReadingProgress>(["progress", bookId], (old) =>
+        old ? { ...old, last_position: position, scroll: frac } : old
+      );
+    },
+    [bookId, position, qc]
+  );
+
   // Set the resume point when a chapter opens.
   useEffect(() => {
     if (Number.isFinite(bookId) && Number.isFinite(position)) {
@@ -226,9 +240,7 @@ export default function ReaderPage() {
       const now = Date.now();
       if (now - lastSaveRef.current > 3000) {
         lastSaveRef.current = now;
-        api
-          .updateProgress(bookId, { last_position: position, scroll: frac })
-          .catch(() => {});
+        persistScroll(frac);
       }
       if (frac >= 0.98) markRead();
     }
@@ -237,13 +249,9 @@ export default function ReaderPage() {
       window.removeEventListener("scroll", onScroll);
       // Only persist scroll once something real has moved it, so a transient
       // unmount can't overwrite the saved position with 0.
-      if (movedRef.current) {
-        api
-          .updateProgress(bookId, { last_position: position, scroll: fracRef.current })
-          .catch(() => {});
-      }
+      if (movedRef.current) persistScroll(fracRef.current);
     };
-  }, [bookId, position, markRead]);
+  }, [bookId, position, markRead, persistScroll]);
 
   const go = useCallback(
     (delta: number) => {
@@ -286,7 +294,6 @@ export default function ReaderPage() {
           <ChevronLeft size={14} /> Contents
         </Link>
         <div className="flex items-center gap-1.5">
-          <ThemeMenu />
           <div className="flex items-center gap-1">
             <Button variant="ghost" size="icon" aria-label="Decrease text size"
               onClick={() => setSize(scale - 0.1)}>

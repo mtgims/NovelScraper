@@ -68,17 +68,23 @@ export function AppShell({ children }: { children: ReactNode }) {
   // into place instead of animating open→closed on every refresh.
   const [ready, setReady] = useState(false);
 
-  // Persisted across sessions. Read on mount (client-only) to avoid a hydration
-  // mismatch; the sidebar shows by default until then.
+  const inReader = pathname.startsWith("/read/");
+
+  // Collapse automatically inside the reader for a distraction-free page;
+  // elsewhere use the saved preference. Runs on navigation (client-only, so no
+  // hydration mismatch).
   useEffect(() => {
-    setCollapsed(localStorage.getItem(SIDEBAR_KEY) === "1");
+    const pref = localStorage.getItem(SIDEBAR_KEY) === "1";
+    setCollapsed(inReader || pref);
     const id = requestAnimationFrame(() => setReady(true));
     return () => cancelAnimationFrame(id);
-  }, []);
+  }, [inReader]);
 
   const setSidebar = (next: boolean) => {
     setCollapsed(next);
-    localStorage.setItem(SIDEBAR_KEY, next ? "1" : "0");
+    // Don't let expanding/collapsing inside the reader overwrite the user's
+    // real sidebar preference for the rest of the app.
+    if (!inReader) localStorage.setItem(SIDEBAR_KEY, next ? "1" : "0");
   };
 
   return (

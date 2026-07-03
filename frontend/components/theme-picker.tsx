@@ -1,8 +1,7 @@
 "use client";
 
-import { Palette } from "lucide-react";
 import { useTheme } from "next-themes";
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useState } from "react";
 
 import { cn } from "@/lib/utils";
 
@@ -55,47 +54,6 @@ export function ThemePicker() {
     <div>
       <p className="kicker mb-2 px-1">Theme</p>
       <ThemeSwatches />
-    </div>
-  );
-}
-
-/** Compact palette button + popover — for places without the sidebar (the
- *  reader). */
-export function ThemeMenu() {
-  const [open, setOpen] = useState(false);
-  const ref = useRef<HTMLDivElement>(null);
-  useEffect(() => {
-    if (!open) return;
-    const onDown = (e: MouseEvent) => {
-      if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false);
-    };
-    const onKey = (e: KeyboardEvent) => e.key === "Escape" && setOpen(false);
-    window.addEventListener("mousedown", onDown);
-    window.addEventListener("keydown", onKey);
-    return () => {
-      window.removeEventListener("mousedown", onDown);
-      window.removeEventListener("keydown", onKey);
-    };
-  }, [open]);
-
-  return (
-    <div className="relative" ref={ref}>
-      <button
-        type="button"
-        onClick={() => setOpen((v) => !v)}
-        aria-label="Theme"
-        aria-expanded={open}
-        title="Theme"
-        className="flex h-8 w-8 items-center justify-center rounded-sm text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
-      >
-        <Palette size={16} />
-      </button>
-      {open && (
-        <div className="absolute right-0 top-10 z-50 rounded-md border border-border bg-card p-3 shadow-xl">
-          <p className="kicker mb-2">Theme</p>
-          <ThemeSwatches />
-        </div>
-      )}
     </div>
   );
 }
