@@ -193,8 +193,10 @@ export function BookCard({
       }}
       className={cn(
         // select-none: the card is a drag handle, so never let a fast
-        // press-and-drag start a text selection instead of a drag.
-        "group relative touch-none select-none",
+        // press-and-drag start a text selection instead of a drag. (No
+        // touch-none: touch scrolling must work; the TouchSensor's press delay
+        // distinguishes a swipe-to-scroll from a hold-to-reorder.)
+        "group relative select-none",
         // While dragging, this stays as a dimmed placeholder; the DragOverlay
         // renders the lifted card that follows the cursor.
         isDragging && "opacity-40"

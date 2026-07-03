@@ -249,56 +249,31 @@ export default function BookDetailPage() {
         </div>
       )}
 
-      <section className="grid gap-10 md:grid-cols-[1fr_2fr]">
-        {/* Recto: cover + volume downloads */}
-        <div className="min-w-0 space-y-6">
-          <div className="aspect-[2/3] border border-border bg-card overflow-hidden">
-            {book.has_cover ? (
-              // eslint-disable-next-line @next/next/no-img-element
-              <img
-                src={coverUrl(book.id)}
-                alt={`Cover of ${book.title}`}
-                className="h-full w-full object-cover"
-              />
-            ) : (
-              <div className="flex h-full flex-col items-center justify-center p-8 text-center">
-                <div className="mb-5 h-1 w-12 bg-accent" />
-                <p className="font-display text-2xl leading-tight break-words line-clamp-5">
-                  {book.title}
-                </p>
-                <p className="mt-3 text-sm text-muted-foreground">
-                  {book.author}
-                </p>
-                <p className="kicker mt-auto pt-6">{totalChapters} chapters</p>
-              </div>
-            )}
-          </div>
-
-          <div>
-            <p className="kicker mb-2">Download volumes</p>
-            <div className="space-y-2">
-              {book.volumes.map((vol) => (
-                <a
-                  key={vol.id}
-                  href={downloadUrl(book.id, vol.number)}
-                  download
-                  className="flex items-center justify-between border border-border rounded-sm px-3 py-2 text-sm hover:border-accent transition-colors"
-                >
-                  <span>
-                    Vol {vol.number}{" "}
-                    <span className="kicker">
-                      · {vol.chapter_count} ch
-                    </span>
-                  </span>
-                  <Download size={15} className="text-muted-foreground" />
-                </a>
-              ))}
+      <section className="grid gap-x-10 gap-y-8 md:grid-cols-[1fr_2fr] md:items-start">
+        {/* Cover — desktop: top of the left column. */}
+        <div className="aspect-[2/3] overflow-hidden border border-border bg-card md:col-start-1 md:row-start-1">
+          {book.has_cover ? (
+            // eslint-disable-next-line @next/next/no-img-element
+            <img
+              src={coverUrl(book.id)}
+              alt={`Cover of ${book.title}`}
+              className="h-full w-full object-cover"
+            />
+          ) : (
+            <div className="flex h-full flex-col items-center justify-center p-8 text-center">
+              <div className="mb-5 h-1 w-12 bg-accent" />
+              <p className="font-display text-2xl leading-tight break-words line-clamp-5">
+                {book.title}
+              </p>
+              <p className="mt-3 text-sm text-muted-foreground">{book.author}</p>
+              <p className="kicker mt-auto pt-6">{totalChapters} chapters</p>
             </div>
-          </div>
+          )}
         </div>
 
-        {/* Verso: chapter index */}
-        <div className="min-w-0">
+        {/* Chapters — on mobile these come right after the cover (before the
+            volume downloads); on desktop they fill the right column. */}
+        <div className="min-w-0 md:col-start-2 md:row-start-1 md:row-span-2">
           <div className="rule-accent flex items-baseline justify-between pt-3 mb-1.5">
             <h2 className="font-display text-2xl">Chapters</h2>
             <span className="kicker">{totalChapters} total</span>
@@ -371,6 +346,27 @@ export default function BookDetailPage() {
               })}
             </Card>
           )}
+        </div>
+
+        {/* Download volumes — desktop: below the cover; mobile: after chapters. */}
+        <div className="min-w-0 md:col-start-1 md:row-start-2">
+          <p className="kicker mb-2">Download volumes</p>
+          <div className="space-y-2">
+            {book.volumes.map((vol) => (
+              <a
+                key={vol.id}
+                href={downloadUrl(book.id, vol.number)}
+                download
+                className="flex items-center justify-between rounded-sm border border-border px-3 py-2 text-sm transition-colors hover:border-accent"
+              >
+                <span>
+                  Vol {vol.number}{" "}
+                  <span className="kicker">· {vol.chapter_count} ch</span>
+                </span>
+                <Download size={15} className="text-muted-foreground" />
+              </a>
+            ))}
+          </div>
         </div>
       </section>
 

@@ -4,7 +4,8 @@ import {
   DndContext,
   DragOverlay,
   KeyboardSensor,
-  PointerSensor,
+  MouseSensor,
+  TouchSensor,
   closestCenter,
   useSensor,
   useSensors,
@@ -64,8 +65,11 @@ export default function LibraryPage() {
   const dragging = useRef(false);
 
   const sensors = useSensors(
-    // A small drag threshold so a plain click still opens the novel.
-    useSensor(PointerSensor, { activationConstraint: { distance: 8 } }),
+    // Mouse: a small drag threshold so a plain click still opens the novel.
+    useSensor(MouseSensor, { activationConstraint: { distance: 8 } }),
+    // Touch: press-and-hold to reorder, so a normal swipe still scrolls the
+    // library. Moving past the tolerance before the delay cancels the drag.
+    useSensor(TouchSensor, { activationConstraint: { delay: 220, tolerance: 8 } }),
     useSensor(KeyboardSensor, { coordinateGetter: sortableKeyboardCoordinates })
   );
 
