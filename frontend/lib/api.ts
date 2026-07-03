@@ -13,8 +13,11 @@ import type {
   TtsVoices,
 } from "./types";
 
-export const API_BASE =
-  process.env.NEXT_PUBLIC_API_BASE ?? "http://127.0.0.1:8000";
+// Empty = same-origin: all /api/* requests hit the frontend, which proxies them
+// to the backend (see next.config.mjs). This keeps the app host-agnostic (works
+// over localhost / LAN / Tailscale / a tunnel with no config or CORS). Set
+// NEXT_PUBLIC_API_BASE only to point the browser straight at a backend origin.
+export const API_BASE = process.env.NEXT_PUBLIC_API_BASE ?? "";
 
 class ApiError extends Error {
   constructor(public status: number, message: string) {
