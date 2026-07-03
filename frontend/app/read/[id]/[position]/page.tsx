@@ -253,6 +253,28 @@ export default function ReaderPage() {
     };
   }, [bookId, position, markRead, persistScroll]);
 
+  // Save on real page unload (tab close, reload, navigation to another site).
+  // A normal fetch gets cancelled as the page goes away, so use keepalive.
+  // (SPA route changes don't fire pagehide — those are covered by the unmount
+  // save above.)
+  useEffect(() => {
+    const onHide = () => {
+      if (!movedRef.current) return;
+      try {
+        fetch(`${API_BASE}/api/books/${bookId}/progress`, {
+          method: "PUT",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ last_position: position, scroll: fracRef.current }),
+          keepalive: true,
+        }).catch(() => {});
+      } catch {
+        /* ignore */
+      }
+    };
+    window.addEventListener("pagehide", onHide);
+    return () => window.removeEventListener("pagehide", onHide);
+  }, [bookId, position]);
+
   const go = useCallback(
     (delta: number) => {
       if (delta > 0) markRead(); // moving on = read

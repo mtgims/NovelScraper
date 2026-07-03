@@ -420,17 +420,20 @@ export const TtsPlayer = forwardRef<TtsPlayerHandle, Props>(function TtsPlayer(
   };
 
   return (
-    <div className="fixed inset-x-0 bottom-5 z-50 flex justify-center px-4 print:hidden">
+    // The container spans the full width to center the pill, but must NOT eat
+    // clicks across the bottom of the screen (it would block e.g. the sidebar's
+    // theme buttons). Only the actual controls get pointer events back.
+    <div className="pointer-events-none fixed inset-x-0 bottom-5 z-50 flex justify-center px-4 print:hidden">
       {!active ? (
         <button
           type="button"
           onClick={start}
-          className="flex items-center gap-2 rounded-full border border-border bg-card/95 px-4 py-2.5 text-sm font-medium text-foreground shadow-lg backdrop-blur transition-colors hover:border-foreground/30 hover:bg-muted"
+          className="pointer-events-auto flex items-center gap-2 rounded-full border border-border bg-card/95 px-4 py-2.5 text-sm font-medium text-foreground shadow-lg backdrop-blur transition-colors hover:border-foreground/30 hover:bg-muted"
         >
           <Headphones size={16} className="text-accent" /> Listen
         </button>
       ) : (
-        <div className="relative w-full max-w-md">
+        <div className="pointer-events-auto relative w-full max-w-md">
           {showSettings && (
             <div className="absolute bottom-full right-0 mb-2 flex flex-col gap-2 rounded-lg border border-border bg-card p-3 shadow-xl">
               {bothAvailable && (
