@@ -1,7 +1,7 @@
 "use client";
 
 import { useQueryClient } from "@tanstack/react-query";
-import { Check, ChevronLeft, ChevronRight, Minus, Plus } from "lucide-react";
+import { Check, ChevronLeft, ChevronRight, LocateFixed, Minus, Plus } from "lucide-react";
 import Link from "next/link";
 import { useParams, useRouter } from "next/navigation";
 import { useCallback, useEffect, useRef, useState } from "react";
@@ -9,7 +9,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { TtsPlayer, type TtsPlayerHandle } from "@/components/tts-player";
 import { api, API_BASE } from "@/lib/api";
-import { useChapter, useProgress } from "@/lib/queries";
+import { useChapter, useChapters, useProgress } from "@/lib/queries";
 import { cn } from "@/lib/utils";
 
 const SIZE_KEY = "ns-reading-scale";
@@ -77,12 +77,22 @@ export default function ReaderPage() {
 
   const { data: chapter, isLoading, isError } = useChapter(bookId, position);
   const { data: progress } = useProgress(bookId);
+  const { data: chapterList } = useChapters(bookId);
   const [clean, setClean] = useState<string | null>(null);
   const [scale, setScale] = useState(1);
   const [chapterPct, setChapterPct] = useState(0);
   // Read-along (TTS): sentence paragraphs to render + the sentence to highlight.
   const [segments, setSegments] = useState<string[][] | null>(null);
   const [highlight, setHighlight] = useState<number | null>(null);
+  // TTS auto-follow: while narrating, the highlighted sentence is kept centered.
+  // The user can scroll away (unfollow) and read freely; a button then jumps
+  // back to the narration. `following` drives the button; the ref is read by the
+  // (stable) scroll effect and the user-intent handler without stale closures.
+  const [following, setFollowing] = useState(true);
+  const followingRef = useRef(true);
+  const ttsActiveRef = useRef(false);
+  const highlightRef = useRef<number | null>(null);
+  highlightRef.current = highlight;
 
   const playerRef = useRef<TtsPlayerHandle>(null);
   const articleRef = useRef<HTMLElement>(null);
@@ -119,13 +129,33 @@ export default function ReaderPage() {
     localStorage.setItem(SIZE_KEY, String(clamped));
   }, []);
 
-  // Keep the currently-narrated sentence in view.
+  // Keep the currently-narrated sentence in view — but only while following.
   useEffect(() => {
-    if (highlight == null) return;
+    if (highlight == null || !followingRef.current) return;
     document
       .querySelector<HTMLElement>(`[data-si="${highlight}"]`)
       ?.scrollIntoView({ block: "center", behavior: "smooth" });
   }, [highlight]);
+
+  // Track whether TTS is narrating; each new session re-enables following.
+  useEffect(() => {
+    ttsActiveRef.current = segments !== null;
+    if (segments !== null) {
+      followingRef.current = true;
+      setFollowing(true);
+    }
+  }, [segments]);
+
+  // Re-follow the narration and jump to the current sentence.
+  const followNarration = useCallback(() => {
+    followingRef.current = true;
+    setFollowing(true);
+    const hi = highlightRef.current;
+    if (hi != null)
+      document
+        .querySelector<HTMLElement>(`[data-si="${hi}"]`)
+        ?.scrollIntoView({ block: "center", behavior: "smooth" });
+  }, []);
 
   // The user starting to scroll themselves means: their position is now real
   // (enable saving, even if the async restore hasn't run yet) and any pending
@@ -135,6 +165,12 @@ export default function ReaderPage() {
     const takeOver = () => {
       restoreCancelledRef.current = true;
       lastUserIntentRef.current = Date.now();
+      // Scrolling during narration means the user wants to read freely: stop
+      // auto-following (which surfaces the "Follow narration" button).
+      if (ttsActiveRef.current && followingRef.current) {
+        followingRef.current = false;
+        setFollowing(false);
+      }
     };
     const onKey = (e: KeyboardEvent) => {
       if (
@@ -321,22 +357,51 @@ export default function ReaderPage() {
       <div className="sticky top-0 z-30 mb-8 flex items-center justify-between gap-2 border-b border-border/60 bg-background/85 py-2.5 backdrop-blur supports-[backdrop-filter]:bg-background/70">
         <Link
           href={`/book/${bookId}`}
-          className="kicker inline-flex items-center gap-1.5 hover:text-foreground transition-colors"
+          className="kicker inline-flex shrink-0 items-center gap-1.5 hover:text-foreground transition-colors"
         >
-          <ChevronLeft size={14} /> Contents
+          <ChevronLeft size={14} /> <span className="hidden sm:inline">Contents</span>
         </Link>
-        <div className="flex items-center gap-1.5">
-          <div className="flex items-center gap-1">
-            <Button variant="ghost" size="icon" aria-label="Decrease text size"
-              onClick={() => setSize(scale - 0.1)}>
-              <Minus size={14} />
-            </Button>
-            <Button variant="ghost" size="icon" aria-label="Increase text size"
-              onClick={() => setSize(scale + 0.1)}>
-              <Plus size={14} />
-            </Button>
-          </div>
-          <span className="kicker hidden sm:inline">Ch. {chapter.number || position}</span>
+        <div className="flex min-w-0 items-center gap-1">
+          <Button variant="ghost" size="icon" aria-label="Previous chapter"
+            disabled={!chapter.has_prev} onClick={() => go(-1)}>
+            <ChevronLeft size={16} />
+          </Button>
+          {/* Jump to any chapter without leaving the reader. */}
+          <select
+            aria-label="Jump to chapter"
+            value={position}
+            onChange={(e) => {
+              const p = Number(e.target.value);
+              if (p !== position) {
+                if (p > position) markRead();
+                router.push(`/read/${bookId}/${p}`);
+              }
+            }}
+            className="min-w-0 max-w-[8.5rem] truncate rounded-sm border border-border bg-background px-2 py-1 text-xs text-foreground outline-none transition-colors focus:border-accent sm:max-w-[15rem]"
+          >
+            {chapterList && chapterList.length > 0 ? (
+              chapterList.map((c) => (
+                <option key={c.position} value={c.position}>
+                  {c.position}. {c.title || `Chapter ${c.number || c.position}`}
+                </option>
+              ))
+            ) : (
+              <option value={position}>Ch. {chapter.number || position}</option>
+            )}
+          </select>
+          <Button variant="ghost" size="icon" aria-label="Next chapter"
+            disabled={!chapter.has_next} onClick={() => go(1)}>
+            <ChevronRight size={16} />
+          </Button>
+          <div className="mx-1 hidden h-4 w-px bg-border sm:block" />
+          <Button variant="ghost" size="icon" aria-label="Decrease text size"
+            className="hidden sm:inline-flex" onClick={() => setSize(scale - 0.1)}>
+            <Minus size={14} />
+          </Button>
+          <Button variant="ghost" size="icon" aria-label="Increase text size"
+            className="hidden sm:inline-flex" onClick={() => setSize(scale + 0.1)}>
+            <Plus size={14} />
+          </Button>
         </div>
       </div>
 
@@ -353,6 +418,18 @@ export default function ReaderPage() {
         onComplete={markRead}
         getReadingFraction={() => fracRef.current}
       />
+
+      {/* Only shown while narrating and the user has scrolled away from the
+          highlight — click to snap back to it and resume following. */}
+      {segments && highlight != null && !following && (
+        <button
+          type="button"
+          onClick={followNarration}
+          className="fixed bottom-24 left-1/2 z-40 flex -translate-x-1/2 items-center gap-2 rounded-full border border-border bg-card/95 px-4 py-2 text-sm font-medium text-foreground shadow-lg backdrop-blur transition-colors hover:bg-muted"
+        >
+          <LocateFixed size={15} className="text-accent" /> Follow narration
+        </button>
+      )}
 
       {segments ? (
         <ReadAlong
