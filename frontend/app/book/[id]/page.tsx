@@ -16,7 +16,7 @@ import {
 } from "lucide-react";
 import Link from "next/link";
 import { useParams, useRouter } from "next/navigation";
-import { type MouseEvent as ReactMouseEvent, useEffect, useRef, useState } from "react";
+import { type MouseEvent as ReactMouseEvent, useRef, useState } from "react";
 
 import { useConfirm } from "@/components/confirm-dialog";
 import { PageHeader } from "@/components/page-header";
@@ -26,6 +26,8 @@ import { Card } from "@/components/ui/card";
 import { Progress } from "@/components/ui/progress";
 import { Skeleton } from "@/components/ui/skeleton";
 import { coverUrl, downloadAllUrl, downloadUrl } from "@/lib/api";
+import { EPUB_ACCEPT, pickEpubs } from "@/lib/epub";
+import { useDismiss, useEnterTransition } from "@/lib/hooks";
 import {
   useAddEpubs,
   useBook,
@@ -60,19 +62,10 @@ export default function BookDetailPage() {
   );
 
   // Close the context menu on any click / scroll / Escape.
-  useEffect(() => {
-    if (!menu) return;
-    const close = () => setMenu(null);
-    const onKey = (e: KeyboardEvent) => e.key === "Escape" && setMenu(null);
-    window.addEventListener("click", close);
-    window.addEventListener("scroll", close, true);
-    window.addEventListener("keydown", onKey);
-    return () => {
-      window.removeEventListener("click", close);
-      window.removeEventListener("scroll", close, true);
-      window.removeEventListener("keydown", onKey);
-    };
-  }, [menu]);
+  useDismiss(!!menu, () => setMenu(null), {
+    pointerEvent: "click",
+    closeOnScroll: true,
+  });
 
   async function onDelete() {
     const ok = await confirm({
@@ -390,13 +383,11 @@ function AddEpubButton({ id }: { id: number }) {
       <input
         ref={inputRef}
         type="file"
-        accept=".epub,application/epub+zip"
+        accept={EPUB_ACCEPT}
         multiple
         className="hidden"
         onChange={(e) => {
-          const files = Array.from(e.target.files ?? []).filter((f) =>
-            f.name.toLowerCase().endsWith(".epub")
-          );
+          const files = pickEpubs(e.target.files);
           e.target.value = "";
           if (files.length) addEpubs.mutate(files);
         }}
@@ -444,11 +435,7 @@ function ChapterMenu({
   const vh = typeof window !== "undefined" ? window.innerHeight : 9999;
 
   // Grow-in from the click point.
-  const [shown, setShown] = useState(false);
-  useEffect(() => {
-    const id = requestAnimationFrame(() => setShown(true));
-    return () => cancelAnimationFrame(id);
-  }, []);
+  const shown = useEnterTransition();
 
   return (
     <div

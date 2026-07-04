@@ -8,7 +8,13 @@ import {
 import { useEffect, useState } from "react";
 
 import { api, jobEventsUrl } from "./api";
-import type { Job, JobCreate, JobProgress } from "./types";
+import type {
+  AppSettings,
+  Job,
+  JobCreate,
+  JobProgress,
+  ProgressUpdate,
+} from "./types";
 
 export function useSites() {
   return useQuery({ queryKey: ["sites"], queryFn: api.getSites });
@@ -65,8 +71,7 @@ export function useProgress(bookId: number) {
 export function useUpdateProgress(bookId: number) {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: (body: import("./types").ProgressUpdate) =>
-      api.updateProgress(bookId, body),
+    mutationFn: (body: ProgressUpdate) => api.updateProgress(bookId, body),
     onSuccess: (data) => {
       qc.setQueryData(["progress", bookId], data);
       qc.invalidateQueries({ queryKey: ["stats"] });
@@ -213,8 +218,7 @@ export function useSettings() {
 export function useUpdateSettings() {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: (body: Partial<import("./types").AppSettings>) =>
-      api.updateSettings(body),
+    mutationFn: (body: Partial<AppSettings>) => api.updateSettings(body),
     onSuccess: (data) => qc.setQueryData(["settings"], data),
   });
 }

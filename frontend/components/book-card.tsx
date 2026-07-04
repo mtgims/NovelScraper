@@ -11,6 +11,7 @@ import { useConfirm } from "@/components/confirm-dialog";
 import { StarRating } from "@/components/star-rating";
 import { Card } from "@/components/ui/card";
 import { coverUrl } from "@/lib/api";
+import { useDismiss, useEnterTransition } from "@/lib/hooks";
 import {
   useCreateCollection,
   useDeleteBook,
@@ -94,7 +95,7 @@ export function BookCard({
   const confirm = useConfirm();
 
   const [menu, setMenu] = useState(false);
-  const [shown, setShown] = useState(false); // popover enter animation
+  const shown = useEnterTransition(menu); // popover enter animation
   const [newName, setNewName] = useState("");
   const [mounted, setMounted] = useState(false); // portal target is client-only
   // Viewport position + transform origin for the popover (portaled to <body> so
@@ -112,32 +113,10 @@ export function BookCard({
 
   useEffect(() => setMounted(true), []);
 
-  useEffect(() => {
-    if (!menu) return;
-    const onDown = (e: MouseEvent) => {
-      // Ignore interaction with THIS card or the (portaled) menu — the ⋮ button
-      // and a right-click that (re)opens the menu live in the card, the popover
-      // lives at the body — so the outside-handler never closes-then-reopens.
-      // Clicking a different card or elsewhere still closes it.
-      const t = e.target as Node;
-      if (cardRef.current?.contains(t) || menuRef.current?.contains(t)) return;
-      setMenu(false);
-    };
-    const onKey = (e: KeyboardEvent) => e.key === "Escape" && setMenu(false);
-    window.addEventListener("mousedown", onDown);
-    window.addEventListener("keydown", onKey);
-    return () => {
-      window.removeEventListener("mousedown", onDown);
-      window.removeEventListener("keydown", onKey);
-    };
-  }, [menu]);
-
-  // Grow-in the popover when it opens.
-  useEffect(() => {
-    if (!menu) return void setShown(false);
-    const id = requestAnimationFrame(() => setShown(true));
-    return () => cancelAnimationFrame(id);
-  }, [menu]);
+  // Close on an outside press or Escape. The ⋮ button and the right-click that
+  // (re)opens the menu live in the card, while the popover is portaled to the
+  // body — both are excluded so the handler never closes-then-reopens.
+  useDismiss(menu, () => setMenu(false), { refs: [cardRef, menuRef] });
 
   // Clamp a desired viewport position so the ~224x300 popover stays on-screen.
   const placeMenu = (x: number, y: number) => ({

@@ -1,7 +1,7 @@
 import { cn } from "@/lib/utils";
 import type { JobStatus } from "@/lib/types";
 
-const STYLES: Record<JobStatus, { wrap: string; dot: string; label?: string }> = {
+const STYLES: Record<JobStatus, { wrap: string; dot: string }> = {
   queued: {
     wrap: "border-muted-foreground/40 text-muted-foreground",
     dot: "bg-muted-foreground",
@@ -21,7 +21,6 @@ const STYLES: Record<JobStatus, { wrap: string; dot: string; label?: string }> =
   cancelled: {
     wrap: "border-muted-foreground/40 text-muted-foreground",
     dot: "bg-muted-foreground",
-    label: "cancelled",
   },
 };
 

@@ -28,11 +28,6 @@ function gpu(): GpuLike | null {
   return (navigator as unknown as { gpu: GpuLike }).gpu;
 }
 
-/** True if the browser exposes the WebGPU API at all. Safe during SSR. */
-export function browserTtsSupported(): boolean {
-  return gpu() !== null;
-}
-
 // Request the WebGPU adapter once and reuse it (both the usability check and the
 // dtype choice need it; requesting twice is wasteful).
 let adapterPromise: Promise<GpuAdapterLike | null> | null = null;
@@ -73,7 +68,6 @@ async function pickDtype(): Promise<Dtype> {
 }
 
 let enginePromise: Promise<KokoroTTS> | null = null;
-let engineReady = false;
 
 // Aggregate download progress across the model's files (0..100).
 const fileProgress = new Map<string, { loaded: number; total: number }>();
@@ -98,10 +92,6 @@ export function onModelProgress(cb: (percent: number) => void): () => void {
   };
 }
 
-export function browserTtsReady(): boolean {
-  return engineReady;
-}
-
 /** Lazily load the model (singleton). First call kicks off the ~163MB download. */
 export function loadBrowserTts(): Promise<KokoroTTS> {
   if (!enginePromise) {
@@ -119,7 +109,6 @@ export function loadBrowserTts(): Promise<KokoroTTS> {
           }
         },
       });
-      engineReady = true;
       return tts;
     })();
     // If loading fails, allow a later retry rather than caching the rejection.

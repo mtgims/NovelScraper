@@ -2,14 +2,23 @@
 
 import { BookUp, Settings, X } from "lucide-react";
 import { useRouter } from "next/navigation";
-import { useEffect, useRef, useState } from "react";
+import { useRef, useState } from "react";
 
 import { PageHeader } from "@/components/page-header";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { Field } from "@/components/ui/field";
 import { Input } from "@/components/ui/input";
+import { EPUB_ACCEPT, pickEpubs } from "@/lib/epub";
+import { useDismiss } from "@/lib/hooks";
 import { useCreateJob, useImportEpubs, useSites } from "@/lib/queries";
+import { cn } from "@/lib/utils";
+
+// Scrape defaults, matching the backend, so the number-input spinners increment
+// from the real value instead of jumping to the minimum.
+const DEFAULT_PER_VOLUME = 100;
+const DEFAULT_DELAY = 0.1;
+const DEFAULT_CONCURRENCY = 12;
 
 function hostOf(url: string): string {
   try {
@@ -25,39 +34,32 @@ export default function NewScrapePage() {
   const createJob = useCreateJob();
 
   const [url, setUrl] = useState("");
-  const [perVolume, setPerVolume] = useState(100);
-  // Real numeric defaults (matching the backend) so the number-input spinners
-  // increment from the actual value instead of jumping to the minimum.
-  const [delay, setDelay] = useState(0.1);
-  const [concurrency, setConcurrency] = useState(12);
+  const [perVolume, setPerVolume] = useState(DEFAULT_PER_VOLUME);
+  const [delay, setDelay] = useState(DEFAULT_DELAY);
+  const [concurrency, setConcurrency] = useState(DEFAULT_CONCURRENCY);
 
   // Speed settings popover (cogwheel) — absolutely positioned so it never
   // shifts the form / Start button.
   const [speedOpen, setSpeedOpen] = useState(false);
   const speedRef = useRef<HTMLDivElement>(null);
-  useEffect(() => {
-    if (!speedOpen) return;
-    function onDown(e: MouseEvent) {
-      if (speedRef.current && !speedRef.current.contains(e.target as Node)) {
-        setSpeedOpen(false);
-      }
-    }
-    document.addEventListener("mousedown", onDown);
-    return () => document.removeEventListener("mousedown", onDown);
-  }, [speedOpen]);
+  useDismiss(speedOpen, () => setSpeedOpen(false), {
+    refs: [speedRef],
+    escape: false,
+  });
 
   const supportedHosts = (sites ?? [])
     .map((s) => hostOf(s.base_url))
     .filter(Boolean);
-  const speedCustomized = delay !== 0.1 || concurrency !== 12;
+  const speedCustomized =
+    delay !== DEFAULT_DELAY || concurrency !== DEFAULT_CONCURRENCY;
 
   async function onSubmit(e: React.FormEvent) {
     e.preventDefault();
     await createJob.mutateAsync({
       url: url.trim(),
       chapters_per_volume: perVolume,
-      delay: Number.isFinite(delay) ? delay : 0.1,
-      concurrency: Number.isFinite(concurrency) ? concurrency : 12,
+      delay: Number.isFinite(delay) ? delay : DEFAULT_DELAY,
+      concurrency: Number.isFinite(concurrency) ? concurrency : DEFAULT_CONCURRENCY,
     });
     router.push("/jobs");
   }
@@ -74,7 +76,12 @@ export default function NewScrapePage() {
             onClick={() => setSpeedOpen((v) => !v)}
             aria-label="Speed settings"
             aria-expanded={speedOpen}
-            className={cnBtn(speedOpen || speedCustomized)}
+            className={cn(
+              "flex h-9 w-9 items-center justify-center rounded-sm transition-colors cursor-pointer",
+              speedOpen || speedCustomized
+                ? "text-accent bg-accent-soft"
+                : "text-muted-foreground hover:text-foreground hover:bg-muted"
+            )}
           >
             <Settings size={16} />
           </button>
@@ -186,10 +193,8 @@ function ImportCard() {
   const inputRef = useRef<HTMLInputElement>(null);
 
   function addFiles(list: FileList | null) {
-    if (!list) return;
-    const picked = Array.from(list).filter((f) =>
-      f.name.toLowerCase().endsWith(".epub")
-    );
+    const picked = pickEpubs(list);
+    if (!picked.length) return;
     // De-dupe by name+size so re-picking the same file doesn't double it.
     setFiles((prev) => {
       const seen = new Set(prev.map((f) => `${f.name}:${f.size}`));
@@ -216,7 +221,7 @@ function ImportCard() {
         <input
           ref={inputRef}
           type="file"
-          accept=".epub,application/epub+zip"
+          accept={EPUB_ACCEPT}
           multiple
           className="hidden"
           onChange={(e) => {
@@ -278,13 +283,4 @@ function ImportCard() {
       </CardContent>
     </Card>
   );
-}
-
-function cnBtn(active: boolean): string {
-  return [
-    "flex h-9 w-9 items-center justify-center rounded-sm transition-colors cursor-pointer",
-    active
-      ? "text-accent bg-accent-soft"
-      : "text-muted-foreground hover:text-foreground hover:bg-muted",
-  ].join(" ");
 }

@@ -20,13 +20,6 @@ export function Card({ className, interactive, ...props }: CardProps) {
   );
 }
 
-export function CardHeader({
-  className,
-  ...props
-}: React.HTMLAttributes<HTMLDivElement>) {
-  return <div className={cn("p-5 pb-2", className)} {...props} />;
-}
-
 export function CardContent({
   className,
   ...props

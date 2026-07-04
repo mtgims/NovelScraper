@@ -95,7 +95,6 @@ export default function StatsPage() {
                     <div className="mb-2 flex items-baseline justify-between gap-4">
                       <span className="min-w-0 truncate font-medium">{b.title}</span>
                       <span className="kicker shrink-0">
-
                         {b.read_count}/{b.total_chapters} · {b.percent_read}%
                       </span>
                     </div>

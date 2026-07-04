@@ -12,6 +12,7 @@ import {
 import { createPortal } from "react-dom";
 
 import { Button } from "@/components/ui/button";
+import { useEnterTransition } from "@/lib/hooks";
 
 export type ConfirmOptions = {
   title: string;
@@ -84,15 +85,12 @@ function ConfirmDialog({
   onConfirm: () => void;
 }) {
   const [mounted, setMounted] = useState(false);
-  const [shown, setShown] = useState(false);
+  const shown = useEnterTransition();
   const confirmRef = useRef<HTMLButtonElement>(null);
 
   useEffect(() => {
     setMounted(true);
-    // next frame → trigger the enter transition
-    const id = requestAnimationFrame(() => setShown(true));
     confirmRef.current?.focus();
-    return () => cancelAnimationFrame(id);
   }, []);
 
   useEffect(() => {

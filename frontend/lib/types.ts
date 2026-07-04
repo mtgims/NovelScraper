@@ -129,6 +129,14 @@ export interface TtsVoices {
   device?: string; // "cuda" | "cpu" | "unknown" (server-side engine)
 }
 
+// A chapter's narration plan: sentence-grouped chunks + the flat sentence texts.
+export interface TtsManifest {
+  chunks: number[][];
+  paragraphs: string[][];
+  voice: string;
+  speed: number;
+}
+
 export interface Stats {
   total_books: number;
   books_started: number;

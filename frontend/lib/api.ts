@@ -10,6 +10,7 @@ import type {
   ReadingProgress,
   Site,
   Stats,
+  TtsManifest,
   TtsVoices,
 } from "./types";
 
@@ -25,21 +26,27 @@ class ApiError extends Error {
   }
 }
 
-async function req<T>(path: string, init?: RequestInit): Promise<T> {
-  const res = await fetch(`${API_BASE}${path}`, {
-    headers: { "Content-Type": "application/json" },
-    ...init,
-  });
-  if (!res.ok) {
-    let detail = res.statusText;
-    try {
-      const body = await res.json();
-      detail = body.detail ?? detail;
-    } catch {
-      /* non-JSON error body */
-    }
-    throw new ApiError(res.status, detail);
+// Throw an ApiError carrying the backend's `detail` message (or the status
+// text) for any non-2xx response.
+async function ensureOk(res: Response): Promise<Response> {
+  if (res.ok) return res;
+  let detail = res.statusText;
+  try {
+    const body = await res.json();
+    detail = body.detail ?? detail;
+  } catch {
+    /* non-JSON error body */
   }
+  throw new ApiError(res.status, detail);
+}
+
+async function req<T>(path: string, init?: RequestInit): Promise<T> {
+  const res = await ensureOk(
+    await fetch(`${API_BASE}${path}`, {
+      headers: { "Content-Type": "application/json" },
+      ...init,
+    })
+  );
   if (res.status === 204) return undefined as T;
   return res.json() as Promise<T>;
 }
@@ -48,17 +55,9 @@ async function req<T>(path: string, init?: RequestInit): Promise<T> {
 async function upload<T>(path: string, files: File[]): Promise<T> {
   const form = new FormData();
   for (const f of files) form.append("files", f);
-  const res = await fetch(`${API_BASE}${path}`, { method: "POST", body: form });
-  if (!res.ok) {
-    let detail = res.statusText;
-    try {
-      const body = await res.json();
-      detail = body.detail ?? detail;
-    } catch {
-      /* non-JSON error body */
-    }
-    throw new ApiError(res.status, detail);
-  }
+  const res = await ensureOk(
+    await fetch(`${API_BASE}${path}`, { method: "POST", body: form })
+  );
   return res.json() as Promise<T>;
 }
 
@@ -67,12 +66,7 @@ export const api = {
   getStats: () => req<Stats>("/api/stats"),
   getVoices: () => req<TtsVoices>("/api/tts/voices"),
   ttsManifest: (bookId: number, position: number, voice: string, speed: number) =>
-    req<{
-      chunks: number[][];
-      paragraphs: string[][];
-      voice: string;
-      speed: number;
-    }>(
+    req<TtsManifest>(
       `/api/books/${bookId}/chapters/${position}/audio/manifest?voice=${encodeURIComponent(voice)}&speed=${speed}`
     ),
   getBooks: () => req<Book[]>("/api/books"),

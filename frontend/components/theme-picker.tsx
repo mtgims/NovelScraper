@@ -12,9 +12,8 @@ export const THEMES = [
   { name: "blue", label: "Blue", bg: "#0a1020", accent: "#3b82f6", ring: "#22314c" },
 ];
 
-/** The row of theme swatch buttons, shared by the sidebar picker and the
- *  in-reader popover. */
-export function ThemeSwatches() {
+/** The row of theme swatch buttons used by the sidebar picker. */
+function ThemeSwatches() {
   const { theme, setTheme } = useTheme();
   const [mounted, setMounted] = useState(false);
   useEffect(() => setMounted(true), []);
