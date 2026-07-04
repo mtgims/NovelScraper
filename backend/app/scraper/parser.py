@@ -44,7 +44,7 @@ def _soup(html: str) -> BeautifulSoup:
     return BeautifulSoup(html, "html.parser")
 
 
-def _sanitize(node) -> None:
+def sanitize(node) -> None:
     """Strip active markup from a parsed content subtree, in place."""
     for tag_name in _DANGEROUS_TAGS:
         for tag in node.select(tag_name):
@@ -112,7 +112,7 @@ def parse_chapter_content(html: str, profile: SiteProfile) -> str:
     for selector in profile.strip_selectors:
         for node in content.select(selector):
             node.decompose()
-    _sanitize(content)
+    sanitize(content)
     # decode() emits well-formed markup with void elements self-closed, which is
     # closer to the XHTML the EPUB writer expects than the raw source.
     return content.decode()

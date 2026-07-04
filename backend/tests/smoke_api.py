@@ -182,6 +182,15 @@ with TestClient(app) as client:
           and st["total_chapters"] == 6 and st["books_started"] == 1
           and len(st["books"]) == 1 and st["books"][0]["read_count"] == 2)
 
+    # collections: create, assign a book, and confirm book serialization carries
+    # the membership *and* the volumes (one consistent BookRead everywhere).
+    cid = client.post("/api/collections", json={"name": "Faves"}).json()["id"]
+    bc = client.put(f"/api/books/{bid}/collections", json={"collection_ids": [cid]}).json()
+    check("collections-assign", bc["collection_ids"] == [cid] and len(bc["volumes"]) == 2,
+          str(bc.get("collection_ids")))
+    lib2 = client.get("/api/books").json()
+    check("collections-in-list", lib2[0]["collection_ids"] == [cid])
+
     # mid-run cancel
     r2 = client.post("/api/jobs", json={"url": f"{BASE}/book/slow-book", "delay": 1.5, "concurrency": 1})
     jid2 = r2.json()["id"]

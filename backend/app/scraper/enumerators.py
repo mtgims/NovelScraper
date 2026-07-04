@@ -25,7 +25,7 @@ logger = logging.getLogger(__name__)
 ProgressCb = Optional[Callable[[str, dict], None]]
 
 
-def _format_url(template: str, base_url: str, book: str, page=None) -> str:
+def format_url(template: str, base_url: str, book: str, page=None) -> str:
     return template.format(base_url=base_url.rstrip("/"), book=book,
                            page="" if page is None else page)
 
@@ -36,7 +36,7 @@ async def enumerate_paginated(fetcher: AsyncFetcher, profile: SiteProfile,
     seen_first_url: set[str] = set()
     seen_urls: set[str] = set()
     for page in range(1, profile.max_pages + 1):
-        url = _format_url(profile.list_url_template, profile.base_url, book.slug, page)
+        url = format_url(profile.list_url_template, profile.base_url, book.slug, page)
         # List pages are volatile (new chapters appear), so don't serve them
         # from cache; only chapter content is cached.
         if profile.list_method.upper() == "POST":
@@ -73,7 +73,7 @@ async def enumerate_paginated(fetcher: AsyncFetcher, profile: SiteProfile,
 async def enumerate_next_link(fetcher: AsyncFetcher, profile: SiteProfile,
                               book: Book, progress: ProgressCb = None) -> List[Chapter]:
     chapters: List[Chapter] = []
-    url: Optional[str] = _format_url(
+    url: Optional[str] = format_url(
         profile.first_chapter_url_template, profile.base_url, book.slug)
     seen: set[str] = set()
     for _ in range(profile.max_pages):
@@ -100,7 +100,7 @@ async def enumerate_json_api(fetcher: AsyncFetcher, profile: SiteProfile,
     """Read the whole chapter list from a JSON detail endpoint. The list order
     is the reading order, so the 1-based index is the chapter number and each
     chapter's content URL is built from chapter_url_template."""
-    detail_url = _format_url(profile.list_url_template, profile.base_url, book.slug)
+    detail_url = format_url(profile.list_url_template, profile.base_url, book.slug)
     text = await fetcher.get_text(detail_url, use_cache=False)
     try:
         data = json.loads(text)

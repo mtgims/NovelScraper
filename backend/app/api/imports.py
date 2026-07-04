@@ -29,8 +29,8 @@ from ..importer import (
 )
 from ..models import Book, Chapter, Volume
 from ..schemas import BookRead
+from ..services.library import book_read
 from ..settings import settings
-from .books import _book_read
 
 logger = logging.getLogger(__name__)
 
@@ -99,7 +99,7 @@ async def import_epubs(files: List[UploadFile] = File(...),
     persist_epubs(session, book.id, parsed, start_position=0, start_volume=1,
                   image_dir=str(settings.image_dir))
     session.refresh(book)
-    return _book_read(session, book)
+    return book_read(session, book)
 
 
 @router.post("/books/{book_id}/import", response_model=BookRead)
@@ -127,4 +127,4 @@ async def add_epubs(book_id: int, files: List[UploadFile] = File(...),
     session.add(book)
     session.commit()
     session.refresh(book)
-    return _book_read(session, book)
+    return book_read(session, book)

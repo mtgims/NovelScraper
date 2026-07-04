@@ -13,11 +13,11 @@ import json
 import logging
 import re
 from pathlib import Path
-from typing import Callable, List, Optional, Tuple
+from typing import Callable, List, Optional
 from urllib.parse import urljoin, urlparse
 
 from .config import ScraperConfig
-from .enumerators import _format_url, enumerate_chapters
+from .enumerators import format_url, enumerate_chapters
 from .errors import ScraperError
 from .fetcher import AsyncFetcher
 from .metadata import extract_metadata
@@ -94,7 +94,7 @@ async def _load_metadata_json(fetcher: AsyncFetcher, profile: SiteProfile,
     """Metadata for json_api sites: read title/author/cover from the same JSON
     detail endpoint the chapter list comes from."""
     try:
-        detail_url = _format_url(profile.list_url_template, profile.base_url, book.slug)
+        detail_url = format_url(profile.list_url_template, profile.base_url, book.slug)
         data = json.loads(await fetcher.get_text(detail_url, use_cache=False))
     except (ScraperError, ValueError) as e:
         logger.warning("could not fetch book detail for %s: %s", book.slug, e)

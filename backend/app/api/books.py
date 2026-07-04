@@ -6,8 +6,8 @@ import io
 import os
 import re
 import shutil
+import tempfile
 import zipfile
-from collections import defaultdict
 from datetime import datetime, timezone
 from typing import List, Optional
 
@@ -26,7 +26,8 @@ from ..models import (
     ReadingProgress,
     Volume,
 )
-from ..scraper.parser import count_words
+from ..services.library import book_read, books_read, has_cover
+from ..services.reading import ensure_word_counts, progress_payload
 from ..settings import settings
 from ..tts import DEFAULT_VOICE, build_chunks, chunk_to_text, segment_paragraphs, tts
 from ..jobs.manager import DuplicateJobError, JobManager
@@ -42,7 +43,6 @@ from ..schemas import (
     JobRead,
     ProgressUpdate,
     ReadingProgressRead,
-    VolumeRead,
 )
 
 router = APIRouter()
@@ -58,73 +58,6 @@ def _get_chapter(session: Session, book_id: int, position: int) -> Chapter:
         raise HTTPException(status_code=404, detail="Chapter not found")
     return chapter
 
-# Average adult reading speed, for time-left estimates.
-WORDS_PER_MINUTE = 250
-
-
-def _ensure_word_counts(session: Session, book_id: int) -> None:
-    """Backfill word_count for chapters scraped before it existed (one-time)."""
-    missing = session.exec(
-        select(Chapter).where(
-            Chapter.book_id == book_id, Chapter.word_count.is_(None)
-        )
-    ).all()
-    if missing:
-        for ch in missing:
-            ch.word_count = count_words(ch.content)
-            session.add(ch)
-        session.commit()
-
-
-def _progress_payload(session: Session, book_id: int,
-                      prog: ReadingProgress) -> ReadingProgressRead:
-    rows = session.exec(
-        select(Chapter.position, Chapter.word_count).where(
-            Chapter.book_id == book_id
-        )
-    ).all()
-    words = {pos: (wc or 0) for pos, wc in rows}
-    total = len(words)
-    total_words = sum(words.values())
-    read = sorted(p for p in prog.read_positions if p in words)
-    read_count = len(read)
-    words_read = sum(words[p] for p in read)
-    words_left = max(0, total_words - words_read)
-    return ReadingProgressRead(
-        last_position=prog.last_position,
-        scroll=prog.scroll,
-        read_positions=read,
-        total_chapters=total,
-        read_count=read_count,
-        chapters_left=max(0, total - read_count),
-        percent_read=round(read_count / total * 100, 1) if total else 0.0,
-        total_words=total_words,
-        words_read=words_read,
-        hours_total=round(total_words / (WORDS_PER_MINUTE * 60), 2),
-        hours_left=round(words_left / (WORDS_PER_MINUTE * 60), 2),
-    )
-
-
-def _has_cover(book: Book) -> bool:
-    return bool(book.cover_path) and os.path.exists(book.cover_path)
-
-
-def _book_read(session: Session, book: Book) -> BookRead:
-    volumes = session.exec(
-        select(Volume).where(Volume.book_id == book.id).order_by(Volume.number)
-    ).all()
-    links = session.exec(
-        select(BookCollectionLink.collection_id).where(
-            BookCollectionLink.book_id == book.id
-        )
-    ).all()
-    data = BookRead.model_validate(book)
-    data.has_cover = _has_cover(book)
-    data.can_update = bool(book.source_url)
-    data.collection_ids = list(links)
-    data.volumes = [VolumeRead.model_validate(v) for v in volumes]
-    return data
-
 
 @router.get("", response_model=List[BookRead])
 def list_books(session: Session = Depends(get_session)):
@@ -132,31 +65,7 @@ def list_books(session: Session = Depends(get_session)):
     books = session.exec(
         select(Book).order_by(Book.sort_order, Book.created_at.desc())
     ).all()
-    if not books:
-        return []
-    ids = [b.id for b in books]
-    # Fetch volumes + collection memberships in bulk (avoid N+1 per book).
-    volumes = session.exec(
-        select(Volume).where(Volume.book_id.in_(ids)).order_by(Volume.number)
-    ).all()
-    by_book: dict[int, list[VolumeRead]] = defaultdict(list)
-    for v in volumes:
-        by_book[v.book_id].append(VolumeRead.model_validate(v))
-    links = session.exec(
-        select(BookCollectionLink).where(BookCollectionLink.book_id.in_(ids))
-    ).all()
-    colls_by_book: dict[int, list[int]] = defaultdict(list)
-    for link in links:
-        colls_by_book[link.book_id].append(link.collection_id)
-    result = []
-    for book in books:
-        data = BookRead.model_validate(book)
-        data.has_cover = _has_cover(book)
-        data.can_update = bool(book.source_url)
-        data.volumes = by_book.get(book.id, [])
-        data.collection_ids = colls_by_book.get(book.id, [])
-        result.append(data)
-    return result
+    return books_read(session, books)
 
 
 @router.put("/{book_id}/collections", response_model=BookRead)
@@ -176,10 +85,7 @@ def set_book_collections(book_id: int, body: BookCollectionsUpdate,
     for cid in valid:
         session.add(BookCollectionLink(book_id=book_id, collection_id=cid))
     session.commit()
-    data = BookRead.model_validate(book)
-    data.has_cover = _has_cover(book)
-    data.collection_ids = sorted(valid)
-    return data
+    return book_read(session, book)
 
 
 @router.post("/reorder", status_code=204)
@@ -199,7 +105,7 @@ def get_book(book_id: int, session: Session = Depends(get_session)):
     book = session.get(Book, book_id)
     if book is None:
         raise HTTPException(status_code=404, detail="Book not found")
-    return _book_read(session, book)
+    return book_read(session, book)
 
 
 @router.patch("/{book_id}", response_model=BookRead)
@@ -213,7 +119,7 @@ def update_book(book_id: int, body: BookUpdate, session: Session = Depends(get_s
     session.add(book)
     session.commit()
     session.refresh(book)
-    return _book_read(session, book)
+    return book_read(session, book)
 
 
 @router.post("/{book_id}/update", response_model=JobRead, status_code=202)
@@ -251,13 +157,7 @@ def list_chapters(book_id: int, session: Session = Depends(get_session)):
 
 @router.get("/{book_id}/chapters/{position}", response_model=ChapterRead)
 def get_chapter(book_id: int, position: int, session: Session = Depends(get_session)):
-    chapter = session.exec(
-        select(Chapter).where(
-            Chapter.book_id == book_id, Chapter.position == position
-        )
-    ).first()
-    if chapter is None:
-        raise HTTPException(status_code=404, detail="Chapter not found")
+    chapter = _get_chapter(session, book_id, position)
     has_next = session.exec(
         select(Chapter.id).where(
             Chapter.book_id == book_id, Chapter.position == position + 1
@@ -277,11 +177,11 @@ def get_chapter(book_id: int, position: int, session: Session = Depends(get_sess
 def get_progress(book_id: int, session: Session = Depends(get_session)):
     if session.get(Book, book_id) is None:
         raise HTTPException(status_code=404, detail="Book not found")
-    _ensure_word_counts(session, book_id)
+    ensure_word_counts(session, book_id)
     prog = session.exec(
         select(ReadingProgress).where(ReadingProgress.book_id == book_id)
     ).first() or ReadingProgress(book_id=book_id)
-    return _progress_payload(session, book_id, prog)
+    return progress_payload(session, book_id, prog)
 
 
 @router.put("/{book_id}/progress", response_model=ReadingProgressRead)
@@ -289,7 +189,7 @@ def update_progress(book_id: int, body: ProgressUpdate,
                     session: Session = Depends(get_session)):
     if session.get(Book, book_id) is None:
         raise HTTPException(status_code=404, detail="Book not found")
-    _ensure_word_counts(session, book_id)
+    ensure_word_counts(session, book_id)
     prog = session.exec(
         select(ReadingProgress).where(ReadingProgress.book_id == book_id)
     ).first()
@@ -324,7 +224,7 @@ def update_progress(book_id: int, body: ProgressUpdate,
     session.add(prog)
     session.commit()
     session.refresh(prog)
-    return _progress_payload(session, book_id, prog)
+    return progress_payload(session, book_id, prog)
 
 
 @router.get("/{book_id}/chapters/{position}/audio/manifest")
@@ -367,14 +267,23 @@ def audio_chunk(book_id: int, position: int, chunk: int,
         # Synthesis is CPU-bound; the sync endpoint runs in the threadpool so it
         # doesn't block the event loop.
         data = tts.synth_wav(chunk_to_text(flat, chunks[chunk]), v, speed)
-        path.write_bytes(data)
+        # Write to a temp file then atomically rename, so two concurrent requests
+        # for the same uncached chunk can't serve a half-written file.
+        fd, tmp = tempfile.mkstemp(dir=cache_dir, suffix=".wav.tmp")
+        try:
+            with os.fdopen(fd, "wb") as f:
+                f.write(data)
+            os.replace(tmp, path)
+        finally:
+            if os.path.exists(tmp):
+                os.unlink(tmp)
     return FileResponse(path, media_type="audio/wav")
 
 
 @router.get("/{book_id}/cover")
 def book_cover(book_id: int, session: Session = Depends(get_session)):
     book = session.get(Book, book_id)
-    if book is None or not _has_cover(book):
+    if book is None or not has_cover(book):
         raise HTTPException(status_code=404, detail="No cover")
     return FileResponse(book.cover_path)
 

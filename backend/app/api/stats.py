@@ -6,9 +6,9 @@ from fastapi import APIRouter, Depends
 from sqlmodel import Session, select
 
 from ..db import get_session
-from ..models import Book, Chapter, ReadingProgress
+from ..models import Book, ReadingProgress
 from ..schemas import BookStat, StatsRead
-from .books import WORDS_PER_MINUTE, _ensure_word_counts
+from ..services.reading import WORDS_PER_MINUTE, chapter_word_map, ensure_word_counts
 
 router = APIRouter()
 
@@ -26,13 +26,8 @@ def get_stats(session: Session = Depends(get_session)):
     per_book: list[BookStat] = []
 
     for book in books:
-        _ensure_word_counts(session, book.id)
-        rows = session.exec(
-            select(Chapter.position, Chapter.word_count).where(
-                Chapter.book_id == book.id
-            )
-        ).all()
-        words = {pos: (wc or 0) for pos, wc in rows}
+        ensure_word_counts(session, book.id)
+        words = chapter_word_map(session, book.id)
         tc = len(words)
         prog = progress.get(book.id)
         read = [p for p in (prog.read_positions if prog else []) if p in words]

@@ -24,7 +24,7 @@ from ebooklib import epub
 from sqlmodel import Session
 
 from .models import Chapter, Volume
-from .scraper.parser import _sanitize, count_words
+from .scraper.parser import sanitize, count_words
 
 logger = logging.getLogger(__name__)
 
@@ -176,7 +176,7 @@ def parse_epub(path: str) -> ImportedEpub:
             continue  # EPUB3 navigation document, not a chapter
         soup = BeautifulSoup(item.get_content().decode("utf-8", "ignore"), "html.parser")
         body = soup.find("body") or soup
-        _sanitize(body)
+        sanitize(body)
         _rewrite_images(body, getattr(item, "file_name", ""), image_items, images)
         html = body.decode_contents().strip()
         if not BeautifulSoup(html, "html.parser").get_text(strip=True):
