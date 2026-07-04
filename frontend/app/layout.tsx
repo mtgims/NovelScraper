@@ -41,6 +41,8 @@ export const viewport: Viewport = {
   initialScale: 1,
   // Draw under the notch / rounded corners on phones.
   viewportFit: "cover",
+  // Status-bar tint when installed (matches the manifest theme_color).
+  themeColor: "#0a0a0b",
 };
 
 export default function RootLayout({
