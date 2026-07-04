@@ -39,6 +39,13 @@ const DEFAULT_VOICE = "af_heart";
 // real chunk durations are known, they replace this estimate.
 const DEFAULT_SEC_PER_CHAR = 0.06;
 
+// How many upcoming chunks to keep fetched into memory ahead of the playhead.
+// A generous buffer so narration keeps going with the screen off / tab
+// backgrounded, where the browser throttles new network requests — cached
+// (in-memory) chunks play with no network, and the buffer is refilled on each
+// chunk transition (a media event, which still fires in the background).
+const PREFETCH_AHEAD = 12;
+
 function formatTime(sec: number): string {
   if (!isFinite(sec) || sec < 0) sec = 0;
   const s = Math.floor(sec % 60);
@@ -99,6 +106,7 @@ export const TtsPlayer = forwardRef<TtsPlayerHandle, Props>(function TtsPlayer(
   const engineRef = useRef<Engine>("server");
   const serverAvailableRef = useRef(false);
   const browserCache = useRef<Map<number, string>>(new Map()); // chunk -> object URL
+  const inFlightRef = useRef<Map<number, Promise<string>>>(new Map()); // dedupe concurrent fetches
   const pendingFrac = useRef<number | null>(null); // intra-chunk seek target
   const lastHi = useRef<number | null>(null);
   const playRef = useRef<() => void>(() => {});
@@ -128,6 +136,7 @@ export const TtsPlayer = forwardRef<TtsPlayerHandle, Props>(function TtsPlayer(
   const revokeBrowserCache = useCallback(() => {
     for (const u of browserCache.current.values()) URL.revokeObjectURL(u);
     browserCache.current.clear();
+    inFlightRef.current.clear();
   }, []);
 
   const chunkText = useCallback(
@@ -135,17 +144,37 @@ export const TtsPlayer = forwardRef<TtsPlayerHandle, Props>(function TtsPlayer(
     []
   );
 
+  // Resolve a chunk to a playable object URL, fetching (server) or synthesizing
+  // (on-device) its audio into memory and caching it. Cached blobs play without
+  // any network, which is what keeps playback alive when backgrounded.
+  // Concurrent requests for the same chunk share one fetch.
   const srcForChunk = useCallback(
     async (i: number): Promise<string> => {
-      if (engineRef.current === "server") {
-        return audioChunkUrl(bookId, position, i, voiceRef.current, speedRef.current);
-      }
       const cached = browserCache.current.get(i);
       if (cached) return cached;
-      const blob = await synthesizeBlob(chunkText(i), voiceRef.current, speedRef.current);
-      const objUrl = URL.createObjectURL(blob);
-      browserCache.current.set(i, objUrl);
-      return objUrl;
+      const inflight = inFlightRef.current.get(i);
+      if (inflight) return inflight;
+      const promise = (async () => {
+        let blob: Blob;
+        if (engineRef.current === "server") {
+          const res = await fetch(
+            audioChunkUrl(bookId, position, i, voiceRef.current, speedRef.current)
+          );
+          if (!res.ok) throw new Error(`chunk ${i} failed: ${res.status}`);
+          blob = await res.blob();
+        } else {
+          blob = await synthesizeBlob(chunkText(i), voiceRef.current, speedRef.current);
+        }
+        const objUrl = URL.createObjectURL(blob);
+        browserCache.current.set(i, objUrl);
+        return objUrl;
+      })();
+      inFlightRef.current.set(i, promise);
+      try {
+        return await promise;
+      } finally {
+        inFlightRef.current.delete(i);
+      }
     },
     [bookId, position, chunkText]
   );
@@ -153,16 +182,25 @@ export const TtsPlayer = forwardRef<TtsPlayerHandle, Props>(function TtsPlayer(
   const prefetch = useCallback(
     (i: number) => {
       if (i < 0 || i >= chunksRef.current.length) return;
-      if (engineRef.current === "server") {
-        fetch(
-          audioChunkUrl(bookId, position, i, voiceRef.current, speedRef.current)
-        ).catch(() => {});
-      } else if (!browserCache.current.has(i)) {
-        srcForChunk(i).catch(() => {});
-      }
+      if (browserCache.current.has(i) || inFlightRef.current.has(i)) return;
+      srcForChunk(i).catch(() => {});
     },
-    [bookId, position, srcForChunk]
+    [srcForChunk]
   );
+
+  // Keep a window of upcoming chunks cached ahead of the playhead, and free
+  // blobs left well behind it so memory stays bounded.
+  const prefetchWindow = useCallback(() => {
+    const cur = chunkIdx.current;
+    const len = chunksRef.current.length;
+    for (let i = cur + 1; i <= cur + PREFETCH_AHEAD && i < len; i++) prefetch(i);
+    for (const [i, url] of browserCache.current) {
+      if (i < cur - 1) {
+        URL.revokeObjectURL(url);
+        browserCache.current.delete(i);
+      }
+    }
+  }, [prefetch]);
 
   const play = useCallback(async () => {
     const a = audioRef.current;
@@ -208,8 +246,8 @@ export const TtsPlayer = forwardRef<TtsPlayerHandle, Props>(function TtsPlayer(
     } else {
       startPlayback();
     }
-    prefetch(chunkIdx.current + 1);
-  }, [srcForChunk, prefetch]);
+    prefetchWindow();
+  }, [srcForChunk, prefetchWindow]);
 
   const stop = useCallback(() => {
     const a = audioRef.current;
