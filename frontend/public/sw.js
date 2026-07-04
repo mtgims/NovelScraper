@@ -1,74 +1,28 @@
-/* NovelScraper service worker.
+/* NovelScraper service worker — minimal, no-cache.
  *
- * Purpose: satisfy the PWA installability criteria (a fetch handler) and provide
- * a small offline app shell. Deliberately conservative so it can never "brick"
- * the app by serving stale/broken content:
- *   - /api/* is NEVER intercepted (dynamic data always hits the network).
- *   - page navigations are network-first (you never get a stale page); the cache
- *     is only a fallback when offline.
- *   - only hashed, immutable build assets are cache-first.
- * Bump CACHE to roll every client onto a new version.
+ * This app is a live client to a self-hosted server (it can't do anything
+ * offline — no server means no content), so caching app code buys nothing and
+ * actively causes harm: it can serve STALE JavaScript (masking deploys) and it
+ * makes an offline phone look like "the backend is down."
+ *
+ * So this worker exists only to keep the app installable (PWA installability
+ * wants a fetch handler) and to PURGE any caches left by earlier caching
+ * versions. It never caches — every request goes straight to the network.
  */
-const CACHE = "ns-cache-v1";
-const SHELL = "/";
-
-self.addEventListener("install", (event) => {
-  event.waitUntil(caches.open(CACHE).then((c) => c.add(SHELL)).catch(() => {}));
+self.addEventListener("install", () => {
   self.skipWaiting();
 });
 
 self.addEventListener("activate", (event) => {
   event.waitUntil(
+    // Delete every cache from older versions so no stale code can survive.
     caches
       .keys()
-      .then((keys) =>
-        Promise.all(keys.filter((k) => k !== CACHE).map((k) => caches.delete(k)))
-      )
+      .then((keys) => Promise.all(keys.map((k) => caches.delete(k))))
       .then(() => self.clients.claim())
   );
 });
 
-function cachePut(request, response) {
-  // Only cache our own successful, non-opaque responses.
-  if (response && response.ok && response.type === "basic") {
-    const copy = response.clone();
-    caches.open(CACHE).then((c) => c.put(request, copy)).catch(() => {});
-  }
-  return response;
-}
-
-self.addEventListener("fetch", (event) => {
-  const req = event.request;
-  if (req.method !== "GET") return;
-  const url = new URL(req.url);
-  if (url.origin !== self.location.origin) return; // third-party: leave to browser
-  if (url.pathname.startsWith("/api/")) return; // dynamic data: never cache
-
-  // Hashed, immutable build assets → cache-first (filenames change on deploy).
-  if (url.pathname.startsWith("/_next/static/")) {
-    event.respondWith(
-      caches.match(req).then((hit) => hit || fetch(req).then((r) => cachePut(req, r)))
-    );
-    return;
-  }
-
-  // Page navigations → network-first (fresh), cache/shell only as offline fallback.
-  if (req.mode === "navigate") {
-    event.respondWith(
-      fetch(req)
-        .then((r) => cachePut(req, r))
-        .catch(() => caches.match(req).then((hit) => hit || caches.match(SHELL)))
-    );
-    return;
-  }
-
-  // Everything else same-origin (icons, manifest, fonts) → stale-while-revalidate.
-  event.respondWith(
-    caches.match(req).then((hit) => {
-      const net = fetch(req)
-        .then((r) => cachePut(req, r))
-        .catch(() => hit);
-      return hit || net;
-    })
-  );
-});
+// A fetch listener is present (satisfies installability) but never calls
+// respondWith → the browser performs its normal network fetch. Nothing cached.
+self.addEventListener("fetch", () => {});

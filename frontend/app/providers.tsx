@@ -22,7 +22,10 @@ export function Providers({ children }: { children: ReactNode }) {
       typeof navigator !== "undefined" &&
       "serviceWorker" in navigator
     ) {
-      navigator.serviceWorker.register("/sw.js").catch(() => {});
+      // updateViaCache: "none" → always revalidate sw.js, so a new worker
+      // (and its cache purge) rolls out on the next visit instead of being
+      // pinned by the HTTP cache.
+      navigator.serviceWorker.register("/sw.js", { updateViaCache: "none" }).catch(() => {});
     }
   }, []);
 
