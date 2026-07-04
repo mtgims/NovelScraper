@@ -39,12 +39,18 @@ const DEFAULT_VOICE = "af_heart";
 // real chunk durations are known, they replace this estimate.
 const DEFAULT_SEC_PER_CHAR = 0.06;
 
-// How many upcoming chunks to keep fetched into memory ahead of the playhead.
-// A generous buffer so narration keeps going with the screen off / tab
-// backgrounded, where the browser throttles new network requests — cached
-// (in-memory) chunks play with no network, and the buffer is refilled on each
-// chunk transition (a media event, which still fires in the background).
-const PREFETCH_AHEAD = 12;
+// How many upcoming chunks to keep fetched ahead of the playhead — engine-specific.
+//
+// Server engine: a generous buffer so narration keeps going with the screen off /
+// tab backgrounded, where the browser throttles new *network* requests. These
+// chunks are just downloads, so buffering many is cheap.
+//
+// On-device engine: each chunk is a neural-model synthesis on THIS device's GPU.
+// Prefetching many would queue a pile of GPU work and pin (overheat / freeze) a
+// phone — so keep just the next one ready. Synthesis overlaps playback of the
+// current chunk, which is enough for gapless audio on a capable device.
+const SERVER_PREFETCH_AHEAD = 12;
+const DEVICE_PREFETCH_AHEAD = 1;
 
 function formatTime(sec: number): string {
   if (!isFinite(sec) || sec < 0) sec = 0;
@@ -53,6 +59,18 @@ function formatTime(sec: number): string {
   const h = Math.floor(sec / 3600);
   const mm = h > 0 ? String(m).padStart(2, "0") : String(m);
   return (h > 0 ? `${h}:` : "") + `${mm}:${String(s).padStart(2, "0")}`;
+}
+
+/** Coarse pointer ≈ phone/tablet. Even where WebGPU works, we don't DEFAULT to
+ *  on-device synthesis on these: running the neural model on a mobile GPU can
+ *  overheat or freeze the device. On-device stays available as an explicit
+ *  opt-in via the engine toggle. */
+function isTouchDevice(): boolean {
+  return (
+    typeof window !== "undefined" &&
+    typeof window.matchMedia === "function" &&
+    window.matchMedia("(pointer: coarse)").matches
+  );
 }
 
 /** Imperative handle so the reader can jump narration to a clicked sentence. */
@@ -129,17 +147,26 @@ export const TtsPlayer = forwardRef<TtsPlayerHandle, Props>(function TtsPlayer(
   serverAvailableRef.current = serverAvailable;
 
   useEffect(() => {
+    if (info === undefined) return; // wait until server availability is known
     let cancelled = false;
     // Only surface on-device as an option if a real WebGPU adapter exists.
     browserTtsUsable().then((usable) => {
       if (cancelled) return;
       setBrowserSupported(usable);
-      setEngine((prev) => prev ?? (usable ? "browser" : "server"));
+      setEngine((prev) => {
+        if (prev) return prev;
+        if (!usable) return "server"; // no WebGPU → server (normal case)
+        if (!info.available) return "browser"; // on-device is the only option
+        // Both work: default to on-device on desktop (offloads the server), but
+        // to the server on phones/tablets — synthesizing on a mobile GPU can
+        // overheat/freeze the device. On-device stays available via the toggle.
+        return isTouchDevice() ? "server" : "browser";
+      });
     });
     return () => {
       cancelled = true;
     };
-  }, []);
+  }, [info]);
 
   useEffect(() => onModelProgress((p) => setModelPct(p)), []);
 
@@ -219,7 +246,9 @@ export const TtsPlayer = forwardRef<TtsPlayerHandle, Props>(function TtsPlayer(
   const prefetchWindow = useCallback(() => {
     const cur = chunkIdx.current;
     const len = chunksRef.current.length;
-    for (let i = cur + 1; i <= cur + PREFETCH_AHEAD && i < len; i++) prefetch(i);
+    const ahead =
+      engineRef.current === "server" ? SERVER_PREFETCH_AHEAD : DEVICE_PREFETCH_AHEAD;
+    for (let i = cur + 1; i <= cur + ahead && i < len; i++) prefetch(i);
     for (const [i, url] of browserCache.current) {
       if (i < cur - 1) {
         URL.revokeObjectURL(url);
