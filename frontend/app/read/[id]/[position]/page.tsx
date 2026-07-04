@@ -82,6 +82,10 @@ export default function ReaderPage() {
   const [clean, setClean] = useState<string | null>(null);
   const [scale, setScale] = useState(1);
   const [chapterPct, setChapterPct] = useState(0);
+  // Set when we land on a chapter via TTS auto-advance, so narration resumes.
+  const [autoStartTts, setAutoStartTts] = useState(false);
+  // 0..1 progress of the "pull past the end for the next chapter" gesture.
+  const [pullNext, setPullNext] = useState(0);
   // Read-along (TTS): sentence paragraphs to render + the sentence to highlight.
   const [segments, setSegments] = useState<string[][] | null>(null);
   const [highlight, setHighlight] = useState<number | null>(null);
@@ -339,6 +343,77 @@ export default function ReaderPage() {
     return () => window.removeEventListener("keydown", onKey);
   }, [chapter?.has_prev, chapter?.has_next, go]);
 
+  // On entering a chapter, consume the one-shot "auto-start narration" flag left
+  // by TTS auto-advance from the previous chapter.
+  useEffect(() => {
+    let flag = false;
+    try {
+      if (sessionStorage.getItem("ns:tts-autostart") === "1") {
+        sessionStorage.removeItem("ns:tts-autostart");
+        flag = true;
+      }
+    } catch {
+      /* ignore */
+    }
+    setAutoStartTts(flag);
+  }, [position]);
+
+  // Mobile: pulling up past the bottom of the chapter (an overscroll harder than
+  // an ordinary swipe) advances to the next chapter — like "pull for more".
+  useEffect(() => {
+    if (!chapter?.has_next) return;
+    const THRESH = 110; // px of overscroll drag to trigger
+    let lastY = 0;
+    let accum = 0;
+    let tracking = false;
+    const atBottom = () => {
+      const d = document.documentElement;
+      return d.scrollHeight - d.clientHeight - d.scrollTop <= 2;
+    };
+    const onStart = (e: TouchEvent) => {
+      lastY = e.touches[0].clientY;
+      accum = 0;
+      tracking = atBottom();
+      if (!tracking) setPullNext(0);
+    };
+    const onMove = (e: TouchEvent) => {
+      const y = e.touches[0].clientY;
+      if (!tracking) {
+        // Only start measuring once the reader has reached the bottom.
+        if (atBottom()) tracking = true;
+        lastY = y;
+        return;
+      }
+      if (!atBottom()) {
+        tracking = false;
+        accum = 0;
+        setPullNext(0);
+        lastY = y;
+        return;
+      }
+      accum = Math.max(0, accum + (lastY - y)); // dragging up = wanting next
+      lastY = y;
+      setPullNext(Math.min(1, accum / THRESH));
+    };
+    const onEnd = () => {
+      const trigger = tracking && accum >= THRESH;
+      tracking = false;
+      accum = 0;
+      setPullNext(0);
+      if (trigger) go(1);
+    };
+    window.addEventListener("touchstart", onStart, { passive: true });
+    window.addEventListener("touchmove", onMove, { passive: true });
+    window.addEventListener("touchend", onEnd, { passive: true });
+    window.addEventListener("touchcancel", onEnd, { passive: true });
+    return () => {
+      window.removeEventListener("touchstart", onStart);
+      window.removeEventListener("touchmove", onMove);
+      window.removeEventListener("touchend", onEnd);
+      window.removeEventListener("touchcancel", onEnd);
+    };
+  }, [chapter?.has_next, go]);
+
   if (isLoading) return <p className="text-muted-foreground">Loading…</p>;
   if (isError || !chapter)
     return <p className="text-destructive">Chapter not found.</p>;
@@ -418,10 +493,37 @@ export default function ReaderPage() {
         onHighlight={setHighlight}
         onComplete={markRead}
         getReadingFraction={() => fracRef.current}
+        hasNext={chapter.has_next}
+        onNextChapter={() => {
+          try {
+            sessionStorage.setItem("ns:tts-autostart", "1");
+          } catch {
+            /* ignore */
+          }
+          go(1);
+        }}
+        autoStart={autoStartTts}
         mediaTitle={chapter.title || `Chapter ${chapter.number || position}`}
         mediaSubtitle={book?.title}
         mediaArtwork={book?.has_cover ? coverUrl(bookId) : undefined}
       />
+
+      {/* Overscroll-to-next hint (mobile): fills as you pull past the end. */}
+      {pullNext > 0.02 && (
+        <div className="pointer-events-none fixed inset-x-0 bottom-28 z-40 flex justify-center px-4">
+          <div
+            className="flex items-center gap-2 rounded-full border border-border bg-card/95 px-4 py-2 text-sm font-medium text-foreground shadow-lg backdrop-blur"
+            style={{ opacity: Math.min(1, 0.4 + pullNext * 0.6) }}
+          >
+            <ChevronRight
+              size={15}
+              className="text-accent"
+              style={{ transform: `translateX(${pullNext * 4}px)` }}
+            />
+            {pullNext >= 1 ? "Release for next chapter" : "Keep pulling for next chapter"}
+          </div>
+        </div>
+      )}
 
       {/* Only shown while narrating and the user has scrolled away from the
           highlight — click to snap back to it and resume following. */}

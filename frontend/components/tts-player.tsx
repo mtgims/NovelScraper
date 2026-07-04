@@ -69,6 +69,13 @@ type Props = {
   // Current reading position as a 0..1 fraction of the chapter, so narration can
   // start where the reader is rather than at the top.
   getReadingFraction?: () => number;
+  // Whether a next chapter exists, and how to move to it. When "auto-advance" is
+  // on, finishing the chapter calls onNextChapter so narration rolls into it.
+  hasNext?: boolean;
+  onNextChapter?: () => void;
+  // Begin narrating automatically on mount (set when we arrived here via
+  // auto-advance from the previous chapter).
+  autoStart?: boolean;
   // Metadata for the OS media session (lock screen / notification controls).
   mediaTitle?: string;
   mediaSubtitle?: string;
@@ -77,6 +84,7 @@ type Props = {
 
 export const TtsPlayer = forwardRef<TtsPlayerHandle, Props>(function TtsPlayer(
   { bookId, position, onSegments, onHighlight, onComplete, getReadingFraction,
+    hasNext, onNextChapter, autoStart,
     mediaTitle, mediaSubtitle, mediaArtwork },
   ref
 ) {
@@ -89,6 +97,7 @@ export const TtsPlayer = forwardRef<TtsPlayerHandle, Props>(function TtsPlayer(
   const [speed, setSpeed] = useState(1);
   const [modelPct, setModelPct] = useState<number | null>(null);
   const [showSettings, setShowSettings] = useState(false);
+  const [autoNext, setAutoNext] = useState(false);
 
   const [browserSupported, setBrowserSupported] = useState(false);
   const [engine, setEngine] = useState<Engine | null>(null);
@@ -111,6 +120,7 @@ export const TtsPlayer = forwardRef<TtsPlayerHandle, Props>(function TtsPlayer(
   const lastHi = useRef<number | null>(null);
   const playRef = useRef<() => void>(() => {});
   const finishRef = useRef<() => void>(() => {});
+  const autoStartedRef = useRef(false); // guard: auto-start narration at most once
 
   const serverAvailable = !!info?.available;
   voiceRef.current = voice || info?.default || DEFAULT_VOICE;
@@ -132,6 +142,22 @@ export const TtsPlayer = forwardRef<TtsPlayerHandle, Props>(function TtsPlayer(
   }, []);
 
   useEffect(() => onModelProgress((p) => setModelPct(p)), []);
+
+  // Remember the voice per book: entering a novel restores the voice you last
+  // used for it (localStorage, device-local). Auto-advance is a single global
+  // preference. Voice is keyed on bookId so switching novels swaps it.
+  useEffect(() => {
+    try {
+      const v = localStorage.getItem(`ns:tts-voice:${bookId}`);
+      if (v) {
+        setVoice(v);
+        voiceRef.current = v;
+      }
+      setAutoNext(localStorage.getItem("ns:tts-auto-next") === "1");
+    } catch {
+      /* ignore */
+    }
+  }, [bookId]);
 
   const revokeBrowserCache = useCallback(() => {
     for (const u of browserCache.current.values()) URL.revokeObjectURL(u);
@@ -320,6 +346,8 @@ export const TtsPlayer = forwardRef<TtsPlayerHandle, Props>(function TtsPlayer(
     setElapsedSec(totalSec);
     onHighlight(null);
     onComplete?.();
+    // Reassigned every render, so `autoNext`/`hasNext` here are always current.
+    if (autoNext && hasNext) onNextChapter?.();
   };
 
   // Audio element + handlers created once.
@@ -520,6 +548,22 @@ export const TtsPlayer = forwardRef<TtsPlayerHandle, Props>(function TtsPlayer(
     }
   }, [bookId, position, play, onSegments, revokeBrowserCache, locateSentence, getReadingFraction]);
 
+  // Each chapter gets one shot at auto-starting.
+  useEffect(() => {
+    autoStartedRef.current = false;
+  }, [position]);
+
+  // Roll narration straight into the chapter when we arrived via auto-advance,
+  // once the engine is ready. Runs at most once per chapter.
+  useEffect(() => {
+    if (!autoStart || autoStartedRef.current) return;
+    if (info === undefined || engine === null) return;
+    if (!serverAvailable && !browserSupported) return;
+    if (mode !== "idle") return;
+    autoStartedRef.current = true;
+    void start();
+  }, [autoStart, info, engine, serverAvailable, browserSupported, mode, start]);
+
   if (info === undefined) return null;
   if (!serverAvailable && !browserSupported) return null;
 
@@ -613,6 +657,11 @@ export const TtsPlayer = forwardRef<TtsPlayerHandle, Props>(function TtsPlayer(
                   onChange={(e) => {
                     setVoice(e.target.value);
                     voiceRef.current = e.target.value;
+                    try {
+                      localStorage.setItem(`ns:tts-voice:${bookId}`, e.target.value);
+                    } catch {
+                      /* ignore */
+                    }
                     reload();
                   }}
                 >
@@ -646,6 +695,38 @@ export const TtsPlayer = forwardRef<TtsPlayerHandle, Props>(function TtsPlayer(
                     </option>
                   ))}
                 </select>
+              </label>
+              <label className="flex cursor-pointer items-center gap-2">
+                <span className="kicker w-14">Auto-next</span>
+                <button
+                  type="button"
+                  role="switch"
+                  aria-checked={autoNext}
+                  aria-label="Auto-advance to next chapter"
+                  onClick={() => {
+                    const next = !autoNext;
+                    setAutoNext(next);
+                    try {
+                      localStorage.setItem("ns:tts-auto-next", next ? "1" : "0");
+                    } catch {
+                      /* ignore */
+                    }
+                  }}
+                  className={cn(
+                    "relative h-5 w-9 rounded-full transition-colors",
+                    autoNext ? "bg-accent" : "bg-muted"
+                  )}
+                >
+                  <span
+                    className={cn(
+                      "absolute top-0.5 h-4 w-4 rounded-full bg-background shadow transition-all",
+                      autoNext ? "left-[1.125rem]" : "left-0.5"
+                    )}
+                  />
+                </button>
+                <span className="text-xs text-muted-foreground">
+                  Continue into next chapter
+                </span>
               </label>
             </div>
           )}
