@@ -11,14 +11,18 @@ import type { KokoroTTS } from "kokoro-js";
 
 const MODEL_ID = "onnx-community/Kokoro-82M-v1.0-ONNX";
 
-// GPU model precision. We only load on-device when a WebGPU adapter exists, so
-// this always targets the GPU (via transformers.js v4's *native* WebGPU EP — the
-// v3 JSEP backend it replaced silently ran on the CPU on mobile GPUs, notably
-// Mali, which is why on-device felt CPU-bound before the v4 upgrade). fp16
-// (~163MB) needs the adapter's `shader-f16` feature; without it we use fp32
-// (~326MB), which runs on any WebGPU GPU. We do NOT use q8 (int8) here — the
-// WebGPU backend can't accelerate int8, so it would fall back to the CPU.
-type Dtype = "fp16" | "fp32";
+// GPU model precision (on transformers.js v4 = native WebGPU EP). We only load
+// on-device when a WebGPU adapter exists. fp16 (~163MB) needs the adapter's
+// `shader-f16` feature and runs on the GPU — fast on capable devices. Without
+// shader-f16 there is no working GPU option:
+//   - fp32 (~326MB) does run on the GPU, but produces CORRUPTED/silent audio on
+//     some mobile GPUs (tested: Mali-G720 → no sound, and 326MB nearly OOMs the
+//     phone). Not usable there.
+//   - so we fall back to q8 (~90MB, int8), which the WebGPU backend can't
+//     accelerate → it runs on the CPU: slow but *correct*.
+// f16-less devices (many phones) should therefore use the SERVER engine; q8 is
+// just a "make some sound" fallback.
+type Dtype = "fp16" | "q8";
 
 interface GpuAdapterLike {
   features: { has(name: string): boolean };
@@ -61,13 +65,15 @@ export async function browserTtsUsable(): Promise<boolean> {
 }
 
 /**
- * Pick the GPU model precision from the adapter's capabilities: fp16 when the
- * `shader-f16` feature is present (smaller/faster), otherwise fp32 (runs on any
- * WebGPU GPU). Both execute on the GPU under the native WebGPU EP.
+ * fp16 (GPU, via the native WebGPU EP) when the adapter exposes `shader-f16`,
+ * else q8. q8 runs on the CPU (int8 isn't WebGPU-accelerated) — slow but
+ * correct; we deliberately avoid fp32, which uses the GPU but yields
+ * corrupted/silent audio on some mobile GPUs. f16-less devices should prefer the
+ * server engine.
  */
 async function pickDtype(): Promise<Dtype> {
   const adapter = await getAdapter();
-  return adapter?.features.has("shader-f16") ? "fp16" : "fp32";
+  return adapter?.features.has("shader-f16") ? "fp16" : "q8";
 }
 
 let enginePromise: Promise<KokoroTTS> | null = null;
@@ -96,7 +102,7 @@ export function onModelProgress(cb: (percent: number) => void): () => void {
 }
 
 /** Lazily load the model (singleton). First call kicks off the model download
- *  (~163MB fp16 / ~326MB fp32), cached by the browser thereafter. */
+ *  (~163MB fp16 / ~90MB q8), cached by the browser thereafter. */
 export function loadBrowserTts(): Promise<KokoroTTS> {
   if (!enginePromise) {
     enginePromise = (async () => {
