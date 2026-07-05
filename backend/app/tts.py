@@ -13,6 +13,8 @@ import io
 import logging
 import os
 import re
+import shutil
+import subprocess
 import sys
 import threading
 import wave
@@ -220,6 +222,36 @@ class _TTS:
 
 
 tts = _TTS()
+
+
+# Kokoro emits 24 kHz mono WAV — ~1.5 MB for a ~40 s chunk. That's slow to stream
+# to a phone (it was the real cause of "narration takes forever to start"). We
+# transcode to mono MP3 (~6x smaller) via ffmpeg when it's available. Speech at
+# 64 kbps mono is transparent.
+_FFMPEG = shutil.which("ffmpeg")
+MP3_BITRATE = "64k"
+
+
+def encode_mp3(wav_bytes: bytes) -> Optional[bytes]:
+    """Transcode a WAV blob to mono MP3 via ffmpeg (stdin -> stdout). Returns None
+    if ffmpeg is missing or fails, so the caller can fall back to serving WAV."""
+    if not _FFMPEG:
+        return None
+    try:
+        proc = subprocess.run(
+            [_FFMPEG, "-hide_banner", "-loglevel", "error",
+             "-i", "pipe:0", "-ac", "1", "-b:a", MP3_BITRATE, "-f", "mp3", "pipe:1"],
+            input=wav_bytes, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+            timeout=120,
+        )
+    except (OSError, subprocess.SubprocessError) as e:
+        logger.warning("mp3 encode: ffmpeg failed to run: %s", e)
+        return None
+    if proc.returncode == 0 and proc.stdout:
+        return proc.stdout
+    logger.warning("mp3 encode failed (rc=%s): %s", proc.returncode,
+                   proc.stderr.decode("utf-8", "ignore")[:200])
+    return None
 
 
 _SENT_END = re.compile(r'(?<=[.!?"”’])\s+')

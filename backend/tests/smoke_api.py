@@ -172,7 +172,10 @@ with TestClient(app) as client:
         check("tts-manifest", isinstance(man["chunks"], list) and len(man["chunks"]) >= 1
               and len(man["paragraphs"]) >= 1)
         au = client.get(f"/api/books/{bid}/chapters/1/audio/0")
-        check("tts-audio", au.status_code == 200 and au.content[:4] == b"RIFF")
+        ctype = au.headers.get("content-type", "")
+        # Compressed to MP3 when ffmpeg is present; WAV fallback otherwise.
+        check("tts-audio", au.status_code == 200 and len(au.content) > 0
+              and ctype in ("audio/mpeg", "audio/wav"), ctype)
     else:
         print("[tts] unavailable (skipping synth checks)")
 

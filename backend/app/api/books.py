@@ -29,7 +29,14 @@ from ..models import (
 from ..services.library import book_read, books_read, has_cover
 from ..services.reading import ensure_word_counts, progress_payload
 from ..settings import settings
-from ..tts import DEFAULT_VOICE, build_chunks, chunk_to_text, segment_paragraphs, tts
+from ..tts import (
+    DEFAULT_VOICE,
+    build_chunks,
+    chunk_to_text,
+    encode_mp3,
+    segment_paragraphs,
+    tts,
+)
 from ..jobs.manager import DuplicateJobError, JobManager
 from .deps import get_manager
 from ..schemas import (
@@ -46,6 +53,19 @@ from ..schemas import (
 )
 
 router = APIRouter()
+
+
+def _write_atomic(path, data: bytes) -> None:
+    """Write bytes via a temp file + os.replace, so a concurrent reader never sees
+    a half-written file (two requests can race to synthesize the same chunk)."""
+    fd, tmp = tempfile.mkstemp(dir=path.parent, suffix=".tmp")
+    try:
+        with os.fdopen(fd, "wb") as f:
+            f.write(data)
+        os.replace(tmp, path)
+    finally:
+        if os.path.exists(tmp):
+            os.unlink(tmp)
 
 
 def _get_chapter(session: Session, book_id: int, position: int) -> Chapter:
@@ -262,22 +282,26 @@ def audio_chunk(book_id: int, position: int, chunk: int,
     sp = f"{speed:.2f}"
     cache_dir = settings.audio_dir / str(book_id) / str(position)
     cache_dir.mkdir(parents=True, exist_ok=True)
-    path = cache_dir / f"{v}_{sp}_{chunk}.wav"
-    if not path.exists():
-        # Synthesis is CPU-bound; the sync endpoint runs in the threadpool so it
-        # doesn't block the event loop.
-        data = tts.synth_wav(chunk_to_text(flat, chunks[chunk]), v, speed)
-        # Write to a temp file then atomically rename, so two concurrent requests
-        # for the same uncached chunk can't serve a half-written file.
-        fd, tmp = tempfile.mkstemp(dir=cache_dir, suffix=".wav.tmp")
-        try:
-            with os.fdopen(fd, "wb") as f:
-                f.write(data)
-            os.replace(tmp, path)
-        finally:
-            if os.path.exists(tmp):
-                os.unlink(tmp)
-    return FileResponse(path, media_type="audio/wav")
+    mp3_path = cache_dir / f"{v}_{sp}_{chunk}.mp3"
+    wav_path = cache_dir / f"{v}_{sp}_{chunk}.wav"
+    # Serve whatever's already cached — MP3 preferred; older caches may be WAV.
+    if mp3_path.exists():
+        return FileResponse(mp3_path, media_type="audio/mpeg")
+    if wav_path.exists():
+        return FileResponse(wav_path, media_type="audio/wav")
+
+    # Synthesis is CPU/GPU-bound; the sync endpoint runs in the threadpool so it
+    # doesn't block the event loop.
+    wav = tts.synth_wav(chunk_to_text(flat, chunks[chunk]), v, speed)
+    # Compress to MP3 (~6x smaller) so it streams to phones quickly — this is what
+    # makes narration start fast over a mobile link. Fall back to WAV if ffmpeg
+    # isn't installed.
+    mp3 = encode_mp3(wav)
+    if mp3 is not None:
+        _write_atomic(mp3_path, mp3)
+        return FileResponse(mp3_path, media_type="audio/mpeg")
+    _write_atomic(wav_path, wav)
+    return FileResponse(wav_path, media_type="audio/wav")
 
 
 @router.get("/{book_id}/cover")
