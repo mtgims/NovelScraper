@@ -11,10 +11,13 @@ import type { KokoroTTS } from "kokoro-js";
 
 const MODEL_ID = "onnx-community/Kokoro-82M-v1.0-ONNX";
 
-// fp16 (~163MB) is the best size/speed balance but needs the adapter's
-// `shader-f16` feature. q8 (~90MB, 8-bit quantized) needs no f16 and runs on far
-// more GPUs — notably some mobile ones — at virtually identical speech quality.
-type Dtype = "fp16" | "q8";
+// GPU model precision. fp16 (~163MB) is the best size/speed balance but needs the
+// adapter's `shader-f16` feature. Without it we use fp32 (~326MB): bigger, but it
+// runs on ANY WebGPU GPU. Both execute on the GPU. (We previously used q8 here —
+// int8 quantized — but the WebGPU backend can't accelerate int8, so q8 silently
+// ran on the CPU, which is why on-device felt like it wasn't using the GPU on
+// f16-less phones.)
+type Dtype = "fp16" | "fp32";
 
 interface GpuAdapterLike {
   features: { has(name: string): boolean };
@@ -57,14 +60,14 @@ export async function browserTtsUsable(): Promise<boolean> {
 }
 
 /**
- * Pick the model precision from the GPU's capabilities. fp16 requires the
- * `shader-f16` WebGPU feature; when the adapter doesn't expose it (common on
- * some mobile GPUs) we drop to q8 rather than letting fp16 synthesis throw and
- * bounce the user to the server. This keeps TTS on-device on more hardware.
+ * Pick the model precision from the GPU's capabilities. fp16 needs the
+ * `shader-f16` WebGPU feature; without it we use fp32, which runs on any WebGPU
+ * GPU. Both execute on the GPU — unlike q8 (int8), which the WebGPU backend
+ * can't accelerate and would run on the CPU (slow, defeating the point).
  */
 async function pickDtype(): Promise<Dtype> {
   const adapter = await getAdapter();
-  return adapter?.features.has("shader-f16") ? "fp16" : "q8";
+  return adapter?.features.has("shader-f16") ? "fp16" : "fp32";
 }
 
 let enginePromise: Promise<KokoroTTS> | null = null;
@@ -92,7 +95,8 @@ export function onModelProgress(cb: (percent: number) => void): () => void {
   };
 }
 
-/** Lazily load the model (singleton). First call kicks off the ~163MB download. */
+/** Lazily load the model (singleton). First call kicks off the model download
+ *  (~163MB fp16, ~326MB fp32), cached by the browser thereafter. */
 export function loadBrowserTts(): Promise<KokoroTTS> {
   if (!enginePromise) {
     enginePromise = (async () => {
