@@ -11,17 +11,14 @@ import type { KokoroTTS } from "kokoro-js";
 
 const MODEL_ID = "onnx-community/Kokoro-82M-v1.0-ONNX";
 
-// GPU model precision. fp16 (~163MB) runs on the GPU but needs the adapter's
-// `shader-f16` feature. Without it there is no good on-device option:
-//   - fp32 (~326MB) *can* use the GPU, but is a heavy download and, in practice,
-//     ONNX Runtime Web's WebGPU backend still falls back to CPU on many mobile
-//     GPU drivers (tested: a hardware-accelerated Mali phone ran fp32 on the CPU
-//     and nearly froze — full precision on CPU is the worst case).
-//   - q8 (~90MB, int8) downloads small but the WebGPU backend can't accelerate
-//     int8, so it runs on the CPU too.
-// So on f16-less phones on-device is effectively CPU-bound either way; we keep q8
-// as the lighter fallback and steer such devices to the server engine instead.
-type Dtype = "fp16" | "q8";
+// GPU model precision. We only load on-device when a WebGPU adapter exists, so
+// this always targets the GPU (via transformers.js v4's *native* WebGPU EP — the
+// v3 JSEP backend it replaced silently ran on the CPU on mobile GPUs, notably
+// Mali, which is why on-device felt CPU-bound before the v4 upgrade). fp16
+// (~163MB) needs the adapter's `shader-f16` feature; without it we use fp32
+// (~326MB), which runs on any WebGPU GPU. We do NOT use q8 (int8) here — the
+// WebGPU backend can't accelerate int8, so it would fall back to the CPU.
+type Dtype = "fp16" | "fp32";
 
 interface GpuAdapterLike {
   features: { has(name: string): boolean };
@@ -64,14 +61,13 @@ export async function browserTtsUsable(): Promise<boolean> {
 }
 
 /**
- * Pick the model precision from the GPU's capabilities. fp16 (GPU) requires the
- * `shader-f16` WebGPU feature; without it we fall back to q8. On such devices
- * on-device synthesis tends to run on the CPU regardless (see the Dtype note),
- * so the server engine is preferred — this just keeps the lighter model.
+ * Pick the GPU model precision from the adapter's capabilities: fp16 when the
+ * `shader-f16` feature is present (smaller/faster), otherwise fp32 (runs on any
+ * WebGPU GPU). Both execute on the GPU under the native WebGPU EP.
  */
 async function pickDtype(): Promise<Dtype> {
   const adapter = await getAdapter();
-  return adapter?.features.has("shader-f16") ? "fp16" : "q8";
+  return adapter?.features.has("shader-f16") ? "fp16" : "fp32";
 }
 
 let enginePromise: Promise<KokoroTTS> | null = null;
@@ -100,7 +96,7 @@ export function onModelProgress(cb: (percent: number) => void): () => void {
 }
 
 /** Lazily load the model (singleton). First call kicks off the model download
- *  (~163MB fp16, ~90MB q8), cached by the browser thereafter. */
+ *  (~163MB fp16 / ~326MB fp32), cached by the browser thereafter. */
 export function loadBrowserTts(): Promise<KokoroTTS> {
   if (!enginePromise) {
     enginePromise = (async () => {

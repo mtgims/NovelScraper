@@ -39,6 +39,7 @@
     "overrides": "onnxruntime-node (~536MB Node-only ONNX backend) is pulled in transitively by @huggingface/transformers but never used — Kokoro TTS runs in the browser via onnxruntime-web. Stubbed out to save disk."
   },
   "overrides": {
-    "onnxruntime-node": "file:stubs/onnxruntime-node"
+    "onnxruntime-node": "file:stubs/onnxruntime-node",
+    "@huggingface/transformers": "4.2.0"
   }
 }
