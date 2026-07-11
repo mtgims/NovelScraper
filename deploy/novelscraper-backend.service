@@ -6,6 +6,10 @@ Wants=network-online.target
 [Service]
 Type=simple
 WorkingDirectory=%h/NovelScraper/backend
+# Auth config (admin bootstrap credentials + options). Optional file (the leading
+# '-' means "skip if absent"); keep it out of git since it holds a password. See
+# deploy/README.md "Accounts & login".
+EnvironmentFile=-%h/.config/novelscraper/novelscraper.env
 # Bound to localhost only — the frontend proxies to it, so it never needs to be
 # exposed on the network.
 ExecStart=%h/NovelScraper/backend/.venv/bin/uvicorn app.main:app --host 127.0.0.1 --port 8000
