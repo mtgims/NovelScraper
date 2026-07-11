@@ -10,6 +10,30 @@ from .models import Setting
 from .settings import settings
 
 AUTO_UPDATE_HOURS = "auto_update_hours"
+ALLOW_OPEN_SIGNUP = "allow_open_signup"
+
+
+def get_allow_open_signup() -> bool:
+    """Whether registration is open to anyone (no invite). Persisted override of
+    the NOVELSCRAPER_ALLOW_OPEN_SIGNUP env default, so an admin can flip it from
+    the UI without a redeploy."""
+    with Session(engine) as s:
+        row = s.get(Setting, ALLOW_OPEN_SIGNUP)
+    if row is None:
+        return settings.allow_open_signup  # env default
+    return row.value == "1"
+
+
+def set_allow_open_signup(enabled: bool) -> None:
+    with Session(engine) as s:
+        row = s.get(Setting, ALLOW_OPEN_SIGNUP)
+        val = "1" if enabled else "0"
+        if row is None:
+            s.add(Setting(key=ALLOW_OPEN_SIGNUP, value=val))
+        else:
+            row.value = val
+            s.add(row)
+        s.commit()
 
 
 def get_auto_update_hours() -> int:

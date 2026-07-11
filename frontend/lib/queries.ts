@@ -29,6 +29,37 @@ export function useMe() {
   });
 }
 
+// Public pre-login config (whether an invite is required to register).
+export function useAuthConfig() {
+  return useQuery({ queryKey: ["auth-config"], queryFn: api.authConfig });
+}
+
+// --- admin account management ---
+export function useInvites() {
+  return useQuery({ queryKey: ["invites"], queryFn: api.listInvites });
+}
+
+export function useUsers() {
+  return useQuery({ queryKey: ["users"], queryFn: api.listUsers });
+}
+
+export function useCreateInvite() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: () => api.createInvite(),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ["invites"] }),
+  });
+}
+
+export function useUpdateUser() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({ id, ...body }: { id: number; disabled?: boolean; is_admin?: boolean }) =>
+      api.updateUser(id, body),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ["users"] }),
+  });
+}
+
 export function useSites() {
   return useQuery({ queryKey: ["sites"], queryFn: api.getSites });
 }

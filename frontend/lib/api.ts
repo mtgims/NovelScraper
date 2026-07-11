@@ -1,9 +1,11 @@
 import type {
   AppSettings,
+  AuthConfig,
   Book,
   Chapter,
   ChapterListItem,
   Collection,
+  Invite,
   Job,
   JobCreate,
   ProgressUpdate,
@@ -90,6 +92,14 @@ export const api = {
   me: () => req<User>("/api/auth/me"),
   register: (body: { username: string; password: string; invite_code?: string }) =>
     req<User>("/api/auth/register", { method: "POST", body: JSON.stringify(body) }),
+  authConfig: () => req<AuthConfig>("/api/auth/config"),
+
+  // Admin account management
+  createInvite: () => req<Invite>("/api/auth/invites", { method: "POST" }),
+  listInvites: () => req<Invite[]>("/api/auth/invites"),
+  listUsers: () => req<User[]>("/api/auth/users"),
+  updateUser: (id: number, body: { disabled?: boolean; is_admin?: boolean }) =>
+    req<User>(`/api/auth/users/${id}`, { method: "PATCH", body: JSON.stringify(body) }),
 
   getSites: () => req<Site[]>("/api/sites"),
   getStats: () => req<Stats>("/api/stats"),

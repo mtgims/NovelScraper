@@ -16,6 +16,7 @@ from .. import auth as auth_svc
 from ..db import get_session
 from ..models import Invite, User
 from ..schemas import (
+    AuthConfig,
     InviteRead,
     LoginRequest,
     RegisterRequest,
@@ -23,10 +24,17 @@ from ..schemas import (
     UserRead,
 )
 from ..security import hash_password
-from ..settings import settings
+from ..store import get_allow_open_signup
 from .deps import get_admin, get_current_user
 
 router = APIRouter()
+
+
+@router.get("/config", response_model=AuthConfig)
+def auth_config():
+    """Public pre-login config so the register page knows whether an invite is
+    required. (Deliberately reveals nothing sensitive.)"""
+    return AuthConfig(allow_open_signup=get_allow_open_signup())
 
 
 @router.post("/login", response_model=UserRead)
@@ -57,7 +65,7 @@ def register(body: RegisterRequest, response: Response,
     # Invite-gated unless open signup is enabled. Validate the invite before
     # creating anything so a bad code can't leave a half-registered account.
     invite = None
-    if not settings.allow_open_signup:
+    if not get_allow_open_signup():
         invite = auth_svc.find_valid_invite(session, body.invite_code or "")
         if invite is None:
             raise HTTPException(status_code=403, detail="Invalid or expired invite code")

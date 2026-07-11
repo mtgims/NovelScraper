@@ -82,6 +82,11 @@ export interface Collection {
 
 export interface AppSettings {
   auto_update_hours: number;
+  allow_open_signup: boolean;
+}
+
+export interface AuthConfig {
+  allow_open_signup: boolean;
 }
 
 export interface Site {

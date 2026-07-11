@@ -10,10 +10,13 @@ import { Button } from "@/components/ui/button";
 import { Field } from "@/components/ui/field";
 import { Input } from "@/components/ui/input";
 import { api, ApiError } from "@/lib/api";
+import { useAuthConfig } from "@/lib/queries";
 
 export default function RegisterPage() {
   const router = useRouter();
   const qc = useQueryClient();
+  const { data: config } = useAuthConfig();
+  const inviteRequired = !config?.allow_open_signup;
   const [username, setUsername] = useState("");
   const [password, setPassword] = useState("");
   const [inviteCode, setInviteCode] = useState("");
@@ -61,18 +64,25 @@ export default function RegisterPage() {
             required
           />
         </Field>
-        <Field
-          label="Invite code"
-          htmlFor="invite"
-          helper="Required unless open sign-up is enabled."
-          error={error ?? undefined}
-        >
-          <Input
-            id="invite"
-            value={inviteCode}
-            onChange={(e) => setInviteCode(e.target.value)}
-          />
-        </Field>
+        {inviteRequired && (
+          <Field
+            label="Invite code"
+            htmlFor="invite"
+            helper="An invite is required to register."
+          >
+            <Input
+              id="invite"
+              value={inviteCode}
+              onChange={(e) => setInviteCode(e.target.value)}
+              required
+            />
+          </Field>
+        )}
+        {error && (
+          <p className="text-xs text-destructive" role="alert">
+            {error}
+          </p>
+        )}
         <Button type="submit" size="lg" className="w-full" disabled={busy}>
           {busy ? "Creating account…" : "Create account"}
         </Button>

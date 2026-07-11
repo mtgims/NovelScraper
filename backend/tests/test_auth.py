@@ -82,9 +82,30 @@ with TestClient(app) as c:
     check("bob-invites-403", c.post("/api/auth/invites", cookies=as_(bob_tok)).status_code == 403)
     check("bob-users-403", c.get("/api/auth/users", cookies=as_(bob_tok)).status_code == 403)
 
+    # --- open-signup toggle (admin) + public /config ---
+    check("config-default-closed",
+          c.get("/api/auth/config").json()["allow_open_signup"] is False)
+    check("nonadmin-settings-403",
+          c.put("/api/settings", json={"allow_open_signup": True},
+                cookies=as_(bob_tok)).status_code == 403)
+    en = c.put("/api/settings", json={"allow_open_signup": True}, cookies=as_(admin_tok))
+    check("admin-enable-open-signup",
+          en.status_code == 200 and en.json()["allow_open_signup"] is True)
+    check("config-now-open", c.get("/api/auth/config").json()["allow_open_signup"] is True)
+    openreg = c.post("/api/auth/register",
+                     json={"username": "dave", "password": "password123"})
+    check("open-register-no-invite", openreg.status_code == 200, str(openreg.status_code))
+    c.cookies.clear()
+    c.put("/api/settings", json={"allow_open_signup": False}, cookies=as_(admin_tok))
+    check("config-closed-again",
+          c.get("/api/auth/config").json()["allow_open_signup"] is False)
+    check("closed-register-403",
+          c.post("/api/auth/register",
+                 json={"username": "erin", "password": "password123"}).status_code == 403)
+
     # --- admin user management ---
     users = c.get("/api/auth/users", cookies=as_(admin_tok)).json()
-    check("list-users", len(users) == 2)
+    check("list-users", {"admin", "bob", "dave"} <= {u["username"] for u in users})
     admin_id = next(u["id"] for u in users if u["username"] == "admin")
     bob_id = next(u["id"] for u in users if u["username"] == "bob")
 

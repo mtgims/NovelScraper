@@ -161,11 +161,19 @@ class BookReorder(BaseModel):
 
 class AppSettings(BaseModel):
     auto_update_hours: int
+    allow_open_signup: bool = False
 
 
 class AppSettingsUpdate(BaseModel):
     # Hours between automatic new-chapter checks; 0 disables the scheduler.
     auto_update_hours: Optional[int] = Field(default=None, ge=0, le=8760)
+    # Whether anyone can register without an invite.
+    allow_open_signup: Optional[bool] = None
+
+
+class AuthConfig(BaseModel):
+    """Public (pre-login) config the register page needs."""
+    allow_open_signup: bool
 
 
 class SiteRead(BaseModel):
