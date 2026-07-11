@@ -78,8 +78,24 @@ with TestClient(app) as c:
                    json={"username": "bob", "password": "password123", "invite_code": code2})
     check("register-taken-409", taken.status_code == 409, str(taken.status_code))
 
+    # --- invite management: delete one, clear used/expired ---
+    tmp_code = c.post("/api/auth/invites", cookies=as_(admin_tok)).json()["code"]
+    check("delete-invite-204",
+          c.delete(f"/api/auth/invites/{tmp_code}", cookies=as_(admin_tok)).status_code == 204)
+    check("deleted-invite-unusable",
+          c.post("/api/auth/register",
+                 json={"username": "zed", "password": "password123", "invite_code": tmp_code}
+                 ).status_code == 403)
+    c.cookies.clear()
+    cleared = c.delete("/api/auth/invites", cookies=as_(admin_tok))  # code (used) is spent
+    check("clear-spent-200",
+          cleared.status_code == 200 and cleared.json()["deleted"] >= 1, str(cleared.json()))
+    remaining = {i["code"] for i in c.get("/api/auth/invites", cookies=as_(admin_tok)).json()}
+    check("clear-kept-active-dropped-used", code2 in remaining and code not in remaining)
+
     # --- non-admin can't reach admin endpoints ---
     check("bob-invites-403", c.post("/api/auth/invites", cookies=as_(bob_tok)).status_code == 403)
+    check("bob-del-invites-403", c.delete("/api/auth/invites", cookies=as_(bob_tok)).status_code == 403)
     check("bob-users-403", c.get("/api/auth/users", cookies=as_(bob_tok)).status_code == 403)
 
     # --- open-signup toggle (admin) + public /config ---

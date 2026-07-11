@@ -51,6 +51,22 @@ export function useCreateInvite() {
   });
 }
 
+export function useDeleteInvite() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (code: string) => api.deleteInvite(code),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ["invites"] }),
+  });
+}
+
+export function useClearSpentInvites() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: () => api.clearSpentInvites(),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ["invites"] }),
+  });
+}
+
 export function useUpdateUser() {
   const qc = useQueryClient();
   return useMutation({

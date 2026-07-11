@@ -12,6 +12,7 @@ import {
   PanelLeftClose,
   PlusSquare,
   Settings,
+  ShieldCheck,
   X,
 } from "lucide-react";
 import Link from "next/link";
@@ -32,6 +33,9 @@ const NAV = [
   { href: "/stats", label: "Statistics", icon: BarChart3 },
   { href: "/settings", label: "Settings", icon: Settings },
 ];
+
+// Shown only to admins (appended after the shared nav).
+const ADMIN_NAV = { href: "/admin", label: "Admin", icon: ShieldCheck };
 
 function NavLink({
   href,
@@ -170,11 +174,15 @@ export function AppShell({ children }: { children: ReactNode }) {
           </div>
 
           <nav className="flex-1 space-y-1 overflow-y-auto px-3 py-4">
-            {NAV.map((item) => (
+            {(me?.is_admin ? [...NAV, ADMIN_NAV] : NAV).map((item) => (
               <NavLink
                 key={item.href}
                 {...item}
-                active={item.exact ? pathname === item.href : pathname.startsWith(item.href)}
+                active={
+                  item.href === "/"
+                    ? pathname === "/"
+                    : pathname.startsWith(item.href)
+                }
                 onNavigate={() => setMobileOpen(false)}
               />
             ))}
