@@ -104,6 +104,7 @@ export const api = {
   listUsers: () => req<User[]>("/api/auth/users"),
   updateUser: (id: number, body: { disabled?: boolean; is_admin?: boolean }) =>
     req<User>(`/api/auth/users/${id}`, { method: "PATCH", body: JSON.stringify(body) }),
+  deleteUser: (id: number) => req<void>(`/api/auth/users/${id}`, { method: "DELETE" }),
 
   getSites: () => req<Site[]>("/api/sites"),
   getStats: () => req<Stats>("/api/stats"),

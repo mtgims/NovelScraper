@@ -111,6 +111,7 @@ with TestClient(app) as c:
     openreg = c.post("/api/auth/register",
                      json={"username": "dave", "password": "password123"})
     check("open-register-no-invite", openreg.status_code == 200, str(openreg.status_code))
+    dave_tok = c.cookies.get(COOKIE_NAME)  # for the account-deletion test below
     c.cookies.clear()
     c.put("/api/settings", json={"allow_open_signup": False}, cookies=as_(admin_tok))
     check("config-closed-again",
@@ -137,6 +138,21 @@ with TestClient(app) as c:
     check("disabled-session-401", c.get("/api/auth/me", cookies=as_(bob_tok)).status_code == 401)
     relogin, _ = login(c, "bob", "password123")
     check("disabled-login-401", relogin.status_code == 401)
+
+    # --- delete an account (and its data + sessions) ---
+    dave_id = next(u["id"] for u in c.get("/api/auth/users", cookies=as_(admin_tok)).json()
+                   if u["username"] == "dave")
+    check("cant-delete-self-400",
+          c.delete(f"/api/auth/users/{admin_id}", cookies=as_(admin_tok)).status_code == 400)
+    check("delete-user-204",
+          c.delete(f"/api/auth/users/{dave_id}", cookies=as_(admin_tok)).status_code == 204)
+    check("deleted-user-gone",
+          all(u["username"] != "dave"
+              for u in c.get("/api/auth/users", cookies=as_(admin_tok)).json()))
+    check("deleted-user-session-dead",
+          c.get("/api/auth/me", cookies=as_(dave_tok)).status_code == 401)
+    check("delete-missing-404",
+          c.delete("/api/auth/users/999999", cookies=as_(admin_tok)).status_code == 404)
 
     # --- logout revokes the session ---
     c.cookies.set(COOKIE_NAME, admin_tok)

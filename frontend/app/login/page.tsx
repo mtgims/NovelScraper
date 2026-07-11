@@ -9,6 +9,7 @@ import { AuthCard } from "@/components/auth-card";
 import { Button } from "@/components/ui/button";
 import { Field } from "@/components/ui/field";
 import { Input } from "@/components/ui/input";
+import { PasswordInput } from "@/components/ui/password-input";
 import { api, ApiError } from "@/lib/api";
 
 export default function LoginPage() {
@@ -47,9 +48,8 @@ export default function LoginPage() {
           />
         </Field>
         <Field label="Password" htmlFor="password" error={error ?? undefined}>
-          <Input
+          <PasswordInput
             id="password"
-            type="password"
             autoComplete="current-password"
             value={password}
             onChange={(e) => setPassword(e.target.value)}

@@ -9,6 +9,7 @@ import { AuthCard } from "@/components/auth-card";
 import { Button } from "@/components/ui/button";
 import { Field } from "@/components/ui/field";
 import { Input } from "@/components/ui/input";
+import { PasswordInput } from "@/components/ui/password-input";
 import { api, ApiError } from "@/lib/api";
 import { useAuthConfig } from "@/lib/queries";
 
@@ -55,9 +56,8 @@ export default function RegisterPage() {
           />
         </Field>
         <Field label="Password" htmlFor="password" helper="At least 8 characters.">
-          <Input
+          <PasswordInput
             id="password"
-            type="password"
             autoComplete="new-password"
             value={password}
             onChange={(e) => setPassword(e.target.value)}

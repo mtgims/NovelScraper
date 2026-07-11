@@ -103,5 +103,21 @@ with TestClient(app) as c:
     check("bob-sees-only-his", len(bob_lib) == 1 and bob_lib[0]["id"] == b_book)
     check("admin-cant-see-bobs", c.get(f"/api/books/{b_book}", cookies=as_(admin_tok)).status_code == 404)
 
+    # --- deleting bob's account wipes his whole library (cascade), admin's survives ---
+    import sqlite3
+    bob_id = next(u["id"] for u in c.get("/api/auth/users", cookies=as_(admin_tok)).json()
+                  if u["username"] == "bob")
+    check("delete-bob-204",
+          c.delete(f"/api/auth/users/{bob_id}", cookies=as_(admin_tok)).status_code == 204)
+    db = sqlite3.connect(os.environ["NOVELSCRAPER_DB"])
+    n_book = db.execute("SELECT count(*) FROM book WHERE id=?", (b_book,)).fetchone()[0]
+    n_chap = db.execute("SELECT count(*) FROM chapter WHERE book_id=?", (b_book,)).fetchone()[0]
+    n_vol = db.execute("SELECT count(*) FROM volume WHERE book_id=?", (b_book,)).fetchone()[0]
+    n_admin_book = db.execute("SELECT count(*) FROM book WHERE id=?", (a_book,)).fetchone()[0]
+    db.close()
+    check("bobs-library-purged", n_book == 0 and n_chap == 0 and n_vol == 0,
+          f"book={n_book} chap={n_chap} vol={n_vol}")
+    check("admins-book-survived", n_admin_book == 1)
+
 print(f"\nSUMMARY: {sum(ok)}/{len(ok)} passed")
 sys.exit(0 if all(ok) else 1)
