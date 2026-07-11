@@ -16,6 +16,7 @@ import time
 from datetime import datetime, timedelta, timezone
 
 from fastapi import Response
+from sqlalchemy import update
 from sqlmodel import Session, select
 
 from .models import Invite, User, UserSession
@@ -146,3 +147,19 @@ def find_valid_invite(session: Session, code: str) -> Invite | None:
     if inv is None or inv.used_by is not None or inv.expires_at <= _now():
         return None
     return inv
+
+
+def consume_invite(session: Session, code: str, user_id: int) -> bool:
+    """Atomically claim an unused, unexpired invite for a new user. Returns False
+    if it was already used/expired/gone — this single conditional UPDATE closes
+    the check-then-act race where two concurrent registrations could both pass
+    find_valid_invite and each create an account for one code."""
+    result = session.execute(
+        update(Invite)
+        .where(Invite.code == code,
+               Invite.used_by.is_(None),
+               Invite.expires_at > _now())
+        .values(used_by=user_id)
+    )
+    session.commit()
+    return result.rowcount == 1

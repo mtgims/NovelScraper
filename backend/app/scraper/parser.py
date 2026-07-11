@@ -53,12 +53,17 @@ def sanitize(node) -> None:
         # Drop inline event handlers (onclick, onerror, ...).
         for attr in [a for a in tag.attrs if a.lower().startswith("on")]:
             del tag[attr]
-        # Neutralize javascript:/data: URLs.
+        # Neutralize javascript:/data: URLs. Normalize the way browsers do when
+        # resolving a scheme: drop ALL ASCII control chars and whitespace (they're
+        # ignored within a scheme) before matching, case-insensitively. This
+        # catches evasions like "java\tscript:", "java\rscript:", "\x00javascript:"
+        # and entity-encoded control chars (BeautifulSoup already decoded those).
+        # Matters for the EPUB-export path; the in-app reader also runs DOMPurify.
         for attr in _URL_ATTRS:
             value = tag.get(attr)
             if isinstance(value, str):
-                stripped = value.strip().lower().replace("\t", "").replace("\n", "")
-                if stripped.startswith(("javascript:", "data:", "vbscript:")):
+                normalized = re.sub(r"[\x00-\x20]+", "", value).lower()
+                if normalized.startswith(("javascript:", "data:", "vbscript:")):
                     del tag[attr]
 
 
