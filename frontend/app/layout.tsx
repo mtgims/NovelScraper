@@ -5,7 +5,7 @@ import {
   Source_Serif_4,
 } from "next/font/google";
 
-import { AppShell } from "@/components/app-shell";
+import { AuthGate } from "@/components/auth-gate";
 import { Providers } from "./providers";
 import "./globals.css";
 
@@ -56,7 +56,7 @@ export default function RootLayout({
         className={`${display.variable} ${serif.variable} ${mono.variable} font-serif`}
       >
         <Providers>
-          <AppShell>{children}</AppShell>
+          <AuthGate>{children}</AuthGate>
         </Providers>
       </body>
     </html>

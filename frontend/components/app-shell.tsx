@@ -1,10 +1,12 @@
 "use client";
 
+import { useQueryClient } from "@tanstack/react-query";
 import {
   Activity,
   BarChart3,
   BookMarked,
   Library,
+  LogOut,
   Menu,
   PanelLeft,
   PanelLeftClose,
@@ -13,10 +15,12 @@ import {
   X,
 } from "lucide-react";
 import Link from "next/link";
-import { usePathname } from "next/navigation";
+import { usePathname, useRouter } from "next/navigation";
 import { useEffect, useState, type ReactNode } from "react";
 
 import { ThemePicker } from "@/components/theme-picker";
+import { api } from "@/lib/api";
+import { useMe } from "@/lib/queries";
 import { cn } from "@/lib/utils";
 
 const SIDEBAR_KEY = "ns-sidebar-collapsed";
@@ -70,6 +74,19 @@ export function AppShell({ children }: { children: ReactNode }) {
   const [collapsed, setCollapsed] = useState(false);
   const [mobileOpen, setMobileOpen] = useState(false);
   const [ready, setReady] = useState(false);
+  const router = useRouter();
+  const qc = useQueryClient();
+  const { data: me } = useMe();
+
+  async function logout() {
+    try {
+      await api.logout();
+    } catch {
+      /* even if the request fails, drop local state and go to login */
+    }
+    qc.clear();
+    router.replace("/login");
+  }
 
   const inReader = pathname.startsWith("/read/");
 
@@ -163,7 +180,26 @@ export function AppShell({ children }: { children: ReactNode }) {
             ))}
           </nav>
 
-          <div className="border-t border-border p-4">
+          <div className="space-y-3 border-t border-border p-4">
+            {me && (
+              <div className="flex items-center justify-between gap-2">
+                <span className="min-w-0 truncate text-sm text-muted-foreground">
+                  {me.username}
+                  {me.is_admin && (
+                    <span className="ml-1.5 text-xs text-accent">admin</span>
+                  )}
+                </span>
+                <button
+                  type="button"
+                  onClick={logout}
+                  title="Log out"
+                  aria-label="Log out"
+                  className="shrink-0 rounded-sm p-1.5 text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
+                >
+                  <LogOut size={17} />
+                </button>
+              </div>
+            )}
             <ThemePicker />
           </div>
         </div>

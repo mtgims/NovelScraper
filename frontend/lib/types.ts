@@ -1,5 +1,21 @@
 // Mirrors the backend Pydantic schemas (app/schemas.py).
 
+export interface User {
+  id: number;
+  username: string;
+  is_admin: boolean;
+  disabled: boolean;
+  created_at: string;
+}
+
+export interface Invite {
+  code: string;
+  created_by: number;
+  used_by: number | null;
+  expires_at: string;
+  created_at: string;
+}
+
 export type JobStatus =
   | "queued"
   | "running"

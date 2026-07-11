@@ -12,6 +12,7 @@ import type {
   Stats,
   TtsManifest,
   TtsVoices,
+  User,
 } from "./types";
 
 // Empty = same-origin: all /api/* requests hit the frontend, which proxies them
@@ -26,10 +27,20 @@ class ApiError extends Error {
   }
 }
 
+// Invoked whenever a request comes back 401 (no/expired session). The app
+// registers a handler (see AuthGate) that drops the cached session so the UI
+// falls back to the login screen. Kept as a hook so this module stays
+// framework-agnostic and free of React/router imports.
+let onUnauthorized: (() => void) | null = null;
+export function setUnauthorizedHandler(fn: (() => void) | null) {
+  onUnauthorized = fn;
+}
+
 // Throw an ApiError carrying the backend's `detail` message (or the status
-// text) for any non-2xx response.
+// text) for any non-2xx response. A 401 also notifies the auth handler.
 async function ensureOk(res: Response): Promise<Response> {
   if (res.ok) return res;
+  if (res.status === 401) onUnauthorized?.();
   let detail = res.statusText;
   try {
     const body = await res.json();
@@ -44,6 +55,9 @@ async function req<T>(path: string, init?: RequestInit): Promise<T> {
   const res = await ensureOk(
     await fetch(`${API_BASE}${path}`, {
       headers: { "Content-Type": "application/json" },
+      // Send the session cookie (redundant same-origin, required if the browser
+      // is pointed at a cross-origin backend via NEXT_PUBLIC_API_BASE).
+      credentials: "include",
       ...init,
     })
   );
@@ -56,12 +70,27 @@ async function upload<T>(path: string, files: File[]): Promise<T> {
   const form = new FormData();
   for (const f of files) form.append("files", f);
   const res = await ensureOk(
-    await fetch(`${API_BASE}${path}`, { method: "POST", body: form })
+    await fetch(`${API_BASE}${path}`, {
+      method: "POST",
+      body: form,
+      credentials: "include",
+    })
   );
   return res.json() as Promise<T>;
 }
 
 export const api = {
+  // Auth
+  login: (username: string, password: string) =>
+    req<User>("/api/auth/login", {
+      method: "POST",
+      body: JSON.stringify({ username, password }),
+    }),
+  logout: () => req<void>("/api/auth/logout", { method: "POST" }),
+  me: () => req<User>("/api/auth/me"),
+  register: (body: { username: string; password: string; invite_code?: string }) =>
+    req<User>("/api/auth/register", { method: "POST", body: JSON.stringify(body) }),
+
   getSites: () => req<Site[]>("/api/sites"),
   getStats: () => req<Stats>("/api/stats"),
   getVoices: () => req<TtsVoices>("/api/tts/voices"),

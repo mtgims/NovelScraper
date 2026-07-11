@@ -14,7 +14,20 @@ import type {
   JobCreate,
   JobProgress,
   ProgressUpdate,
+  User,
 } from "./types";
+
+// Current authenticated user. Resolves to `null` (not `undefined`) when
+// known-unauthenticated, so the AuthGate can tell "still loading" from "logged
+// out". retry:false so a 401 settles immediately instead of retrying.
+export function useMe() {
+  return useQuery<User | null>({
+    queryKey: ["me"],
+    queryFn: () => api.me().catch(() => null),
+    retry: false,
+    staleTime: 60_000,
+  });
+}
 
 export function useSites() {
   return useQuery({ queryKey: ["sites"], queryFn: api.getSites });
