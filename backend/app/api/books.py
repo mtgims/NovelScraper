@@ -24,6 +24,7 @@ from ..models import (
     Chapter,
     Collection,
     ReadingProgress,
+    User,
     Volume,
 )
 from ..services.library import book_read, books_read, has_cover
@@ -38,7 +39,7 @@ from ..tts import (
     tts,
 )
 from ..jobs.manager import DuplicateJobError, JobManager
-from .deps import get_manager
+from .deps import get_current_user, get_manager
 from ..schemas import (
     BookCollectionsUpdate,
     BookRead,
@@ -68,6 +69,15 @@ def _write_atomic(path, data: bytes) -> None:
             os.unlink(tmp)
 
 
+def _owned_book(session: Session, book_id: int, user: User) -> Book:
+    """Fetch a book the caller owns, or 404. Returning 404 (not 403) for books
+    owned by someone else avoids leaking that the id exists."""
+    book = session.get(Book, book_id)
+    if book is None or book.user_id != user.id:
+        raise HTTPException(status_code=404, detail="Book not found")
+    return book
+
+
 def _get_chapter(session: Session, book_id: int, position: int) -> Chapter:
     chapter = session.exec(
         select(Chapter).where(
@@ -80,24 +90,28 @@ def _get_chapter(session: Session, book_id: int, position: int) -> Chapter:
 
 
 @router.get("", response_model=List[BookRead])
-def list_books(session: Session = Depends(get_session)):
+def list_books(user: User = Depends(get_current_user),
+               session: Session = Depends(get_session)):
     # Manual order first (drag-to-reorder), newest first as a tiebreaker.
     books = session.exec(
-        select(Book).order_by(Book.sort_order, Book.created_at.desc())
+        select(Book).where(Book.user_id == user.id)
+        .order_by(Book.sort_order, Book.created_at.desc())
     ).all()
     return books_read(session, books)
 
 
 @router.put("/{book_id}/collections", response_model=BookRead)
 def set_book_collections(book_id: int, body: BookCollectionsUpdate,
+                         user: User = Depends(get_current_user),
                          session: Session = Depends(get_session)):
     """Replace the set of collections a book belongs to (checkbox assignment)."""
-    book = session.get(Book, book_id)
-    if book is None:
-        raise HTTPException(status_code=404, detail="Book not found")
-    # Validate the target collections exist, then rewrite the links.
+    book = _owned_book(session, book_id, user)
+    # Only the caller's own collections are valid targets (scoped by user_id).
     valid = set(session.exec(
-        select(Collection.id).where(Collection.id.in_(body.collection_ids or [0]))
+        select(Collection.id).where(
+            Collection.id.in_(body.collection_ids or [0]),
+            Collection.user_id == user.id,
+        )
     ).all())
     session.exec(
         delete(BookCollectionLink).where(BookCollectionLink.book_id == book_id)
@@ -109,31 +123,30 @@ def set_book_collections(book_id: int, body: BookCollectionsUpdate,
 
 
 @router.post("/reorder", status_code=204)
-def reorder_books(body: BookReorder, session: Session = Depends(get_session)):
+def reorder_books(body: BookReorder, user: User = Depends(get_current_user),
+                  session: Session = Depends(get_session)):
     """Assign a manual library order from a full list of book ids (front to back).
     Ids not present keep their existing sort_order (pushed after the ordered set)."""
     for index, book_id in enumerate(body.ordered_ids):
         book = session.get(Book, book_id)
-        if book is not None:
+        if book is not None and book.user_id == user.id:  # ignore ids not owned
             book.sort_order = index
             session.add(book)
     session.commit()
 
 
 @router.get("/{book_id}", response_model=BookRead)
-def get_book(book_id: int, session: Session = Depends(get_session)):
-    book = session.get(Book, book_id)
-    if book is None:
-        raise HTTPException(status_code=404, detail="Book not found")
-    return book_read(session, book)
+def get_book(book_id: int, user: User = Depends(get_current_user),
+             session: Session = Depends(get_session)):
+    return book_read(session, _owned_book(session, book_id, user))
 
 
 @router.patch("/{book_id}", response_model=BookRead)
-def update_book(book_id: int, body: BookUpdate, session: Session = Depends(get_session)):
+def update_book(book_id: int, body: BookUpdate,
+                user: User = Depends(get_current_user),
+                session: Session = Depends(get_session)):
     """Edit book metadata (currently just the rating)."""
-    book = session.get(Book, book_id)
-    if book is None:
-        raise HTTPException(status_code=404, detail="Book not found")
+    book = _owned_book(session, book_id, user)
     if body.rating is not None:
         book.rating = body.rating or None  # 0 clears the rating
     session.add(book)
@@ -143,26 +156,26 @@ def update_book(book_id: int, body: BookUpdate, session: Session = Depends(get_s
 
 
 @router.post("/{book_id}/update", response_model=JobRead, status_code=202)
-async def update_book_chapters(book_id: int, manager: JobManager = Depends(get_manager),
+async def update_book_chapters(book_id: int, user: User = Depends(get_current_user),
+                               manager: JobManager = Depends(get_manager),
                                session: Session = Depends(get_session)):
     """Re-scrape the book from its original URL to pull in new chapters. Reuses
     the normal scrape pipeline; rating, collections and reading progress live on
     the book row and are preserved."""
-    book = session.get(Book, book_id)
-    if book is None:
-        raise HTTPException(status_code=404, detail="Book not found")
+    book = _owned_book(session, book_id, user)
     if not book.source_url:
         raise HTTPException(status_code=400, detail="No source URL to update from")
     try:
-        return manager.submit(JobCreate(url=book.source_url), incremental=True)
+        return manager.submit(JobCreate(url=book.source_url), user_id=user.id,
+                              incremental=True)
     except DuplicateJobError:
         raise HTTPException(status_code=409, detail="An update is already running")
 
 
 @router.get("/{book_id}/chapters", response_model=List[ChapterListItem])
-def list_chapters(book_id: int, session: Session = Depends(get_session)):
-    if session.get(Book, book_id) is None:
-        raise HTTPException(status_code=404, detail="Book not found")
+def list_chapters(book_id: int, user: User = Depends(get_current_user),
+                  session: Session = Depends(get_session)):
+    _owned_book(session, book_id, user)
     # Select only TOC columns — never load (potentially large) chapter content
     # just to list the table of contents.
     rows = session.exec(
@@ -176,7 +189,9 @@ def list_chapters(book_id: int, session: Session = Depends(get_session)):
 
 
 @router.get("/{book_id}/chapters/{position}", response_model=ChapterRead)
-def get_chapter(book_id: int, position: int, session: Session = Depends(get_session)):
+def get_chapter(book_id: int, position: int, user: User = Depends(get_current_user),
+                session: Session = Depends(get_session)):
+    _owned_book(session, book_id, user)
     chapter = _get_chapter(session, book_id, position)
     has_next = session.exec(
         select(Chapter.id).where(
@@ -194,9 +209,9 @@ def get_chapter(book_id: int, position: int, session: Session = Depends(get_sess
 
 
 @router.get("/{book_id}/progress", response_model=ReadingProgressRead)
-def get_progress(book_id: int, session: Session = Depends(get_session)):
-    if session.get(Book, book_id) is None:
-        raise HTTPException(status_code=404, detail="Book not found")
+def get_progress(book_id: int, user: User = Depends(get_current_user),
+                 session: Session = Depends(get_session)):
+    _owned_book(session, book_id, user)
     ensure_word_counts(session, book_id)
     prog = session.exec(
         select(ReadingProgress).where(ReadingProgress.book_id == book_id)
@@ -206,9 +221,9 @@ def get_progress(book_id: int, session: Session = Depends(get_session)):
 
 @router.put("/{book_id}/progress", response_model=ReadingProgressRead)
 def update_progress(book_id: int, body: ProgressUpdate,
+                    user: User = Depends(get_current_user),
                     session: Session = Depends(get_session)):
-    if session.get(Book, book_id) is None:
-        raise HTTPException(status_code=404, detail="Book not found")
+    _owned_book(session, book_id, user)
     ensure_word_counts(session, book_id)
     prog = session.exec(
         select(ReadingProgress).where(ReadingProgress.book_id == book_id)
@@ -251,10 +266,12 @@ def update_progress(book_id: int, body: ProgressUpdate,
 def audio_manifest(book_id: int, position: int,
                    voice: Optional[str] = None,
                    speed: float = Query(1.0, ge=0.5, le=2.0),
+                   user: User = Depends(get_current_user),
                    session: Session = Depends(get_session)):
     # Segmentation is pure text processing and independent of the server TTS
     # model, so the manifest is available even when server-side synthesis isn't
     # (e.g. a GPU-less deployment that relies on in-browser WebGPU synthesis).
+    _owned_book(session, book_id, user)
     chapter = _get_chapter(session, book_id, position)
     paragraphs = segment_paragraphs(chapter.content)
     _flat, chunks = build_chunks(paragraphs)
@@ -270,9 +287,11 @@ def audio_manifest(book_id: int, position: int,
 def audio_chunk(book_id: int, position: int, chunk: int,
                 voice: Optional[str] = None,
                 speed: float = Query(1.0, ge=0.5, le=2.0),
+                user: User = Depends(get_current_user),
                 session: Session = Depends(get_session)):
     if not tts.available():
         raise HTTPException(status_code=503, detail="TTS is not available")
+    _owned_book(session, book_id, user)
     chapter = _get_chapter(session, book_id, position)
     flat, chunks = build_chunks(segment_paragraphs(chapter.content))
     if chunk < 0 or chunk >= len(chunks):
@@ -305,9 +324,10 @@ def audio_chunk(book_id: int, position: int, chunk: int,
 
 
 @router.get("/{book_id}/cover")
-def book_cover(book_id: int, session: Session = Depends(get_session)):
-    book = session.get(Book, book_id)
-    if book is None or not has_cover(book):
+def book_cover(book_id: int, user: User = Depends(get_current_user),
+               session: Session = Depends(get_session)):
+    book = _owned_book(session, book_id, user)
+    if not has_cover(book):
         raise HTTPException(status_code=404, detail="No cover")
     return FileResponse(book.cover_path)
 
@@ -318,8 +338,10 @@ _IMAGE_NAME_RE = re.compile(r"^[A-Za-z0-9]{1,64}\.(jpg|jpeg|png|webp|gif|svg)$")
 
 
 @router.get("/{book_id}/images/{name}")
-def book_image(book_id: int, name: str):
+def book_image(book_id: int, name: str, user: User = Depends(get_current_user),
+               session: Session = Depends(get_session)):
     """Serve an imported EPUB's stored illustration."""
+    _owned_book(session, book_id, user)
     if not _IMAGE_NAME_RE.match(name):
         raise HTTPException(status_code=404, detail="No image")
     path = settings.image_dir / str(book_id) / name
@@ -329,10 +351,9 @@ def book_image(book_id: int, name: str):
 
 
 @router.get("/{book_id}/download-all")
-def download_all(book_id: int, session: Session = Depends(get_session)):
-    book = session.get(Book, book_id)
-    if book is None:
-        raise HTTPException(status_code=404, detail="Book not found")
+def download_all(book_id: int, user: User = Depends(get_current_user),
+                 session: Session = Depends(get_session)):
+    book = _owned_book(session, book_id, user)
     volumes = session.exec(
         select(Volume).where(Volume.book_id == book_id).order_by(Volume.number)
     ).all()
@@ -357,12 +378,14 @@ def download_all(book_id: int, session: Session = Depends(get_session)):
 
 
 @router.get("/{book_id}/download")
-def download_volume(book_id: int, volume: int, session: Session = Depends(get_session)):
-    book = session.get(Book, book_id)
+def download_volume(book_id: int, volume: int,
+                    user: User = Depends(get_current_user),
+                    session: Session = Depends(get_session)):
+    book = _owned_book(session, book_id, user)
     vol = session.exec(
         select(Volume).where(Volume.book_id == book_id, Volume.number == volume)
     ).first()
-    if book is None or vol is None:
+    if vol is None:
         raise HTTPException(status_code=404, detail="Volume not found")
     data = _build_volume_epub(session, book, volume)
     if data is None:
@@ -391,10 +414,9 @@ def _build_volume_epub(session: Session, book: Book, volume: int):
 
 
 @router.delete("/{book_id}", status_code=204)
-def delete_book(book_id: int, session: Session = Depends(get_session)):
-    book = session.get(Book, book_id)
-    if book is None:
-        raise HTTPException(status_code=404, detail="Book not found")
+def delete_book(book_id: int, user: User = Depends(get_current_user),
+                session: Session = Depends(get_session)):
+    book = _owned_book(session, book_id, user)
     volumes = session.exec(select(Volume).where(Volume.book_id == book_id)).all()
     for vol in volumes:
         try:

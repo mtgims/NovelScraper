@@ -27,10 +27,11 @@ from ..importer import (
     persist_epubs,
     save_cover,
 )
-from ..models import Book, Chapter, Volume
+from ..models import Book, Chapter, User, Volume
 from ..schemas import BookRead
 from ..services.library import book_read
 from ..settings import settings
+from .deps import get_current_user
 
 logger = logging.getLogger(__name__)
 
@@ -80,6 +81,7 @@ async def _parse_uploads(files: List[UploadFile]) -> List[ImportedEpub]:
 
 @router.post("/import", response_model=BookRead, status_code=201)
 async def import_epubs(files: List[UploadFile] = File(...),
+                       user: User = Depends(get_current_user),
                        session: Session = Depends(get_session)):
     """Create a new imported library book from one or more EPUBs. Title, author
     and cover come from the first file; each file becomes a volume."""
@@ -87,7 +89,7 @@ async def import_epubs(files: List[UploadFile] = File(...),
     first = parsed[0]
     slug = make_slug(first.title)
     book = Book(
-        slug=slug, site="import", imported=True,
+        slug=slug, site="import", imported=True, user_id=user.id,
         title=first.title, author=first.author, language="en",
     )
     book.cover_path = save_cover(
@@ -104,10 +106,11 @@ async def import_epubs(files: List[UploadFile] = File(...),
 
 @router.post("/books/{book_id}/import", response_model=BookRead)
 async def add_epubs(book_id: int, files: List[UploadFile] = File(...),
+                    user: User = Depends(get_current_user),
                     session: Session = Depends(get_session)):
     """Append more EPUB(s) as new volumes to an existing imported book."""
     book = session.get(Book, book_id)
-    if book is None:
+    if book is None or book.user_id != user.id:
         raise HTTPException(status_code=404, detail="Book not found")
     if not book.imported:
         raise HTTPException(

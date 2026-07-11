@@ -55,17 +55,20 @@ class JobManager:
 
     # --- public API ------------------------------------------------------
 
-    def submit(self, data: JobCreate, incremental: bool = False) -> Job:
+    def submit(self, data: JobCreate, user_id: int, incremental: bool = False) -> Job:
         # Resolve the pasted URL to a site profile + book id (raises
         # UnsupportedSourceError / ProfileError, handled by the endpoint).
         profile, slug = resolve_book_url(data.url, self.profiles)
         with Session(self.engine) as s:
-            # Reject a second active job for the same book: concurrent runs would
-            # race on clearing/writing the same volumes, chapters and EPUB files.
+            # Reject a second active job for the same book *by the same user*:
+            # concurrent runs would race on clearing/writing that user's volumes,
+            # chapters and EPUB files. Different users own separate copies, so
+            # they may scrape the same novel at the same time.
             active = s.exec(
                 select(Job).where(
                     Job.site == profile.name,
                     Job.book_slug == slug,
+                    Job.user_id == user_id,
                     Job.status.in_(ACTIVE),
                 )
             ).first()
@@ -76,6 +79,7 @@ class JobManager:
                 site=profile.name,
                 book_slug=slug,
                 source_url=data.url,
+                user_id=user_id,
                 chapters_per_volume=data.chapters_per_volume or 100,
                 delay=data.delay,
                 concurrency=data.concurrency,
@@ -267,11 +271,15 @@ class JobManager:
         volumes/chapters so a re-scrape replaces them. Returns the book id."""
         with Session(self.engine) as s:
             book = s.exec(
-                select(Book).where(Book.slug == job.book_slug, Book.site == job.site)
+                select(Book).where(
+                    Book.slug == job.book_slug,
+                    Book.site == job.site,
+                    Book.user_id == job.user_id,
+                )
             ).first()
             is_new = book is None
             if is_new:
-                book = Book(slug=job.book_slug, site=job.site)
+                book = Book(slug=job.book_slug, site=job.site, user_id=job.user_id)
             book.title = scraped.display_title()
             book.author = scraped.author
             book.language = scraped.language

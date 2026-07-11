@@ -1,4 +1,4 @@
-"""Global reading statistics (single-user, aggregated across all books)."""
+"""Reading statistics, aggregated across the caller's own library."""
 
 from __future__ import annotations
 
@@ -6,19 +6,26 @@ from fastapi import APIRouter, Depends
 from sqlmodel import Session, select
 
 from ..db import get_session
-from ..models import Book, ReadingProgress
+from ..models import Book, ReadingProgress, User
 from ..schemas import BookStat, StatsRead
 from ..services.reading import WORDS_PER_MINUTE, chapter_word_map, ensure_word_counts
+from .deps import get_current_user
 
 router = APIRouter()
 
 
 @router.get("", response_model=StatsRead)
-def get_stats(session: Session = Depends(get_session)):
-    books = session.exec(select(Book).order_by(Book.created_at.desc())).all()
+def get_stats(user: User = Depends(get_current_user),
+              session: Session = Depends(get_session)):
+    books = session.exec(
+        select(Book).where(Book.user_id == user.id).order_by(Book.created_at.desc())
+    ).all()
+    book_ids = [b.id for b in books]
     progress = {
         p.book_id: p
-        for p in session.exec(select(ReadingProgress)).all()
+        for p in session.exec(
+            select(ReadingProgress).where(ReadingProgress.book_id.in_(book_ids or [0]))
+        ).all()
     }
 
     total_chapters = chapters_read = total_words = words_read = 0
