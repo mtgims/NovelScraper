@@ -78,10 +78,11 @@ def register(body: RegisterRequest, response: Response,
     session.add(user)
     session.commit()
     session.refresh(user)
-    if invite is not None:
-        invite.used_by = user.id
-        session.add(invite)
+    if invite is not None and not auth_svc.consume_invite(session, invite.code, user.id):
+        # Lost the race: a concurrent registration claimed the invite first.
+        session.delete(user)
         session.commit()
+        raise HTTPException(status_code=403, detail="Invalid or expired invite code")
     auth_svc.set_session_cookie(response, auth_svc.create_session(session, user))
     return user
 
