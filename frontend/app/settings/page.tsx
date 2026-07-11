@@ -2,11 +2,10 @@
 
 import { Check } from "lucide-react";
 
-import { AdminPanel } from "@/components/admin-panel";
 import { PageHeader } from "@/components/page-header";
 import { Card } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
-import { useMe, useSettings, useUpdateSettings } from "@/lib/queries";
+import { useSettings, useUpdateSettings } from "@/lib/queries";
 import { cn } from "@/lib/utils";
 
 const INTERVALS: { label: string; hours: number }[] = [
@@ -20,7 +19,6 @@ const INTERVALS: { label: string; hours: number }[] = [
 
 export default function SettingsPage() {
   const { data: settings, isLoading } = useSettings();
-  const { data: me } = useMe();
   const update = useUpdateSettings();
   const current = settings?.auto_update_hours ?? 0;
 
@@ -70,8 +68,6 @@ export default function SettingsPage() {
           hit the network.
         </p>
       </section>
-
-      {me?.is_admin && <AdminPanel />}
     </>
   );
 }

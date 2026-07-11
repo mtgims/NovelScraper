@@ -97,6 +97,10 @@ export const api = {
   // Admin account management
   createInvite: () => req<Invite>("/api/auth/invites", { method: "POST" }),
   listInvites: () => req<Invite[]>("/api/auth/invites"),
+  deleteInvite: (code: string) =>
+    req<void>(`/api/auth/invites/${encodeURIComponent(code)}`, { method: "DELETE" }),
+  clearSpentInvites: () =>
+    req<{ deleted: number }>("/api/auth/invites", { method: "DELETE" }),
   listUsers: () => req<User[]>("/api/auth/users"),
   updateUser: (id: number, body: { disabled?: boolean; is_admin?: boolean }) =>
     req<User>(`/api/auth/users/${id}`, { method: "PATCH", body: JSON.stringify(body) }),

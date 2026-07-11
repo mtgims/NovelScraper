@@ -7,6 +7,7 @@ cookies, invites, throttling) lives in `app.auth`; this module is just HTTP glue
 
 from __future__ import annotations
 
+from datetime import datetime, timezone
 from typing import List
 
 from fastapi import APIRouter, Depends, HTTPException, Request, Response
@@ -95,6 +96,33 @@ def create_invite(admin: User = Depends(get_admin),
 def list_invites(admin: User = Depends(get_admin),
                  session: Session = Depends(get_session)):
     return session.exec(select(Invite).order_by(Invite.created_at.desc())).all()
+
+
+@router.delete("/invites")
+def clear_spent_invites(admin: User = Depends(get_admin),
+                        session: Session = Depends(get_session)):
+    """Delete used or expired invites, keeping still-usable (active) ones."""
+    now = datetime.now(timezone.utc).replace(tzinfo=None)
+    spent = session.exec(
+        select(Invite).where(
+            (Invite.used_by.is_not(None)) | (Invite.expires_at <= now)
+        )
+    ).all()
+    for inv in spent:
+        session.delete(inv)
+    session.commit()
+    return {"deleted": len(spent)}
+
+
+@router.delete("/invites/{code}", status_code=204)
+def delete_invite(code: str, admin: User = Depends(get_admin),
+                  session: Session = Depends(get_session)):
+    """Delete (revoke) a single invite by code."""
+    inv = session.get(Invite, code)
+    if inv is None:
+        raise HTTPException(status_code=404, detail="Invite not found")
+    session.delete(inv)
+    session.commit()
 
 
 @router.get("/users", response_model=List[UserRead])
