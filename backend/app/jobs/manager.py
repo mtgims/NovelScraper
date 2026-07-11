@@ -297,7 +297,13 @@ class JobManager:
                 select(ReadingProgress).where(ReadingProgress.book_id == book.id)
             ).first()
             if has_progress is None:
-                arch = s.get(ArchivedProgress, (job.site, job.book_slug))
+                arch = s.exec(
+                    select(ArchivedProgress).where(
+                        ArchivedProgress.user_id == job.user_id,
+                        ArchivedProgress.site == job.site,
+                        ArchivedProgress.slug == job.book_slug,
+                    )
+                ).first()
                 if arch is not None:
                     s.add(ReadingProgress(
                         book_id=book.id,

@@ -11,10 +11,11 @@ import asyncio
 import logging
 from contextlib import asynccontextmanager
 
-from fastapi import FastAPI
+from fastapi import Depends, FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
-from .api import books, collections, config, imports, jobs, sites, stats, tts
+from .api import auth, books, collections, config, imports, jobs, sites, stats, tts
+from .api.deps import get_current_user
 from .db import engine, init_db
 from .jobs.manager import JobManager
 from .maintenance import cache_pruner_loop
@@ -58,14 +59,21 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-app.include_router(jobs.router, prefix="/api/jobs", tags=["jobs"])
-app.include_router(books.router, prefix="/api/books", tags=["books"])
-app.include_router(imports.router, prefix="/api", tags=["import"])
-app.include_router(collections.router, prefix="/api/collections", tags=["collections"])
-app.include_router(config.router, prefix="/api/settings", tags=["settings"])
-app.include_router(sites.router, prefix="/api/sites", tags=["sites"])
-app.include_router(stats.router, prefix="/api/stats", tags=["stats"])
-app.include_router(tts.router, prefix="/api/tts", tags=["tts"])
+# Auth endpoints are public (login/register) or self-guarding (me/logout/admin).
+app.include_router(auth.router, prefix="/api/auth", tags=["auth"])
+
+# Every data router requires a valid session. Applying the dependency at the
+# router level means no endpoint can be accidentally left unauthenticated;
+# per-user data isolation is then enforced inside each endpoint.
+authed = [Depends(get_current_user)]
+app.include_router(jobs.router, prefix="/api/jobs", tags=["jobs"], dependencies=authed)
+app.include_router(books.router, prefix="/api/books", tags=["books"], dependencies=authed)
+app.include_router(imports.router, prefix="/api", tags=["import"], dependencies=authed)
+app.include_router(collections.router, prefix="/api/collections", tags=["collections"], dependencies=authed)
+app.include_router(config.router, prefix="/api/settings", tags=["settings"], dependencies=authed)
+app.include_router(sites.router, prefix="/api/sites", tags=["sites"], dependencies=authed)
+app.include_router(stats.router, prefix="/api/stats", tags=["stats"], dependencies=authed)
+app.include_router(tts.router, prefix="/api/tts", tags=["tts"], dependencies=authed)
 
 
 @app.get("/api/health")

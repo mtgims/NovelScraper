@@ -416,11 +416,18 @@ def delete_book(book_id: int, session: Session = Depends(get_session)):
         select(ReadingProgress).where(ReadingProgress.book_id == book_id)
     ).first()
     if prog is not None:
-        # Archive progress by (site, slug) so re-scraping this novel later
-        # restores where the reader left off.
-        arch = session.get(ArchivedProgress, (book.site, book.slug))
+        # Archive progress by (owner, site, slug) so re-scraping this novel later
+        # restores where the reader left off — scoped to the owner so it can't
+        # collide with or leak to another user.
+        arch = session.exec(
+            select(ArchivedProgress).where(
+                ArchivedProgress.user_id == book.user_id,
+                ArchivedProgress.site == book.site,
+                ArchivedProgress.slug == book.slug,
+            )
+        ).first()
         if arch is None:
-            arch = ArchivedProgress(site=book.site, slug=book.slug)
+            arch = ArchivedProgress(user_id=book.user_id, site=book.site, slug=book.slug)
         arch.source_url = book.source_url
         arch.last_position = prog.last_position
         arch.scroll = prog.scroll

@@ -68,6 +68,9 @@ class Settings:
         self.allow_open_signup = _env_bool("NOVELSCRAPER_ALLOW_OPEN_SIGNUP", False)
         # Login session lifetime (days); each authenticated request slides it.
         self.session_ttl_days = int(os.getenv("NOVELSCRAPER_SESSION_TTL_DAYS", "30"))
+        # Mark the session cookie Secure (HTTPS-only). Leave false for plain-HTTP
+        # access (localhost/LAN); set true for an HTTPS-only public deployment.
+        self.cookie_secure = _env_bool("NOVELSCRAPER_COOKIE_SECURE", False)
 
         origins = os.getenv("NOVELSCRAPER_CORS_ORIGINS")
         self.cors_origins = (

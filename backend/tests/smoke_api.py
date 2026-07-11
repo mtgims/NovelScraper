@@ -25,6 +25,9 @@ content_selector: "#content"
 os.environ["NOVELSCRAPER_PROFILE_DIR"] = str(PROFILES)
 os.environ["NOVELSCRAPER_DATA_DIR"] = str(pathlib.Path(TMP, "data"))
 os.environ["NOVELSCRAPER_ALLOW_PRIVATE_HOSTS"] = "1"
+# Bootstrap an admin so the authenticated lifecycle below can log in.
+os.environ["NOVELSCRAPER_ADMIN_USERNAME"] = "smoke-admin"
+os.environ["NOVELSCRAPER_ADMIN_PASSWORD"] = "smoke-password"
 
 sys.path.insert(0, str(pathlib.Path(__file__).resolve().parents[1]))
 from aiohttp import web
@@ -98,6 +101,15 @@ def poll(client, jid, want, timeout=30):
 
 with TestClient(app) as client:
     check("health", client.get("/api/health").json() == {"status": "ok"})
+
+    # Auth is required for every data route now; unauthenticated calls are 401.
+    check("requires-auth", client.get("/api/sites").status_code == 401)
+    lr = client.post("/api/auth/login",
+                     json={"username": "smoke-admin", "password": "smoke-password"})
+    check("login", lr.status_code == 200 and lr.json()["is_admin"] is True, str(lr.status_code))
+    # TestClient keeps the session cookie, so subsequent calls are authenticated.
+    check("me", client.get("/api/auth/me").json()["username"] == "smoke-admin")
+
     check("sites", any(s["name"] == "mock" for s in client.get("/api/sites").json()))
 
     # URL resolution errors
