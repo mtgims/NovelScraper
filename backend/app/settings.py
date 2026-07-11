@@ -59,6 +59,16 @@ class Settings:
         # SSRF guard escape hatch — only for local testing against 127.0.0.1.
         self.allow_private_hosts = _env_bool("NOVELSCRAPER_ALLOW_PRIVATE_HOSTS", False)
 
+        # Auth. The first startup with no users creates this admin (and assigns
+        # all pre-auth library rows to it); leave the password empty on a fresh
+        # install to create the admin later via a one-off script instead.
+        self.admin_username = os.getenv("NOVELSCRAPER_ADMIN_USERNAME", "admin").strip()
+        self.admin_password = os.getenv("NOVELSCRAPER_ADMIN_PASSWORD", "")
+        # Invite-only by default; flip to true to allow open self-registration.
+        self.allow_open_signup = _env_bool("NOVELSCRAPER_ALLOW_OPEN_SIGNUP", False)
+        # Login session lifetime (days); each authenticated request slides it.
+        self.session_ttl_days = int(os.getenv("NOVELSCRAPER_SESSION_TTL_DAYS", "30"))
+
         origins = os.getenv("NOVELSCRAPER_CORS_ORIGINS")
         self.cors_origins = (
             [o.strip() for o in origins.split(",") if o.strip()]

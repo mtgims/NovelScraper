@@ -5,7 +5,7 @@ from __future__ import annotations
 import logging
 
 from sqlalchemy import inspect, text
-from sqlmodel import Session, SQLModel, create_engine
+from sqlmodel import Session, SQLModel, create_engine, select
 
 from .settings import settings
 
@@ -104,6 +104,80 @@ def _compress_chapter_content() -> None:
         conn.exec_driver_sql("VACUUM")
 
 
+def _migrate_archived_progress() -> None:
+    """Rebuild the pre-auth ``archivedprogress`` table (PK ``(site, slug)``) into
+    the per-user shape (surrogate ``id`` PK + ``user_id``). SQLite can't alter a
+    primary key, so this is a rename→create→copy→drop. Idempotent: a no-op once
+    the table already has ``user_id``. Rows are copied with ``user_id`` NULL and
+    later assigned to the admin by the bootstrap backfill.
+
+    Must run before ``_migrate_add_columns`` (which can't ADD a PRIMARY KEY
+    column via ALTER)."""
+    from .models import ArchivedProgress
+
+    inspector = inspect(engine)
+    if "archivedprogress" not in inspector.get_table_names():
+        return  # fresh DB: create_all() already built the new shape
+    cols = {c["name"] for c in inspector.get_columns("archivedprogress")}
+    if "user_id" in cols and "id" in cols:
+        return  # already migrated
+    with engine.begin() as conn:
+        conn.execute(text("ALTER TABLE archivedprogress RENAME TO _archivedprogress_old"))
+    ArchivedProgress.__table__.create(engine)  # recreate in the current shape
+    with engine.begin() as conn:
+        conn.execute(text(
+            "INSERT INTO archivedprogress "
+            "(user_id, site, slug, source_url, last_position, scroll, "
+            " read_positions, updated_at) "
+            "SELECT NULL, site, slug, source_url, last_position, scroll, "
+            " read_positions, updated_at FROM _archivedprogress_old"
+        ))
+        conn.execute(text("DROP TABLE _archivedprogress_old"))
+    logger.info("db migration: rebuilt archivedprogress for per-user ownership")
+
+
+def _bootstrap_admin_and_backfill() -> None:
+    """First run with no users: create the admin from env and assign every
+    pre-auth (``user_id IS NULL``) library row to it, so an existing single-user
+    DB migrates cleanly to multi-user. No-op once any user exists.
+
+    Runs after the ownership columns exist (``_migrate_add_columns`` +
+    ``_migrate_archived_progress``)."""
+    from .models import User
+    from .security import hash_password
+
+    with Session(engine) as s:
+        if s.exec(select(User)).first() is not None:
+            return  # already has accounts — nothing to bootstrap
+        if not settings.admin_password:
+            logger.warning(
+                "No users exist and NOVELSCRAPER_ADMIN_PASSWORD is unset — no "
+                "admin was created. Set NOVELSCRAPER_ADMIN_USERNAME/PASSWORD to "
+                "enable login and claim the existing library."
+            )
+            return
+        admin = User(
+            username=settings.admin_username,
+            password_hash=hash_password(settings.admin_password),
+            is_admin=True,
+        )
+        s.add(admin)
+        s.commit()
+        s.refresh(admin)
+        admin_id = admin.id
+
+    with engine.begin() as conn:
+        for table in ("book", "collection", "job", "archivedprogress"):
+            conn.execute(
+                text(f'UPDATE "{table}" SET user_id = :uid WHERE user_id IS NULL'),
+                {"uid": admin_id},
+            )
+    logger.info(
+        "bootstrapped admin %r and assigned the existing library to it",
+        settings.admin_username,
+    )
+
+
 def _cleanup_stored_epubs() -> None:
     """EPUBs are now built on demand, so any previously-written .epub files are
     dead weight — remove them to reclaim the space (they regenerate on download)."""
@@ -127,8 +201,10 @@ def init_db() -> None:
     from . import models  # noqa: F401
 
     SQLModel.metadata.create_all(engine)
+    _migrate_archived_progress()   # before _migrate_add_columns (PK rebuild)
     _migrate_add_columns()
     _backfill_book_source_urls()
+    _bootstrap_admin_and_backfill()
     _compress_chapter_content()
     _cleanup_stored_epubs()
 
