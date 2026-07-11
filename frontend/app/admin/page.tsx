@@ -14,6 +14,7 @@ import {
 import { useRouter } from "next/navigation";
 import { useEffect, useMemo, useState } from "react";
 
+import { useConfirm } from "@/components/confirm-dialog";
 import { PageHeader } from "@/components/page-header";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
@@ -22,6 +23,7 @@ import {
   useClearSpentInvites,
   useCreateInvite,
   useDeleteInvite,
+  useDeleteUser,
   useInvites,
   useMe,
   useSettings,
@@ -206,8 +208,22 @@ const FILTERS: { key: UserFilter; label: string }[] = [
 function AccountsSection({ meId }: { meId: number }) {
   const { data: users } = useUsers();
   const updateUser = useUpdateUser();
+  const deleteUser = useDeleteUser();
+  const confirm = useConfirm();
   const [query, setQuery] = useState("");
   const [filter, setFilter] = useState<UserFilter>("all");
+
+  async function onDelete(id: number, username: string) {
+    const ok = await confirm({
+      title: `Delete ${username}?`,
+      message:
+        "This permanently deletes the account and its entire library — books, " +
+        "reading progress, collections and downloads. This can't be undone.",
+      confirmLabel: "Delete account",
+      danger: true,
+    });
+    if (ok) deleteUser.mutate(id);
+  }
 
   const shown = useMemo(() => {
     const q = query.trim().toLowerCase();
@@ -298,6 +314,17 @@ function AccountsSection({ meId }: { meId: number }) {
                     aria-label={u.disabled ? "Enable account" : "Disable account"}
                   >
                     {u.disabled ? <UserCheck size={15} /> : <UserX size={15} />}
+                  </Button>
+                  <Button
+                    variant="ghost"
+                    size="icon"
+                    disabled={isSelf || deleteUser.isPending}
+                    onClick={() => onDelete(u.id, u.username)}
+                    title="Delete account"
+                    aria-label="Delete account"
+                    className="hover:text-destructive"
+                  >
+                    <Trash2 size={15} />
                   </Button>
                 </div>
               </div>

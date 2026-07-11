@@ -25,6 +25,7 @@ from ..schemas import (
     UserRead,
 )
 from ..security import hash_password
+from ..services import accounts
 from ..store import get_allow_open_signup
 from .deps import get_admin, get_current_user
 
@@ -161,3 +162,25 @@ def update_user(user_id: int, body: UserAdminUpdate,
     session.commit()
     session.refresh(target)
     return target
+
+
+@router.delete("/users/{user_id}", status_code=204)
+def delete_user(user_id: int, admin: User = Depends(get_admin),
+                session: Session = Depends(get_session)):
+    """Delete an account and ALL of its data (library, files, sessions). Can't
+    delete your own account or the last active admin."""
+    target = session.get(User, user_id)
+    if target is None:
+        raise HTTPException(status_code=404, detail="User not found")
+    if target.id == admin.id:
+        raise HTTPException(status_code=400, detail="You can't delete your own account")
+    if target.is_admin and not target.disabled:
+        other = session.exec(
+            select(User).where(User.is_admin == True,  # noqa: E712
+                               User.disabled == False,  # noqa: E712
+                               User.id != target.id)
+        ).first()
+        if other is None:
+            raise HTTPException(status_code=400,
+                                detail="Can't delete the last active admin")
+    accounts.delete_user(session, target.id)
