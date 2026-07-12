@@ -52,6 +52,11 @@ const DEFAULT_SEC_PER_CHAR = 0.06;
 const SERVER_PREFETCH_AHEAD = 12;
 const DEVICE_PREFETCH_AHEAD = 1;
 
+// A server chunk can transiently 5xx mid-chapter (e.g. a GPU hiccup while the
+// backend rebuilds its model). Retry a few times so one failed chunk doesn't end
+// playback; 4xx (e.g. out-of-range) fails fast since retrying won't help.
+const SERVER_CHUNK_ATTEMPTS = 3;
+
 function formatTime(sec: number): string {
   if (!isFinite(sec) || sec < 0) sec = 0;
   const s = Math.floor(sec % 60);
@@ -210,11 +215,23 @@ export const TtsPlayer = forwardRef<TtsPlayerHandle, Props>(function TtsPlayer(
       const promise = (async () => {
         let blob: Blob;
         if (engineRef.current === "server") {
-          const res = await fetch(
-            audioChunkUrl(bookId, position, i, voiceRef.current, speedRef.current)
-          );
-          if (!res.ok) throw new Error(`chunk ${i} failed: ${res.status}`);
-          blob = await res.blob();
+          blob = await (async (): Promise<Blob> => {
+            let lastErr: unknown;
+            for (let attempt = 0; attempt < SERVER_CHUNK_ATTEMPTS; attempt++) {
+              if (attempt > 0) await new Promise((r) => setTimeout(r, 500 * attempt));
+              try {
+                const res = await fetch(
+                  audioChunkUrl(bookId, position, i, voiceRef.current, speedRef.current)
+                );
+                if (res.ok) return await res.blob();
+                lastErr = new Error(`chunk ${i} failed: ${res.status}`);
+                if (res.status < 500) break; // client error — retrying won't help
+              } catch (e) {
+                lastErr = e; // network error — retry
+              }
+            }
+            throw lastErr ?? new Error(`chunk ${i} failed`);
+          })();
         } else {
           blob = await synthesizeBlob(chunkText(i), voiceRef.current, speedRef.current);
         }

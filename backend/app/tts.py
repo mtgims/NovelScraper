@@ -202,15 +202,37 @@ class _TTS:
         v = voice or DEFAULT_VOICE
         return v if v in self._voices else DEFAULT_VOICE
 
-    def synth_wav(self, text: str, voice: str, speed: float) -> bytes:
+    def _reset(self) -> None:
+        """Drop the loaded model so the next _ensure() rebuilds it — used to
+        recover from a runtime GPU failure part way through a long chapter."""
+        with self._load_lock:
+            self._kokoro = None
+            self._unavailable = False
+
+    def _create(self, text: str, voice: str, speed: float):
+        """Synthesize once, recovering from a single runtime failure. A GPU can
+        throw mid-session (e.g. cuBLAS "resource allocation failed" after many
+        chunks of a long chapter); rebuild the session — which frees GPU memory
+        and, if the GPU stays wedged, falls back to CPU inside _ensure — then
+        retry, so one failed chunk doesn't kill playback."""
         kokoro = self._ensure()
         if kokoro is None:
             raise RuntimeError("TTS unavailable")
+        try:
+            return kokoro.create(text, voice=voice, speed=speed, lang="en-us")
+        except Exception as e:  # noqa: BLE001
+            logger.warning("TTS synthesis failed (%s); rebuilding model and retrying", e)
+            self._reset()
+            kokoro = self._ensure()
+            if kokoro is None:
+                raise RuntimeError("TTS unavailable after reset") from e
+            return kokoro.create(text, voice=voice, speed=speed, lang="en-us")
+
+    def synth_wav(self, text: str, voice: str, speed: float) -> bytes:
         import numpy as np
 
         with self._synth_lock:
-            samples, sample_rate = kokoro.create(
-                text, voice=voice, speed=speed, lang="en-us")
+            samples, sample_rate = self._create(text, voice, speed)
         pcm = (np.clip(samples, -1.0, 1.0) * 32767).astype("<i2")
         buf = io.BytesIO()
         with wave.open(buf, "wb") as w:
