@@ -28,6 +28,7 @@ import {
   synthesizeBlob,
 } from "@/lib/browser-tts";
 import { useVoices } from "@/lib/queries";
+import type { TtsBlock } from "@/lib/types";
 import { cn } from "@/lib/utils";
 
 type Mode = "idle" | "loading" | "playing" | "paused";
@@ -86,7 +87,7 @@ export type TtsPlayerHandle = {
 type Props = {
   bookId: number;
   position: number;
-  onSegments: (paragraphs: string[][] | null) => void;
+  onSegments: (blocks: TtsBlock[] | null) => void;
   onHighlight: (globalSentenceIndex: number | null) => void;
   onComplete?: () => void;
   // Current reading position as a 0..1 fraction of the chapter, so narration can
@@ -565,12 +566,14 @@ export const TtsPlayer = forwardRef<TtsPlayerHandle, Props>(function TtsPlayer(
     try {
       const m = await api.ttsManifest(bookId, position, voiceRef.current, speedRef.current);
       chunksRef.current = m.chunks;
-      flatRef.current = m.paragraphs.flat();
+      // Sentence stream = text blocks flattened in order (images carry no audio),
+      // which matches the server's chunk indices exactly.
+      flatRef.current = m.blocks.flatMap((b) => (b.type === "text" ? b.sentences : []));
       lensRef.current = flatRef.current.map((s) => s.length + 1);
       chunkCharsRef.current = m.chunks.map((ch) =>
         ch.reduce((sum, k) => sum + (lensRef.current[k] || 1), 0)
       );
-      onSegments(m.paragraphs);
+      onSegments(m.blocks);
       // Begin narration from roughly where the reader is (mapping the scroll
       // fraction to a sentence), falling back to the start of the chapter.
       const total = flatRef.current.length;

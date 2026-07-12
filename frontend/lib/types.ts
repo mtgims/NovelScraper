@@ -151,9 +151,15 @@ export interface TtsVoices {
 }
 
 // A chapter's narration plan: sentence-grouped chunks + the flat sentence texts.
+// A read-along block: either a text paragraph (its sentences, which carry the
+// audio) or an image (render-only — no audio, not part of the sentence stream).
+export type TtsBlock =
+  | { type: "text"; sentences: string[] }
+  | { type: "image"; src: string; alt?: string };
+
 export interface TtsManifest {
   chunks: number[][];
-  paragraphs: string[][];
+  blocks: TtsBlock[];
   voice: string;
   speed: number;
 }

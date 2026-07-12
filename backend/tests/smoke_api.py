@@ -182,7 +182,7 @@ with TestClient(app) as client:
     if vinfo["available"]:
         man = client.get(f"/api/books/{bid}/chapters/1/audio/manifest").json()
         check("tts-manifest", isinstance(man["chunks"], list) and len(man["chunks"]) >= 1
-              and len(man["paragraphs"]) >= 1)
+              and any(b["type"] == "text" for b in man["blocks"]))
         au = client.get(f"/api/books/{bid}/chapters/1/audio/0")
         ctype = au.headers.get("content-type", "")
         # Compressed to MP3 when ffmpeg is present; WAV fallback otherwise.

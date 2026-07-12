@@ -35,6 +35,7 @@ from ..tts import (
     build_chunks,
     chunk_to_text,
     encode_mp3,
+    segment_blocks,
     segment_paragraphs,
     tts,
 )
@@ -273,11 +274,14 @@ def audio_manifest(book_id: int, position: int,
     # (e.g. a GPU-less deployment that relies on in-browser WebGPU synthesis).
     _owned_book(session, book_id, user)
     chapter = _get_chapter(session, book_id, position)
-    paragraphs = segment_paragraphs(chapter.content)
+    # Blocks (text + images, in document order) drive the read-along render;
+    # chunks index only the text sentences (images carry no audio).
+    blocks = segment_blocks(chapter.content)
+    paragraphs = [b["sentences"] for b in blocks if b["type"] == "text"]
     _flat, chunks = build_chunks(paragraphs)
     return {
         "chunks": chunks,           # list of chunks; each a list of sentence indices
-        "paragraphs": paragraphs,   # for read-along rendering/highlighting
+        "blocks": blocks,           # text paragraphs + images, for read-along
         "voice": voice or DEFAULT_VOICE,
         "speed": speed,
     }

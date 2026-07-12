@@ -10,6 +10,7 @@ import { Button } from "@/components/ui/button";
 import { TtsPlayer, type TtsPlayerHandle } from "@/components/tts-player";
 import { api, API_BASE, coverUrl } from "@/lib/api";
 import { useBook, useChapter, useChapters, useProgress } from "@/lib/queries";
+import type { TtsBlock } from "@/lib/types";
 import { cn } from "@/lib/utils";
 
 const SIZE_KEY = "ns-reading-scale";
@@ -20,21 +21,25 @@ const SIZE_KEY = "ns-reading-scale";
 // no network, no cache races, and each chapter remembers its own spot.
 const posKey = (bookId: number, position: number) => `ns:pos:${bookId}:${position}`;
 
-// Resolve chapter <img> sources:
+// Resolve a chapter <img> source, or null if it can't be shown:
 //  - stored imported illustrations ("/api/books/{id}/images/…") -> absolute
 //    backend URL so they load (API_BASE may be a different origin).
 //  - already-absolute (http(s)/data) -> keep (e.g. scraped images).
-//  - anything else (stray relative EPUB paths we don't store) -> drop.
+//  - anything else (stray relative EPUB paths we don't store) -> null (drop).
+// Shared by prepareImages (normal HTML render) and ReadAlong (narration view).
+function resolveImgSrc(src: string): string | null {
+  if (src.startsWith("/api/")) return `${API_BASE}${src}`;
+  if (/^(https?:|data:)/i.test(src)) return src;
+  return null;
+}
+
 function prepareImages(html: string): string {
   if (typeof window === "undefined" || !html.includes("<img")) return html;
   const doc = new DOMParser().parseFromString(html, "text/html");
   doc.querySelectorAll("img").forEach((img) => {
-    const src = img.getAttribute("src") || "";
-    if (src.startsWith("/api/")) {
-      img.setAttribute("src", `${API_BASE}${src}`);
-    } else if (!/^(https?:|data:)/i.test(src)) {
-      img.remove();
-    }
+    const resolved = resolveImgSrc(img.getAttribute("src") || "");
+    if (resolved === null) img.remove();
+    else img.setAttribute("src", resolved);
   });
   return doc.body.innerHTML;
 }
@@ -86,8 +91,9 @@ export default function ReaderPage() {
   const [autoStartTts, setAutoStartTts] = useState(false);
   // 0..1 progress of the "pull past the end for the next chapter" gesture.
   const [pullNext, setPullNext] = useState(0);
-  // Read-along (TTS): sentence paragraphs to render + the sentence to highlight.
-  const [segments, setSegments] = useState<string[][] | null>(null);
+  // Read-along (TTS): blocks (text paragraphs + images) to render + the sentence
+  // to highlight.
+  const [segments, setSegments] = useState<TtsBlock[] | null>(null);
   const [highlight, setHighlight] = useState<number | null>(null);
   // TTS auto-follow: while narrating, the highlighted sentence is kept centered.
   // The user can scroll away (unfollow) and read freely; a button then jumps
@@ -539,7 +545,7 @@ export default function ReaderPage() {
 
       {segments ? (
         <ReadAlong
-          paragraphs={segments}
+          blocks={segments}
           highlight={highlight}
           scale={scale}
           onSeek={(idx) => playerRef.current?.seekToSentence(idx)}
@@ -581,57 +587,65 @@ export default function ReaderPage() {
 }
 
 function ReadAlong({
-  paragraphs,
+  blocks,
   highlight,
   scale,
   onSeek,
 }: {
-  paragraphs: string[][];
+  blocks: TtsBlock[];
   highlight: number | null;
   scale: number;
   onSeek?: (globalSentenceIndex: number) => void;
 }) {
-  // Precompute each paragraph's starting global sentence index.
-  const offsets: number[] = [];
+  // Global sentence index at the start of each block — only text blocks advance
+  // it (images carry no audio), so these indices match the audio chunk indices.
+  const starts: number[] = [];
   let acc = 0;
-  for (const para of paragraphs) {
-    offsets.push(acc);
-    acc += para.length;
+  for (const block of blocks) {
+    starts.push(acc);
+    if (block.type === "text") acc += block.sentences.length;
   }
   return (
     <div className="prose-reading" style={{ fontSize: `${1.1875 * scale}rem` }}>
-      {paragraphs.map((para, pi) => (
-        <p key={pi}>
-          {para.map((sentence, si) => {
-            const idx = offsets[pi] + si;
-            return (
-              <span
-                key={si}
-                data-si={idx}
-                onClick={
-                  onSeek
-                    ? () => {
-                        // Don't hijack an active text selection.
-                        const sel = window.getSelection();
-                        if (sel && !sel.isCollapsed) return;
-                        onSeek(idx);
-                      }
-                    : undefined
-                }
-                title={onSeek ? "Play from here" : undefined}
-                className={cn(
-                  "transition-colors duration-150",
-                  onSeek && "cursor-pointer hover:bg-muted rounded-sm",
-                  idx === highlight &&
-                    "bg-accent-soft rounded-sm box-decoration-clone"
-                )}
-              >
-                {sentence}{" "}
-              </span>
-            );
-          })}
-        </p>
-      ))}
+      {blocks.map((block, bi) => {
+        if (block.type === "image") {
+          const src = resolveImgSrc(block.src);
+          // eslint-disable-next-line @next/next/no-img-element
+          return src ? <img key={bi} src={src} alt={block.alt || ""} /> : null;
+        }
+        return (
+          <p key={bi}>
+            {block.sentences.map((sentence, si) => {
+              const idx = starts[bi] + si;
+              return (
+                <span
+                  key={si}
+                  data-si={idx}
+                  onClick={
+                    onSeek
+                      ? () => {
+                          // Don't hijack an active text selection.
+                          const sel = window.getSelection();
+                          if (sel && !sel.isCollapsed) return;
+                          onSeek(idx);
+                        }
+                      : undefined
+                  }
+                  title={onSeek ? "Play from here" : undefined}
+                  className={cn(
+                    "transition-colors duration-150",
+                    onSeek && "cursor-pointer hover:bg-muted rounded-sm",
+                    idx === highlight &&
+                      "bg-accent-soft rounded-sm box-decoration-clone"
+                  )}
+                >
+                  {sentence}{" "}
+                </span>
+              );
+            })}
+          </p>
+        );
+      })}
     </div>
   );
 }
