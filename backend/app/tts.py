@@ -279,29 +279,59 @@ def encode_mp3(wav_bytes: bytes) -> Optional[bytes]:
 _SENT_END = re.compile(r'(?<=[.!?"”’])\s+')
 
 
-def segment_paragraphs(html: str) -> List[List[str]]:
-    """Chapter HTML -> paragraphs of sentences. Used for both narration and the
-    read-along highlighting (the frontend renders these as sentence spans)."""
-    soup = BeautifulSoup(html, "html.parser")
-    blocks = soup.find_all("p")
-    if blocks:
-        texts = [b.get_text(" ", strip=True) for b in blocks]
-    else:
-        texts = re.split(r"\n+", soup.get_text("\n", strip=True))
+def _sentences(text: str) -> List[str]:
+    t = re.sub(r"\s+", " ", text).strip()
+    if not t:
+        return []
+    return [s for s in (x.strip() for x in _SENT_END.split(t)) if s]
 
-    paragraphs: List[List[str]] = []
-    for t in texts:
-        t = re.sub(r"\s+", " ", t).strip()
-        if not t:
-            continue
-        sentences = [s for s in (x.strip() for x in _SENT_END.split(t)) if s]
-        if sentences:
-            paragraphs.append(sentences)
-    if not paragraphs:
+
+def segment_blocks(html: str) -> List[dict]:
+    """Chapter HTML -> ordered blocks for the read-along view: text paragraphs
+    (lists of sentences) and images, in document order. Images carry no audio, so
+    they never enter the sentence stream; they exist purely so narration mode can
+    still render illustrations. `segment_paragraphs` is derived from this, so the
+    read-along render and the audio chunks can never drift out of alignment."""
+    soup = BeautifulSoup(html, "html.parser")
+    blocks: List[dict] = []
+
+    def add_image(el) -> None:
+        src = (el.get("src") or "").strip()
+        if src:
+            blocks.append({"type": "image", "src": src,
+                           "alt": (el.get("alt") or "").strip()})
+
+    if soup.find("p"):
+        # Walk <p> and <img> in document order. A <p>'s text ignores any nested
+        # <img> (get_text drops it); the image is emitted as its own block.
+        for el in soup.find_all(["p", "img"]):
+            if el.name == "img":
+                add_image(el)
+            else:
+                sents = _sentences(el.get_text(" ", strip=True))
+                if sents:
+                    blocks.append({"type": "text", "sentences": sents})
+    else:
+        # No <p> structure: newline-split text (matches the old fallback), then
+        # any images after it.
+        for t in re.split(r"\n+", soup.get_text("\n", strip=True)):
+            sents = _sentences(t)
+            if sents:
+                blocks.append({"type": "text", "sentences": sents})
+        for el in soup.find_all("img"):
+            add_image(el)
+
+    if not any(b["type"] == "text" for b in blocks):
         whole = soup.get_text(" ", strip=True)
         if whole:
-            paragraphs = [[whole]]
-    return paragraphs
+            blocks.insert(0, {"type": "text", "sentences": [whole]})
+    return blocks
+
+
+def segment_paragraphs(html: str) -> List[List[str]]:
+    """Text paragraphs (sentences) for narration + chunking. Derived from
+    `segment_blocks` so it can never disagree with the read-along render."""
+    return [b["sentences"] for b in segment_blocks(html) if b["type"] == "text"]
 
 
 def build_chunks(paragraphs: List[List[str]]):
