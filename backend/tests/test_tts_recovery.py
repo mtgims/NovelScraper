@@ -65,5 +65,12 @@ wav3 = t3.synth_wav("hello", "af_heart", 1.0)
 check("normal-synth-ok",
       len(wav3) > 44 and fk3.calls == 1 and resets3["n"] == 0)
 
+# 4) the CUDA provider options bound the arena (the VRAM-leak fix). Pure helper,
+#    so no onnxruntime/CUDA load needed.
+opts = _TTS._cuda_provider_options()
+check("cuda-arena-bounded",
+      opts.get("arena_extend_strategy") == "kSameAsRequested"
+      and opts.get("gpu_mem_limit", 0) > 0, str(opts))
+
 print(f"\nSUMMARY: {sum(ok)}/{len(ok)} passed")
 sys.exit(0 if all(ok) else 1)

@@ -41,6 +41,10 @@ class Settings:
         self.tts_device = os.getenv("NOVELSCRAPER_TTS_DEVICE", "auto").strip().lower()
         # Optional intra-op thread count for CPU synthesis (0 = let onnxruntime decide).
         self.tts_threads = int(os.getenv("NOVELSCRAPER_TTS_THREADS", "0"))
+        # Hard cap on GPU VRAM the TTS session may use (MiB). onnxruntime's CUDA
+        # arena otherwise grows unbounded (observed ballooning to 7+ GB for a
+        # 325 MB model and filling the card). Kokoro needs well under this.
+        self.tts_gpu_mem_mb = int(os.getenv("NOVELSCRAPER_TTS_GPU_MEM_MB", "4096"))
 
         # Disk-cache ceilings. Both caches are regenerable (HTML is re-fetched,
         # audio re-synthesized), so they're pruned LRU-style back under these caps
