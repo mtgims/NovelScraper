@@ -8,6 +8,7 @@ degrade gracefully instead of erroring.
 from __future__ import annotations
 
 import ctypes
+import gc
 import glob
 import io
 import logging
@@ -111,9 +112,22 @@ class _TTS:
             use_gpu = False
 
         if use_gpu:
-            return (["CUDAExecutionProvider", "CPUExecutionProvider"],
+            return ([("CUDAExecutionProvider", self._cuda_provider_options()),
+                     "CPUExecutionProvider"],
                     GPU_MODEL_NAME, GPU_MODEL_URL, "cuda")
         return (["CPUExecutionProvider"], CPU_MODEL_NAME, CPU_MODEL_URL, "cpu")
+
+    @staticmethod
+    def _cuda_provider_options() -> dict:
+        """CUDA EP options that bound the memory arena. Without these onnxruntime
+        uses kNextPowerOfTwo with no limit, whose BFC arena balloons (observed
+        ~7 GB for this 325 MB model) and fills the card, after which every
+        allocation fails. kSameAsRequested keeps it lean (no power-of-two
+        over-allocation); gpu_mem_limit is a hard ceiling."""
+        return {
+            "arena_extend_strategy": "kSameAsRequested",
+            "gpu_mem_limit": settings.tts_gpu_mem_mb * 1024 * 1024,
+        }
 
     def _build_session(self, model_path, providers):
         import onnxruntime as rt
@@ -204,17 +218,23 @@ class _TTS:
 
     def _reset(self) -> None:
         """Drop the loaded model so the next _ensure() rebuilds it — used to
-        recover from a runtime GPU failure part way through a long chapter."""
+        recover from a runtime GPU failure part way through a long chapter.
+
+        Explicitly frees the old InferenceSession (and its CUDA arena) *before*
+        the caller rebuilds, so a rebuild doesn't allocate a second arena on top
+        of the old one — that leak pushed VRAM over the edge and turned one
+        transient failure into a permanent CPU fallback."""
         with self._load_lock:
             self._kokoro = None
             self._unavailable = False
+        gc.collect()  # destroy the released session now, returning its GPU memory
 
     def _create(self, text: str, voice: str, speed: float):
         """Synthesize once, recovering from a single runtime failure. A GPU can
-        throw mid-session (e.g. cuBLAS "resource allocation failed" after many
-        chunks of a long chapter); rebuild the session — which frees GPU memory
-        and, if the GPU stays wedged, falls back to CPU inside _ensure — then
-        retry, so one failed chunk doesn't kill playback."""
+        throw mid-session; _reset() frees the old session (returning its GPU
+        memory) and _ensure() rebuilds — falling back to CPU if the GPU stays
+        wedged — then retry, so one failed chunk doesn't kill playback. With the
+        arena now bounded (see _resolve_providers) this path should rarely fire."""
         kokoro = self._ensure()
         if kokoro is None:
             raise RuntimeError("TTS unavailable")
