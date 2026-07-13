@@ -49,7 +49,12 @@ with TestClient(app) as c:
     check("login-bad-401", bad.status_code == 401)
     lr, admin_tok = login(c, "admin", "admin-pw-123")
     check("login-ok", lr.status_code == 200 and lr.json()["is_admin"] is True)
-    check("me-ok", c.get("/api/auth/me", cookies=as_(admin_tok)).json()["username"] == "admin")
+    me_resp = c.get("/api/auth/me", cookies=as_(admin_tok))
+    check("me-ok", me_resp.json()["username"] == "admin")
+    # An authenticated request re-issues (slides) the session cookie, so an
+    # actively-used session never hits the cookie's absolute max-age mid-read.
+    sc = me_resp.headers.get("set-cookie", "")
+    check("session-cookie-slid", "ns_session=" in sc and "max-age=" in sc.lower(), sc[:70])
 
     # --- invite-only registration (default) ---
     noinv = c.post("/api/auth/register",
