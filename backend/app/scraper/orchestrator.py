@@ -131,22 +131,34 @@ async def _fetch_content(fetcher: AsyncFetcher, profile: SiteProfile,
     return chapter
 
 
-def _volumes(chapters: List[Chapter], size: int, start_no: int = 1):
-    for index in range(0, len(chapters), size):
-        yield start_no + index // size, chapters[index:index + size]
+def _volumes(chapters: List[Chapter], size: int, start_position: int = 0):
+    """Group chapters into volumes by GLOBAL reading position (1-based), so an
+    incremental update keeps filling the last (possibly partial) volume rather
+    than starting a fresh volume for every batch of new chapters. ``size`` is the
+    chapters-per-volume; ``start_position`` is the highest position already saved
+    (0 for a fresh scrape). Yields (volume_number, chapters_in_that_volume)."""
+    i = 0
+    total = len(chapters)
+    while i < total:
+        pos = start_position + i + 1            # global position of chapters[i]
+        vol_no = (pos - 1) // size + 1
+        end_of_vol = vol_no * size              # last global position in this volume
+        take = min(total, i + (end_of_vol - pos + 1))
+        yield vol_no, chapters[i:take]
+        i = take
 
 
 async def scrape_book(book_slug: str, profile: SiteProfile, config: ScraperConfig,
                       progress: ProgressCb = None,
                       on_volume: VolumeCb = None,
                       source_url: Optional[str] = None,
-                      start_position: int = 0,
-                      start_volume: int = 1) -> ScrapeResult:
+                      start_position: int = 0) -> ScrapeResult:
     """Scrape a book. For an incremental update, pass ``start_position`` (the
-    highest chapter position already saved) and ``start_volume`` (next volume
-    number): enumeration still runs to discover the full list, but only chapters
-    past ``start_position`` are fetched and packaged, as volumes numbered from
-    ``start_volume``."""
+    highest chapter position already saved): enumeration still runs to discover
+    the full list, but only chapters past ``start_position`` are fetched and
+    packaged. Volumes are numbered by global position (see ``_volumes``), so new
+    chapters continue filling the last existing volume rather than starting a new
+    one — set ``config.chapters_per_volume`` to the book's existing volume size."""
     book = Book(slug=book_slug)
     volumes: List[VolumeResult] = []
     skipped = 0
@@ -172,7 +184,7 @@ async def scrape_book(book_slug: str, profile: SiteProfile, config: ScraperConfi
                 progress("enumerating", {"found": total})
 
         for vol_no, vol_chapters in _volumes(
-                new_chapters, config.chapters_per_volume, start_volume):
+                new_chapters, config.chapters_per_volume, start_position):
             tasks = [_fetch_content(fetcher, profile, ch, progress)
                      for ch in vol_chapters]
             fetched = await asyncio.gather(*tasks)

@@ -150,13 +150,14 @@ class JobManager:
                         "phase": "enumerating", "volume": 0}
                 self._live[job_id] = live
                 # For an incremental update, resume from what's already saved:
-                # start_position = highest saved chapter, start_volume = next
-                # volume number. The book already exists so we append to it.
-                start_position, start_volume = 0, 1
+                # start_position = highest saved chapter. New chapters continue
+                # filling the last (partial) volume, so we match the book's
+                # existing volume size rather than the job's default.
+                start_position = 0
                 existing_book_id = None
                 if job.incremental:
-                    start_position, start_volume, existing_book_id = \
-                        self._update_offsets(job)
+                    start_position, cpv, existing_book_id = self._update_offsets(job)
+                    config.chapters_per_volume = cpv
 
                 # Book is created lazily on the first completed volume (fresh
                 # scrape), so a job cancelled/failed before any output neither
@@ -194,8 +195,7 @@ class JobManager:
                 result = await scrape_book(job.book_slug, profile, config,
                                            on_progress, on_volume,
                                            source_url=job.source_url,
-                                           start_position=start_position,
-                                           start_volume=start_volume)
+                                           start_position=start_position)
                 # Record the check time even when an update found no new chapters.
                 if state["book_id"] is not None:
                     self._touch_book(state["book_id"])
@@ -241,22 +241,30 @@ class JobManager:
             s.commit()
 
     def _update_offsets(self, job: Job) -> tuple[int, int, Optional[int]]:
-        """For an incremental update: (highest saved chapter position, next
-        volume number, existing book id). Zeros/None if the book doesn't exist
-        yet (falls back to a full scrape)."""
+        """For an incremental update: (highest saved chapter position, effective
+        chapters-per-volume, existing book id). The cpv is recovered from the
+        book's existing volumes — every full volume equals the original size, so
+        the largest one does — so new chapters keep filling the last volume at the
+        same size instead of each update starting a new one. Zeros/None if the
+        book doesn't exist yet (falls back to a full scrape)."""
         with Session(self.engine) as s:
             book = s.exec(
-                select(Book).where(Book.slug == job.book_slug, Book.site == job.site)
+                select(Book).where(
+                    Book.slug == job.book_slug,
+                    Book.site == job.site,
+                    Book.user_id == job.user_id,
+                )
             ).first()
             if book is None:
-                return 0, 1, None
+                return 0, job.chapters_per_volume, None
             max_pos = s.exec(
                 select(func.max(Chapter.position)).where(Chapter.book_id == book.id)
             ).one()
-            max_vol = s.exec(
-                select(func.max(Volume.number)).where(Volume.book_id == book.id)
+            max_vol_size = s.exec(
+                select(func.max(Volume.chapter_count)).where(Volume.book_id == book.id)
             ).one()
-            return (max_pos or 0), (max_vol or 0) + 1, book.id
+            cpv = max_vol_size or job.chapters_per_volume
+            return (max_pos or 0), cpv, book.id
 
     def _touch_book(self, book_id: int) -> None:
         with Session(self.engine) as s:
@@ -330,9 +338,20 @@ class JobManager:
         so a cancelled job still leaves the completed volumes readable). Returns
         the updated running position."""
         with Session(self.engine) as s:
-            # EPUBs are generated on demand, so there's no stored file/size.
-            s.add(Volume(book_id=book_id, number=volume.number, title=volume.title,
-                         path="", chapter_count=volume.chapter_count, size_bytes=0))
+            # Append to the volume if it already exists (an incremental update
+            # filling the last partial volume), else create it. EPUBs are built on
+            # demand, so there's no stored file/size.
+            vol = s.exec(
+                select(Volume).where(
+                    Volume.book_id == book_id, Volume.number == volume.number
+                )
+            ).first()
+            if vol is None:
+                vol = Volume(book_id=book_id, number=volume.number,
+                             title=volume.title, path="", chapter_count=0,
+                             size_bytes=0)
+            vol.chapter_count += volume.chapter_count
+            s.add(vol)
             for ch in chapters:
                 if not ch.content:
                     continue

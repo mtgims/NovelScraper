@@ -21,3 +21,6 @@ node_modules/
 # empty onnxruntime-node stub that the package.json "overrides" points at via
 # file:stubs/onnxruntime-node; without it a fresh `npm ci` can't resolve the
 # dependency and the build fails.
+
+# local agent worktrees/scratch (never commit)
+.claude/worktrees/
