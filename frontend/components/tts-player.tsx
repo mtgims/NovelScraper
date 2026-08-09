@@ -142,6 +142,7 @@ export const TtsPlayer = forwardRef<TtsPlayerHandle, Props>(function TtsPlayer(
   const browserCache = useRef<Map<number, string>>(new Map()); // chunk -> object URL
   const inFlightRef = useRef<Map<number, Promise<string>>>(new Map()); // dedupe concurrent fetches
   const pendingFrac = useRef<number | null>(null); // intra-chunk seek target
+  const playGen = useRef(0); // bumped each play(); a superseded play() bails
   const lastHi = useRef<number | null>(null);
   const playRef = useRef<() => void>(() => {});
   const finishRef = useRef<() => void>(() => {});
@@ -279,6 +280,7 @@ export const TtsPlayer = forwardRef<TtsPlayerHandle, Props>(function TtsPlayer(
   const play = useCallback(async () => {
     const a = audioRef.current;
     if (!a) return;
+    const gen = ++playGen.current; // this run's generation; a later play() supersedes it
     let src: string;
     try {
       src = await srcForChunk(chunkIdx.current);
@@ -299,7 +301,9 @@ export const TtsPlayer = forwardRef<TtsPlayerHandle, Props>(function TtsPlayer(
         return;
       }
     }
-    if (audioRef.current !== a) return; // stopped/unmounted while synthesizing
+    // Bail if stopped/unmounted, or if a newer play() (e.g. a voice/speed reload)
+    // started while we were synthesizing — otherwise we'd clobber its src.
+    if (audioRef.current !== a || playGen.current !== gen) return;
     a.src = src;
     const frac = pendingFrac.current;
     pendingFrac.current = null;
@@ -622,12 +626,24 @@ export const TtsPlayer = forwardRef<TtsPlayerHandle, Props>(function TtsPlayer(
   const voiceOptions =
     info?.voices && info.voices.length ? info.voices : browserVoiceList;
 
+  // Re-synthesize the current chunk at a changed voice/speed, resuming where we
+  // are. Called from the voice select and the speed slider (on release).
   const reload = () => {
-    if (mode === "playing" || mode === "paused") {
-      revokeBrowserCache();
-      chunkDurRef.current.clear(); // speed changes chunk durations
-      void play();
+    if (mode !== "playing" && mode !== "paused") return;
+    const a = audioRef.current;
+    if (a) {
+      // Resume at the same point in the re-rendered chunk.
+      if (a.duration && isFinite(a.duration)) {
+        pendingFrac.current = Math.min(0.999, (a.currentTime || 0) / a.duration);
+      }
+      // Pause first: a paused element won't fire `ended`, so revoking its blob
+      // (below) can't cascade the chunk pointer to the end of the chapter. play()
+      // installs the fresh src. (The playGen guard also stops any in-flight play.)
+      a.pause();
     }
+    revokeBrowserCache();
+    chunkDurRef.current.clear(); // durations change with voice/speed
+    void play();
   };
 
   const switchEngine = (e: Engine) => {
