@@ -1,0 +1,19 @@
+# Site profile for novel-bin.com (the "Novel Bin" family).
+# The book page carries the full chapter archive statically in #list-chapter, so a
+# single "paginated" fetch of the book URL yields every chapter (the repeat guard
+# stops after it re-sees page 1).
+name: novel-bin
+base_url: https://novel-bin.com
+enumeration: paginated
+list_url_template: "{base_url}/novel-bin/{book}"
+book_url_regex: "/novel-bin/(?P<book>[^/?#]+)"
+list_container_selector: "#list-chapter"
+link_selector: "ul.list-chapter li a"
+content_selector: "#chr-content"
+book_title_selector: "h3.title"
+book_author_selector: ".info a"
+strip_selectors:
+  - script
+  - style
+  - ins
+  - .ads
