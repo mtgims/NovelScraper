@@ -734,23 +734,28 @@ export const TtsPlayer = forwardRef<TtsPlayerHandle, Props>(function TtsPlayer(
               </label>
               <label className="flex items-center gap-2">
                 <span className="kicker w-14">Speed</span>
-                <select
+                <input
+                  type="range"
                   aria-label="Speed"
-                  className="h-8 flex-1 rounded-sm border border-border bg-background px-2 text-xs tabular"
+                  min={0.5}
+                  max={2}
+                  step={0.05}
                   value={speed}
+                  // Update the readout live while dragging, but only re-synthesize
+                  // at the new speed on release (pointer/key up) — re-synthesizing
+                  // on every drag tick would thrash the TTS engine.
                   onChange={(e) => {
                     const s = Number(e.target.value);
                     setSpeed(s);
                     speedRef.current = s;
-                    reload();
                   }}
-                >
-                  {[0.75, 1, 1.25, 1.5, 1.75, 2].map((s) => (
-                    <option key={s} value={s}>
-                      {s}×
-                    </option>
-                  ))}
-                </select>
+                  onPointerUp={reload}
+                  onKeyUp={reload}
+                  className="h-8 flex-1 cursor-pointer accent-accent"
+                />
+                <span className="w-9 shrink-0 text-right text-xs tabular">
+                  {parseFloat(speed.toFixed(2))}×
+                </span>
               </label>
               <label className="flex cursor-pointer items-center gap-2">
                 <span className="kicker w-14">Auto-next</span>
