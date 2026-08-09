@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import logging
+import os
 
 from sqlalchemy import inspect, text
 from sqlmodel import Session, SQLModel, create_engine, select
@@ -178,6 +179,30 @@ def _bootstrap_admin_and_backfill() -> None:
     )
 
 
+def _normalize_cover_paths() -> None:
+    """``book.cover_path`` is stored as an absolute path. If the data dir was moved
+    to a new machine or install location, rewrite any cover_path that isn't under
+    the current ``cover_dir`` to ``cover_dir/<basename>`` so the files still
+    resolve. Idempotent (a no-op once paths already match); missing files just
+    read as "no cover" downstream."""
+    cover_dir = str(settings.cover_dir)
+    with engine.begin() as conn:
+        rows = conn.execute(
+            text("SELECT id, cover_path FROM book WHERE cover_path IS NOT NULL")
+        ).fetchall()
+        fixed = 0
+        for book_id, cover_path in rows:
+            if cover_path and os.path.dirname(cover_path) != cover_dir:
+                conn.execute(
+                    text("UPDATE book SET cover_path = :p WHERE id = :id"),
+                    {"p": os.path.join(cover_dir, os.path.basename(cover_path)),
+                     "id": book_id},
+                )
+                fixed += 1
+    if fixed:
+        logger.info("normalized %d cover path(s) to %s", fixed, cover_dir)
+
+
 def _cleanup_stored_epubs() -> None:
     """EPUBs are now built on demand, so any previously-written .epub files are
     dead weight — remove them to reclaim the space (they regenerate on download)."""
@@ -206,6 +231,7 @@ def init_db() -> None:
     _backfill_book_source_urls()
     _bootstrap_admin_and_backfill()
     _compress_chapter_content()
+    _normalize_cover_paths()   # heal cover paths after a move to a new path/machine
     _cleanup_stored_epubs()
 
 
