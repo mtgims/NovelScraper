@@ -211,6 +211,7 @@ class ChapterListItem(BaseModel):
     position: int
     number: str
     title: str
+    volume: int   # volume_number this chapter belongs to (for grouping the TOC)
 
 
 class ChapterRead(BaseModel):

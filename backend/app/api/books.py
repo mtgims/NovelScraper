@@ -180,12 +180,13 @@ def list_chapters(book_id: int, user: User = Depends(get_current_user),
     # Select only TOC columns — never load (potentially large) chapter content
     # just to list the table of contents.
     rows = session.exec(
-        select(Chapter.position, Chapter.number, Chapter.title)
+        select(Chapter.position, Chapter.number, Chapter.title, Chapter.volume_number)
         .where(Chapter.book_id == book_id)
         .order_by(Chapter.position)
     ).all()
     return [
-        ChapterListItem(position=p, number=n, title=t) for p, n, t in rows
+        ChapterListItem(position=p, number=n, title=t, volume=v)
+        for p, n, t, v in rows
     ]
 
 

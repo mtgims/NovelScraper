@@ -99,6 +99,7 @@ export interface ChapterListItem {
   position: number;
   number: string;
   title: string;
+  volume: number; // volume_number, for grouping the TOC by volume
 }
 
 export interface Chapter {

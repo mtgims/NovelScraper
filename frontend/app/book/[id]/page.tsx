@@ -6,6 +6,7 @@ import {
   Check,
   CheckCheck,
   ChevronLeft,
+  ChevronRight,
   Circle,
   Download,
   DownloadCloud,
@@ -18,8 +19,10 @@ import Link from "next/link";
 import { useParams, useRouter } from "next/navigation";
 import { type MouseEvent as ReactMouseEvent, useRef, useState } from "react";
 
+import { ChaptersSheet } from "@/components/chapters-sheet";
 import { useConfirm } from "@/components/confirm-dialog";
 import { PageHeader } from "@/components/page-header";
+import { SwipeTabs } from "@/components/swipe-tabs";
 import { StarRating } from "@/components/star-rating";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
@@ -53,6 +56,7 @@ export default function BookDetailPage() {
   const updateChapters = useUpdateBookChapters(id);
   const confirm = useConfirm();
   const [updateMsg, setUpdateMsg] = useState<string | null>(null);
+  const [sheetOpen, setSheetOpen] = useState(false);
 
   // Anchor for range selection: the last-toggled chapter and the state it was
   // set to. Shift/Ctrl-clicking another mark applies that state to the range.
@@ -136,7 +140,7 @@ export default function BookDetailPage() {
       </Link>
 
       <PageHeader title={book.title} kicker={`${book.author} · ${book.site}`}>
-        <div className="flex flex-wrap gap-2">
+        <div className="hidden flex-wrap gap-2 md:flex">
           <Link href={`/read/${book.id}/${resumeAt}`}>
             <Button size="sm">
               {hasStarted ? <Play size={15} /> : <BookOpen size={15} />}
@@ -242,7 +246,181 @@ export default function BookDetailPage() {
         </div>
       )}
 
-      <section className="grid gap-x-10 gap-y-8 md:grid-cols-[1fr_2fr] md:items-start">
+      {/* ---- Mobile layout (phones) ---- */}
+      <div className="md:hidden">
+        {/* Smaller centered cover */}
+        <div className="mx-auto w-40 max-w-full">
+          <div className="aspect-[2/3] overflow-hidden border border-border bg-card">
+            {book.has_cover ? (
+              // eslint-disable-next-line @next/next/no-img-element
+              <img
+                src={coverUrl(book.id)}
+                alt={`Cover of ${book.title}`}
+                className="h-full w-full object-cover"
+              />
+            ) : (
+              <div className="flex h-full flex-col items-center justify-center p-4 text-center">
+                <div className="mb-3 h-1 w-8 bg-accent" />
+                <p className="font-display text-base leading-tight break-words line-clamp-4">
+                  {book.title}
+                </p>
+                <p className="kicker mt-auto pt-4">{totalChapters} ch</p>
+              </div>
+            )}
+          </div>
+        </div>
+
+        {/* Continue directly under the cover */}
+        <div className="mx-auto mt-4 w-full max-w-[16rem]">
+          <Link href={`/read/${book.id}/${resumeAt}`} className="block">
+            <Button className="w-full">
+              {hasStarted ? <Play size={15} /> : <BookOpen size={15} />}
+              {hasStarted ? "Continue" : "Read"}
+            </Button>
+          </Link>
+        </div>
+
+        {/* Secondary actions */}
+        <div className="mt-3 flex flex-wrap items-center justify-center gap-2">
+          {book.can_update && (
+            <Button
+              variant="outline"
+              size="sm"
+              disabled={updateChapters.isPending}
+              onClick={() => {
+                setUpdateMsg("Checking for new chapters — see Progress.");
+                updateChapters.mutate(undefined, {
+                  onError: (e) => {
+                    if (!/already running/i.test((e as Error).message)) {
+                      setUpdateMsg("Couldn't start an update. Please try again.");
+                    }
+                  },
+                });
+              }}
+            >
+              <RefreshCw
+                size={15}
+                className={cn(updateChapters.isPending && "animate-spin")}
+              />
+              Update
+            </Button>
+          )}
+          {book.imported && <AddEpubButton id={book.id} />}
+          <a href={downloadAllUrl(book.id)}>
+            <Button variant="outline" size="sm">
+              <DownloadCloud size={15} /> All
+            </Button>
+          </a>
+          <Button variant="danger" size="sm" onClick={onDelete}>
+            <Trash2 size={15} /> Delete
+          </Button>
+        </div>
+
+        {/* Chapters preview / Downloading — swipeable tabs */}
+        <SwipeTabs
+          className="mt-8"
+          tabs={[
+            {
+              label: "Chapters",
+              content: !chapters ? (
+                <div className="space-y-2 pt-4">
+                  {Array.from({ length: 5 }).map((_, i) => (
+                    <Skeleton key={i} className="h-9" />
+                  ))}
+                </div>
+              ) : (
+                <div className="pt-4">
+                  <div className="relative">
+                    <Card className="divide-y divide-border">
+                      {chapters.slice(0, 5).map((ch) => {
+                        const read = readSet.has(ch.position);
+                        const current = ch.position === resumeAt;
+                        return (
+                          <div
+                            key={ch.position}
+                            className={cn(
+                              "flex items-center",
+                              current && "bg-accent-soft"
+                            )}
+                          >
+                            <Link
+                              href={`/read/${book.id}/${ch.position}`}
+                              className="flex min-w-0 flex-1 items-center gap-3 px-4 py-2.5 text-sm"
+                            >
+                              <span className="tabular w-8 shrink-0 text-xs text-muted-foreground/60">
+                                {ch.position}
+                              </span>
+                              <span
+                                className={cn(
+                                  "min-w-0 flex-1 truncate",
+                                  read ? "text-muted-foreground" : "text-foreground"
+                                )}
+                              >
+                                {ch.title || `Chapter ${ch.number || ch.position}`}
+                              </span>
+                              {current && !read && (
+                                <span className="kicker shrink-0 text-accent">here</span>
+                              )}
+                            </Link>
+                            <button
+                              type="button"
+                              onClick={(e) => onToggle(e, ch.position, read)}
+                              className="shrink-0 px-3 py-2.5 text-muted-foreground transition-colors hover:text-accent"
+                              aria-label={read ? "Mark as unread" : "Mark as read"}
+                            >
+                              {read ? (
+                                <Check size={16} className="text-accent" />
+                              ) : (
+                                <Circle size={16} className="opacity-40" />
+                              )}
+                            </button>
+                          </div>
+                        );
+                      })}
+                    </Card>
+                    {chapters.length > 5 && (
+                      <div className="pointer-events-none absolute inset-x-0 bottom-0 h-14 rounded-b-md bg-gradient-to-t from-card to-transparent" />
+                    )}
+                  </div>
+                  <Button
+                    variant="outline"
+                    className="mt-3 w-full"
+                    onClick={() => setSheetOpen(true)}
+                  >
+                    View all chapters{" "}
+                    <span className="text-muted-foreground">({totalChapters})</span>
+                    <ChevronRight size={15} />
+                  </Button>
+                </div>
+              ),
+            },
+            {
+              label: "Downloading",
+              content: (
+                <div className="space-y-2 pt-4">
+                  {book.volumes.map((vol) => (
+                    <a
+                      key={vol.id}
+                      href={downloadUrl(book.id, vol.number)}
+                      download
+                      className="flex items-center justify-between rounded-sm border border-border px-3 py-2.5 text-sm transition-colors hover:border-accent"
+                    >
+                      <span>
+                        Vol {vol.number}{" "}
+                        <span className="kicker">· {vol.chapter_count} ch</span>
+                      </span>
+                      <Download size={15} className="text-muted-foreground" />
+                    </a>
+                  ))}
+                </div>
+              ),
+            },
+          ]}
+        />
+      </div>
+
+      {/* ---- Desktop layout ---- */}
+      <section className="hidden gap-x-10 gap-y-8 md:grid md:grid-cols-[1fr_2fr] md:items-start">
         {/* Cover — desktop: top of the left column. */}
         <div className="aspect-[2/3] overflow-hidden border border-border bg-card md:col-start-1 md:row-start-1">
           {book.has_cover ? (
@@ -371,6 +549,19 @@ export default function BookDetailPage() {
           onClose={() => setMenu(null)}
         />
       )}
+
+      <ChaptersSheet
+        open={sheetOpen}
+        onClose={() => setSheetOpen(false)}
+        bookId={book.id}
+        title={book.title}
+        hasCover={book.has_cover}
+        chapters={chapters ?? []}
+        volumes={book.volumes}
+        readSet={readSet}
+        resumeAt={resumeAt}
+        onToggleRead={(pos, read) => applyRead([pos], !read)}
+      />
     </>
   );
 }

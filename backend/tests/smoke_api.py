@@ -146,6 +146,7 @@ with TestClient(app) as client:
 
     toc = client.get(f"/api/books/{bid}/chapters").json()
     check("chapters-toc", len(toc) == 6 and toc[0]["position"] == 1)
+    check("chapters-toc-volume", toc[0]["volume"] == 1 and toc[-1]["volume"] == 2, str([toc[0].get("volume"), toc[-1].get("volume")]))
     c1 = client.get(f"/api/books/{bid}/chapters/1").json()
     check("chapter-read", c1["has_prev"] is False and c1["has_next"] is True and "Body of" in c1["content"])
 
