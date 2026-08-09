@@ -28,6 +28,7 @@ import {
   synthesizeBlob,
 } from "@/lib/browser-tts";
 import { useVoices } from "@/lib/queries";
+import { groupVoices } from "@/lib/voices";
 import type { TtsBlock } from "@/lib/types";
 import { cn } from "@/lib/utils";
 
@@ -717,10 +718,16 @@ export const TtsPlayer = forwardRef<TtsPlayerHandle, Props>(function TtsPlayer(
                   {voiceOptions.length === 0 ? (
                     <option value={voice || DEFAULT_VOICE}>{voice || DEFAULT_VOICE}</option>
                   ) : (
-                    voiceOptions.map((v) => (
-                      <option key={v} value={v}>
-                        {v}
-                      </option>
+                    // Grouped by language + gender, with the af_/am_ prefix
+                    // dropped in favour of clean names.
+                    groupVoices(voiceOptions).map((g) => (
+                      <optgroup key={g.label} label={g.label}>
+                        {g.voices.map((v) => (
+                          <option key={v.id} value={v.id}>
+                            {v.name}
+                          </option>
+                        ))}
+                      </optgroup>
                     ))
                   )}
                 </select>
