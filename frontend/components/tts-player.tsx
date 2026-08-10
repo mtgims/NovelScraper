@@ -9,6 +9,7 @@ import {
   RotateCcw,
   RotateCw,
   Settings2,
+  Volume2,
   X,
 } from "lucide-react";
 import {
@@ -27,13 +28,14 @@ import {
   onModelProgress,
   synthesizeBlob,
 } from "@/lib/browser-tts";
+import { OsTtsSpeaker, osTtsUsable, osVoices } from "@/lib/os-tts";
 import { useVoices } from "@/lib/queries";
-import { groupVoices } from "@/lib/voices";
+import { groupOsVoices, groupVoices, type OsVoice } from "@/lib/voices";
 import type { TtsBlock } from "@/lib/types";
 import { cn } from "@/lib/utils";
 
 type Mode = "idle" | "loading" | "playing" | "paused";
-type Engine = "browser" | "server";
+type Engine = "browser" | "server" | "os";
 
 const DEFAULT_VOICE = "af_heart";
 // Fallback narration rate (seconds of audio per character, at 1× speed) used to
@@ -127,6 +129,14 @@ export const TtsPlayer = forwardRef<TtsPlayerHandle, Props>(function TtsPlayer(
   const [browserSupported, setBrowserSupported] = useState(false);
   const [engine, setEngine] = useState<Engine | null>(null);
   const [browserVoiceList, setBrowserVoiceList] = useState<string[]>([]);
+  // Native OS TTS (Web Speech API) — a screen-on engine using the device's own
+  // installed voices; no PC/GPU. See lib/os-tts.ts for the trade-offs.
+  const [osSupported, setOsSupported] = useState(false);
+  const [osVoiceList, setOsVoiceList] = useState<OsVoice[]>([]);
+  const [osVoice, setOsVoice] = useState("");
+  const osVoiceRef = useRef("");
+  const osSpeakerRef = useRef<OsTtsSpeaker | null>(null);
+  const osSpeakRef = useRef<(fromIndex: number) => void>(() => {});
 
   const audioRef = useRef<HTMLAudioElement | null>(null);
   const chunkIdx = useRef(0);
@@ -153,28 +163,51 @@ export const TtsPlayer = forwardRef<TtsPlayerHandle, Props>(function TtsPlayer(
   speedRef.current = speed;
   engineRef.current = engine ?? "server";
   serverAvailableRef.current = serverAvailable;
+  // Effective OS voice = explicit pick, else the first listed (matches the shown
+  // selection); empty means "let the browser use its default voice".
+  osVoiceRef.current = osVoice || osVoiceList[0]?.voiceURI || "";
 
   useEffect(() => {
     if (info === undefined) return; // wait until server availability is known
     let cancelled = false;
     // Only surface on-device as an option if a real WebGPU adapter exists.
+    const os = osTtsUsable();
     browserTtsUsable().then((usable) => {
       if (cancelled) return;
       setBrowserSupported(usable);
       setEngine((prev) => {
         if (prev) return prev;
-        if (!usable) return "server"; // no WebGPU → server (normal case)
-        if (!info.available) return "browser"; // on-device is the only option
-        // Both work: default to on-device on desktop (offloads the server), but
-        // to the server on phones/tablets — synthesizing on a mobile GPU can
-        // overheat/freeze the device. On-device stays available via the toggle.
-        return isTouchDevice() ? "server" : "browser";
+        const touch = isTouchDevice();
+        // Phones/tablets: default to the device's own OS voices — no PC needed and
+        // (unlike WebGPU Kokoro) it can't overheat/freeze the GPU.
+        if (touch && os) return "os";
+        // Desktop with WebGPU: on-device Kokoro (offloads the server).
+        if (usable && !touch) return "browser";
+        if (info.available) return "server";
+        if (os) return "os";
+        if (usable) return "browser";
+        return "server";
       });
     });
     return () => {
       cancelled = true;
     };
   }, [info]);
+
+  // Detect native OS TTS and load the device's voice list (async on Chrome).
+  useEffect(() => {
+    if (!osTtsUsable()) return;
+    setOsSupported(true);
+    let cancelled = false;
+    osVoices()
+      .then((vs) => {
+        if (!cancelled) setOsVoiceList(vs);
+      })
+      .catch(() => {});
+    return () => {
+      cancelled = true;
+    };
+  }, []);
 
   useEffect(() => onModelProgress((p) => setModelPct(p)), []);
 
@@ -188,6 +221,10 @@ export const TtsPlayer = forwardRef<TtsPlayerHandle, Props>(function TtsPlayer(
         setVoice(v);
         voiceRef.current = v;
       }
+      // OS voices are keyed separately — their voiceURIs must not collide with
+      // Kokoro voice ids.
+      const ov = localStorage.getItem(`ns:tts-voice:os:${bookId}`);
+      setOsVoice(ov || "");
       setAutoNext(localStorage.getItem("ns:tts-auto-next") === "1");
     } catch {
       /* ignore */
@@ -328,6 +365,7 @@ export const TtsPlayer = forwardRef<TtsPlayerHandle, Props>(function TtsPlayer(
   }, [srcForChunk, prefetchWindow]);
 
   const stop = useCallback(() => {
+    osSpeakerRef.current?.cancel(); // silence native speech (no-op for audio engines)
     const a = audioRef.current;
     if (a) {
       a.pause();
@@ -353,6 +391,10 @@ export const TtsPlayer = forwardRef<TtsPlayerHandle, Props>(function TtsPlayer(
       if (!len) return;
       const next = Math.min(len - 1, Math.max(0, index));
       chunkIdx.current = next;
+      if (engineRef.current === "os") {
+        osSpeakRef.current(chunksRef.current[next][0] ?? 0); // start of that chunk
+        return;
+      }
       pendingFrac.current = null;
       void play();
     },
@@ -383,6 +425,10 @@ export const TtsPlayer = forwardRef<TtsPlayerHandle, Props>(function TtsPlayer(
   // Jump narration to a clicked sentence.
   const seekToSentence = useCallback(
     (globalIndex: number) => {
+      if (engineRef.current === "os") {
+        osSpeakRef.current(globalIndex);
+        return;
+      }
       if (locateSentence(globalIndex)) void play();
     },
     [locateSentence, play]
@@ -400,6 +446,51 @@ export const TtsPlayer = forwardRef<TtsPlayerHandle, Props>(function TtsPlayer(
     onComplete?.();
     // Reassigned every render, so `autoNext`/`hasNext` here are always current.
     if (autoNext && hasNext) onNextChapter?.();
+  };
+
+  // --- Native OS TTS (Web Speech API) helpers -----------------------------
+  const getSpeaker = () => {
+    if (!osSpeakerRef.current) osSpeakerRef.current = new OsTtsSpeaker();
+    return osSpeakerRef.current;
+  };
+  const chunkOfSentence = (i: number) => {
+    const chunks = chunksRef.current;
+    for (let c = 0; c < chunks.length; c++) if (chunks[c].includes(i)) return c;
+    return 0;
+  };
+  // OS speech has no real durations — estimate elapsed/total from char counts so
+  // the readout + progress bar still move (always approximate → keeps the "~").
+  const osUpdateProgress = (sentenceIndex: number) => {
+    const lens = lensRef.current;
+    const secPerChar = DEFAULT_SEC_PER_CHAR / (speedRef.current || 1);
+    let before = 0;
+    let total = 0;
+    for (let i = 0; i < lens.length; i++) {
+      total += lens[i];
+      if (i < sentenceIndex) before += lens[i];
+    }
+    setElapsedSec(before * secPerChar);
+    setTotalSec(total * secPerChar);
+    setTotalExact(false);
+  };
+  // Speak the chapter's sentence stream from `fromIndex` on the device's OS voice.
+  // Reassigned every render so it always sees the latest voice/speed/onHighlight.
+  osSpeakRef.current = (fromIndex: number) => {
+    setMode("playing");
+    chunkIdx.current = chunkOfSentence(fromIndex);
+    osUpdateProgress(fromIndex);
+    getSpeaker().speak(flatRef.current, fromIndex, {
+      voiceURI: osVoiceRef.current || undefined,
+      rate: speedRef.current,
+      onSentence: (i) => {
+        lastHi.current = i;
+        chunkIdx.current = chunkOfSentence(i);
+        onHighlight(i);
+        osUpdateProgress(i);
+      },
+      onDone: () => finishRef.current(),
+      onError: () => setMode("idle"),
+    });
   };
 
   // Audio element + handlers created once.
@@ -584,6 +675,12 @@ export const TtsPlayer = forwardRef<TtsPlayerHandle, Props>(function TtsPlayer(
       const total = flatRef.current.length;
       const frac = Math.max(0, Math.min(1, getReadingFraction?.() ?? 0));
       const target = total > 0 ? Math.min(total - 1, Math.round(frac * total)) : 0;
+      // Native OS engine: speak the sentence stream directly (no audio element,
+      // no chunk fetch/prefetch), starting near where the reader is.
+      if (engineRef.current === "os") {
+        osSpeakRef.current(frac > 0.001 ? target : 0);
+        return;
+      }
       if (!(frac > 0.001) || !locateSentence(target)) {
         chunkIdx.current = 0;
         pendingFrac.current = null;
@@ -612,24 +709,45 @@ export const TtsPlayer = forwardRef<TtsPlayerHandle, Props>(function TtsPlayer(
   useEffect(() => {
     if (!autoStart || autoStartedRef.current) return;
     if (info === undefined || engine === null) return;
-    if (!serverAvailable && !browserSupported) return;
+    if (!serverAvailable && !browserSupported && !osSupported) return;
     if (mode !== "idle") return;
     autoStartedRef.current = true;
     void start();
-  }, [autoStart, info, engine, serverAvailable, browserSupported, mode, start]);
+  }, [autoStart, info, engine, serverAvailable, browserSupported, osSupported, mode, start]);
 
   if (info === undefined) return null;
-  if (!serverAvailable && !browserSupported) return null;
+  if (!serverAvailable && !browserSupported && !osSupported) return null;
 
   const active = mode !== "idle";
-  const bothAvailable = serverAvailable && browserSupported;
+  const isOs = engineRef.current === "os";
+  // Engines the user can switch between (shown when more than one is available).
+  const engineChoices: { id: Engine; label: string; icon: typeof Cpu; title: string }[] = [
+    ...(osSupported
+      ? [{ id: "os" as Engine, label: "OS voices", icon: Volume2, title: "Use this device's built-in OS voices (no PC/GPU; screen must stay on)" }]
+      : []),
+    ...(browserSupported
+      ? [{ id: "browser" as Engine, label: "On-device", icon: MonitorSmartphone, title: "Synthesize on this device's GPU (WebGPU)" }]
+      : []),
+    ...(serverAvailable
+      ? [{ id: "server" as Engine, label: "Server", icon: Cpu, title: `Synthesize on the server${info?.device ? ` (${info.device})` : ""}` }]
+      : []),
+  ];
   const voiceOptions =
     info?.voices && info.voices.length ? info.voices : browserVoiceList;
+  const osGroups = groupOsVoices(
+    osVoiceList,
+    typeof navigator !== "undefined" ? navigator.language : ""
+  );
 
   // Re-synthesize the current chunk at a changed voice/speed, resuming where we
   // are. Called from the voice select and the speed slider (on release).
   const reload = () => {
     if (mode !== "playing" && mode !== "paused") return;
+    // OS engine: re-speak from the current sentence with the new voice/speed.
+    if (engineRef.current === "os") {
+      osSpeakRef.current(osSpeakerRef.current?.currentIndex ?? 0);
+      return;
+    }
     const a = audioRef.current;
     if (a) {
       // Resume at the same point in the re-rendered chunk.
@@ -654,6 +772,17 @@ export const TtsPlayer = forwardRef<TtsPlayerHandle, Props>(function TtsPlayer(
   };
 
   const togglePlay = () => {
+    if (engineRef.current === "os") {
+      const s = getSpeaker();
+      if (mode === "playing") {
+        s.pause();
+        setMode("paused");
+      } else {
+        s.resume();
+        setMode("playing");
+      }
+      return;
+    }
     const a = audioRef.current;
     if (!a) return;
     if (mode === "playing") {
@@ -681,72 +810,99 @@ export const TtsPlayer = forwardRef<TtsPlayerHandle, Props>(function TtsPlayer(
         <div className="pointer-events-auto relative w-full max-w-md">
           {showSettings && (
             <div className="absolute bottom-full right-0 mb-2 flex flex-col gap-2 rounded-lg border border-border bg-card p-3 shadow-xl">
-              {bothAvailable && (
+              {engineChoices.length > 1 && (
                 <div className="flex items-center gap-2">
                   <span className="kicker w-14">Engine</span>
                   <div className="flex overflow-hidden rounded-sm border border-border">
-                    <button
-                      type="button"
-                      onClick={() => switchEngine("browser")}
-                      title="Synthesize on this device's GPU (WebGPU)"
-                      className={cn(
-                        "flex items-center gap-1 px-2 py-1 text-xs",
-                        engineRef.current === "browser"
-                          ? "bg-foreground text-background"
-                          : "bg-background text-muted-foreground"
-                      )}
-                    >
-                      <MonitorSmartphone size={13} /> On-device
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => switchEngine("server")}
-                      title={`Synthesize on the server${info?.device ? ` (${info.device})` : ""}`}
-                      className={cn(
-                        "flex items-center gap-1 px-2 py-1 text-xs",
-                        engineRef.current === "server"
-                          ? "bg-foreground text-background"
-                          : "bg-background text-muted-foreground"
-                      )}
-                    >
-                      <Cpu size={13} /> Server
-                    </button>
+                    {engineChoices.map((e) => {
+                      const Icon = e.icon;
+                      return (
+                        <button
+                          key={e.id}
+                          type="button"
+                          onClick={() => switchEngine(e.id)}
+                          title={e.title}
+                          className={cn(
+                            "flex items-center gap-1 px-2 py-1 text-xs",
+                            engineRef.current === e.id
+                              ? "bg-foreground text-background"
+                              : "bg-background text-muted-foreground"
+                          )}
+                        >
+                          <Icon size={13} /> {e.label}
+                        </button>
+                      );
+                    })}
                   </div>
                 </div>
               )}
               <label className="flex items-center gap-2">
                 <span className="kicker w-14">Voice</span>
-                <select
-                  aria-label="Voice"
-                  className="h-8 flex-1 rounded-sm border border-border bg-background px-2 text-xs"
-                  value={voice || info?.default || DEFAULT_VOICE}
-                  onChange={(e) => {
-                    setVoice(e.target.value);
-                    voiceRef.current = e.target.value;
-                    try {
-                      localStorage.setItem(`ns:tts-voice:${bookId}`, e.target.value);
-                    } catch {
-                      /* ignore */
-                    }
-                    reload();
-                  }}
-                >
-                  {voiceOptions.length === 0 ? (
-                    <option value={voice || DEFAULT_VOICE}>{voice || DEFAULT_VOICE}</option>
-                  ) : (
-                    // Grouped by language + gender, with the af_/am_ prefix
-                    // dropped in favour of clean names.
-                    groupVoices(voiceOptions).map((g) => (
-                      <optgroup key={g.label} label={g.label}>
-                        {g.voices.map((v) => (
-                          <option key={v.id} value={v.id}>
-                            {v.name}
-                          </option>
-                        ))}
-                      </optgroup>
-                    ))
-                  )}
-                </select>
+                {isOs ? (
+                  // Native OS voices, grouped by language (and gender when the name
+                  // reveals it). Kept in a separate per-book key from Kokoro voices.
+                  <select
+                    aria-label="Voice"
+                    className="h-8 flex-1 rounded-sm border border-border bg-background px-2 text-xs"
+                    value={osVoiceRef.current}
+                    onChange={(e) => {
+                      setOsVoice(e.target.value);
+                      osVoiceRef.current = e.target.value;
+                      try {
+                        localStorage.setItem(`ns:tts-voice:os:${bookId}`, e.target.value);
+                      } catch {
+                        /* ignore */
+                      }
+                      reload();
+                    }}
+                  >
+                    {osGroups.length === 0 ? (
+                      <option value="">Default voice</option>
+                    ) : (
+                      osGroups.map((g) => (
+                        <optgroup key={g.label} label={g.label}>
+                          {g.voices.map((v) => (
+                            <option key={v.id} value={v.id}>
+                              {v.name}
+                            </option>
+                          ))}
+                        </optgroup>
+                      ))
+                    )}
+                  </select>
+                ) : (
+                  <select
+                    aria-label="Voice"
+                    className="h-8 flex-1 rounded-sm border border-border bg-background px-2 text-xs"
+                    value={voice || info?.default || DEFAULT_VOICE}
+                    onChange={(e) => {
+                      setVoice(e.target.value);
+                      voiceRef.current = e.target.value;
+                      try {
+                        localStorage.setItem(`ns:tts-voice:${bookId}`, e.target.value);
+                      } catch {
+                        /* ignore */
+                      }
+                      reload();
+                    }}
+                  >
+                    {voiceOptions.length === 0 ? (
+                      <option value={voice || DEFAULT_VOICE}>{voice || DEFAULT_VOICE}</option>
+                    ) : (
+                      // Grouped by language + gender, with the af_/am_ prefix
+                      // dropped in favour of clean names.
+                      groupVoices(voiceOptions).map((g) => (
+                        <optgroup key={g.label} label={g.label}>
+                          {g.voices.map((v) => (
+                            <option key={v.id} value={v.id}>
+                              {v.name}
+                            </option>
+                          ))}
+                        </optgroup>
+                      ))
+                    )}
+                  </select>
+                )}
               </label>
               <label className="flex items-center gap-2">
                 <span className="kicker w-14">Speed</span>
