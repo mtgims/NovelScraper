@@ -13,6 +13,7 @@ export function SwipeTabs({ tabs, className }: { tabs: Tab[]; className?: string
   const n = tabs.length;
   const [active, setActive] = useState(0);
   const [w, setW] = useState(0);
+  const [minHeight, setMinHeight] = useState(0);
   const wRef = useRef(0);
   const viewportRef = useRef<HTMLDivElement>(null);
   const x = useMotionValue(0);
@@ -25,6 +26,10 @@ export function SwipeTabs({ tabs, className }: { tabs: Tab[]; className?: string
       wRef.current = width;
       setW(width);
       x.set(-active * width); // keep the active panel aligned across resizes
+      // Grow the panels down to the bottom of the screen so a swipe registers
+      // anywhere in the region, not only where there's content to touch.
+      const top = el.getBoundingClientRect().top;
+      setMinHeight(Math.max(320, window.innerHeight - top));
     };
     measure();
     const ro = new ResizeObserver(measure);
@@ -88,7 +93,7 @@ export function SwipeTabs({ tabs, className }: { tabs: Tab[]; className?: string
           }}
         >
           {tabs.map((t, i) => (
-            <div key={i} className="w-full shrink-0">
+            <div key={i} className="w-full shrink-0" style={{ minHeight }}>
               {t.content}
             </div>
           ))}
