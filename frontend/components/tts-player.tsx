@@ -1,6 +1,8 @@
 "use client";
 
+import { AnimatePresence, motion } from "framer-motion";
 import {
+  ChevronUp,
   Cpu,
   Headphones,
   MonitorSmartphone,
@@ -8,7 +10,6 @@ import {
   Play,
   RotateCcw,
   RotateCw,
-  Settings2,
   Volume2,
   X,
 } from "lucide-react";
@@ -807,9 +808,22 @@ export const TtsPlayer = forwardRef<TtsPlayerHandle, Props>(function TtsPlayer(
           <Headphones size={16} className="text-accent" /> Listen
         </button>
       ) : (
-        <div className="pointer-events-auto relative w-full max-w-md">
-          {showSettings && (
-            <div className="absolute bottom-full right-0 mb-2 flex flex-col gap-2 rounded-lg border border-border bg-card p-3 shadow-xl">
+        <motion.div
+          className="pointer-events-auto w-full max-w-md cursor-pointer overflow-hidden rounded-2xl border border-border bg-card/95 px-3 py-2 shadow-xl backdrop-blur"
+          onClick={() => setShowSettings((s) => !s)}
+        >
+          <AnimatePresence initial={false}>
+            {showSettings && (
+              <motion.div
+                key="settings"
+                initial={{ height: 0, opacity: 0 }}
+                animate={{ height: "auto", opacity: 1 }}
+                exit={{ height: 0, opacity: 0 }}
+                transition={{ duration: 0.22, ease: "easeOut" }}
+                className="overflow-hidden"
+                onClick={(e) => e.stopPropagation()}
+              >
+                <div className="mb-2 flex flex-col gap-2 border-b border-border pb-2">
               {engineChoices.length > 1 && (
                 <div className="flex items-center gap-2">
                   <span className="kicker w-14">Engine</span>
@@ -961,11 +975,12 @@ export const TtsPlayer = forwardRef<TtsPlayerHandle, Props>(function TtsPlayer(
                   Continue into next chapter
                 </span>
               </label>
-            </div>
-          )}
+                </div>
+              </motion.div>
+            )}
+          </AnimatePresence>
 
-          <div className="flex flex-col gap-1.5 rounded-2xl border border-border bg-card/95 px-3 py-2 shadow-xl backdrop-blur">
-            <div className="flex items-center gap-1">
+          <div className="flex items-center gap-1">
               {mode === "loading" ? (
                 <span className="px-2 py-1 text-sm text-muted-foreground">
                   {engineRef.current === "browser" && modelPct !== null && modelPct < 100
@@ -976,7 +991,10 @@ export const TtsPlayer = forwardRef<TtsPlayerHandle, Props>(function TtsPlayer(
                 <>
                   <button
                     type="button"
-                    onClick={() => goChunk(chunkIdx.current - 1)}
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      goChunk(chunkIdx.current - 1);
+                    }}
                     aria-label="Rewind"
                     title="Rewind"
                     className="rounded-full p-1.5 text-muted-foreground hover:bg-muted hover:text-foreground"
@@ -985,7 +1003,10 @@ export const TtsPlayer = forwardRef<TtsPlayerHandle, Props>(function TtsPlayer(
                   </button>
                   <button
                     type="button"
-                    onClick={togglePlay}
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      togglePlay();
+                    }}
                     aria-label={mode === "playing" ? "Pause" : "Play"}
                     className="rounded-full bg-accent p-2 text-accent-foreground hover:opacity-90"
                   >
@@ -993,7 +1014,10 @@ export const TtsPlayer = forwardRef<TtsPlayerHandle, Props>(function TtsPlayer(
                   </button>
                   <button
                     type="button"
-                    onClick={() => goChunk(chunkIdx.current + 1)}
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      goChunk(chunkIdx.current + 1);
+                    }}
                     aria-label="Forward"
                     title="Forward"
                     className="rounded-full p-1.5 text-muted-foreground hover:bg-muted hover:text-foreground"
@@ -1008,21 +1032,20 @@ export const TtsPlayer = forwardRef<TtsPlayerHandle, Props>(function TtsPlayer(
               )}
 
               <div className="ml-auto flex items-center gap-0.5">
-                <button
-                  type="button"
-                  onClick={() => setShowSettings((s) => !s)}
-                  aria-label="Playback settings"
-                  title="Voice & speed"
+                <ChevronUp
+                  size={16}
+                  aria-hidden
                   className={cn(
-                    "rounded-full p-1.5 hover:bg-muted",
-                    showSettings ? "text-foreground" : "text-muted-foreground"
+                    "mr-0.5 text-muted-foreground transition-transform duration-200",
+                    showSettings ? "rotate-180" : "rotate-0"
                   )}
-                >
-                  <Settings2 size={16} />
-                </button>
+                />
                 <button
                   type="button"
-                  onClick={stop}
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    stop();
+                  }}
                   aria-label="Stop narration"
                   title="Stop"
                   className="rounded-full p-1.5 text-muted-foreground hover:bg-muted hover:text-foreground"
@@ -1032,7 +1055,7 @@ export const TtsPlayer = forwardRef<TtsPlayerHandle, Props>(function TtsPlayer(
               </div>
             </div>
 
-            <div className="h-1 overflow-hidden rounded-full bg-muted">
+            <div className="mt-1.5 h-1 overflow-hidden rounded-full bg-muted">
               <div
                 className="h-full bg-accent transition-[width] duration-150 ease-out"
                 style={{
@@ -1040,8 +1063,7 @@ export const TtsPlayer = forwardRef<TtsPlayerHandle, Props>(function TtsPlayer(
                 }}
               />
             </div>
-          </div>
-        </div>
+          </motion.div>
       )}
     </div>
   );
