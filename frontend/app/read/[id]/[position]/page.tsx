@@ -4,17 +4,40 @@ import { useQueryClient } from "@tanstack/react-query";
 import { Check, ChevronLeft, ChevronRight, LocateFixed, Minus, Plus } from "lucide-react";
 import Link from "next/link";
 import { useParams, useRouter } from "next/navigation";
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState, type CSSProperties } from "react";
 
 import { Button } from "@/components/ui/button";
 import { Select } from "@/components/ui/select";
 import { TtsPlayer, type TtsPlayerHandle } from "@/components/tts-player";
 import { api, API_BASE, coverUrl } from "@/lib/api";
+import { useDismiss } from "@/lib/hooks";
 import { useBook, useChapter, useChapters, useProgress } from "@/lib/queries";
 import type { TtsBlock } from "@/lib/types";
 import { cn } from "@/lib/utils";
 
 const SIZE_KEY = "ns-reading-scale";
+const FONT_KEY = "ns-reading-font";
+const LEADING_KEY = "ns-reading-leading";
+
+// Reader typography options (device-local, persisted). Font stacks reuse the
+// app's fonts + system families, so no new webfonts are loaded.
+const READER_FONTS: Record<string, { label: string; stack: string }> = {
+  serif: { label: "Serif", stack: 'var(--font-serif), Georgia, "Times New Roman", serif' },
+  sans: {
+    label: "Sans",
+    stack:
+      'ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, Helvetica, Arial, sans-serif',
+  },
+  mono: {
+    label: "Mono",
+    stack: 'var(--font-mono), ui-monospace, "SFMono-Regular", Menlo, monospace',
+  },
+};
+const LEADINGS: { label: string; value: number }[] = [
+  { label: "Tight", value: 1.5 },
+  { label: "Normal", value: 1.78 },
+  { label: "Loose", value: 2.05 },
+];
 
 // Per-chapter reading position, stored in localStorage as a 0..1 fraction.
 // localStorage is synchronous and device-local, which is exactly right for a
@@ -87,6 +110,11 @@ export default function ReaderPage() {
   const { data: chapterList } = useChapters(bookId);
   const [clean, setClean] = useState<string | null>(null);
   const [scale, setScale] = useState(1);
+  const [font, setFont] = useState("serif");
+  const [leading, setLeading] = useState(1.78);
+  const [showType, setShowType] = useState(false);
+  const typeRef = useRef<HTMLDivElement>(null);
+  useDismiss(showType, () => setShowType(false), { refs: [typeRef] });
   const [chapterPct, setChapterPct] = useState(0);
   // Set when we land on a chapter via TTS auto-advance, so narration resumes.
   const [autoStartTts, setAutoStartTts] = useState(false);
@@ -130,16 +158,34 @@ export default function ReaderPage() {
     if (max > 4) window.scrollTo(0, frac * max);
   }, []);
 
-  // --- reading size (persisted) ---
+  // --- reading typography (persisted, device-local) ---
   useEffect(() => {
     const saved = Number(localStorage.getItem(SIZE_KEY));
     if (saved) setScale(saved);
+    const f = localStorage.getItem(FONT_KEY);
+    if (f && READER_FONTS[f]) setFont(f);
+    const l = Number(localStorage.getItem(LEADING_KEY));
+    if (l) setLeading(l);
   }, []);
   const setSize = useCallback((next: number) => {
     const clamped = Math.min(1.4, Math.max(0.85, Number(next.toFixed(2))));
     setScale(clamped);
     localStorage.setItem(SIZE_KEY, String(clamped));
   }, []);
+  const setReaderFont = useCallback((f: string) => {
+    setFont(f);
+    localStorage.setItem(FONT_KEY, f);
+  }, []);
+  const setReaderLeading = useCallback((l: number) => {
+    setLeading(l);
+    localStorage.setItem(LEADING_KEY, String(l));
+  }, []);
+  // Shared typography for the chapter body (plain render + read-along view).
+  const contentStyle: CSSProperties = {
+    fontSize: `${1.1875 * scale}rem`,
+    fontFamily: READER_FONTS[font]?.stack,
+    lineHeight: leading,
+  };
 
   // Keep the currently-narrated sentence in view — but only while following.
   useEffect(() => {
@@ -474,15 +520,90 @@ export default function ReaderPage() {
             disabled={!chapter.has_next} onClick={() => go(1)}>
             <ChevronRight size={16} />
           </Button>
-          <div className="mx-1 hidden h-4 w-px bg-border sm:block" />
-          <Button variant="ghost" size="icon" aria-label="Decrease text size"
-            className="hidden sm:inline-flex" onClick={() => setSize(scale - 0.1)}>
-            <Minus size={14} />
-          </Button>
-          <Button variant="ghost" size="icon" aria-label="Increase text size"
-            className="hidden sm:inline-flex" onClick={() => setSize(scale + 0.1)}>
-            <Plus size={14} />
-          </Button>
+          <div className="mx-1 h-4 w-px bg-border" />
+          <div className="relative" ref={typeRef}>
+            <button
+              type="button"
+              onClick={() => setShowType((v) => !v)}
+              aria-label="Typography"
+              title="Font, size & spacing"
+              className={cn(
+                "flex h-9 w-9 items-center justify-center rounded-md hover:bg-muted",
+                showType ? "text-foreground" : "text-muted-foreground"
+              )}
+            >
+              <span className="font-display text-base leading-none">Aa</span>
+            </button>
+            {showType && (
+              <div className="absolute right-0 top-full z-40 mt-2 flex w-60 flex-col gap-3 rounded-lg border border-border bg-card p-3 shadow-xl">
+                <div>
+                  <p className="kicker mb-1.5">Font</p>
+                  <div className="flex overflow-hidden rounded-sm border border-border">
+                    {Object.entries(READER_FONTS).map(([key, f]) => (
+                      <button
+                        key={key}
+                        type="button"
+                        onClick={() => setReaderFont(key)}
+                        style={{ fontFamily: f.stack }}
+                        className={cn(
+                          "flex-1 px-2 py-1.5 text-sm",
+                          font === key
+                            ? "bg-foreground text-background"
+                            : "bg-background text-muted-foreground hover:text-foreground"
+                        )}
+                      >
+                        {f.label}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+                <div>
+                  <p className="kicker mb-1.5">Text size</p>
+                  <div className="flex items-center gap-2">
+                    <button
+                      type="button"
+                      onClick={() => setSize(scale - 0.1)}
+                      aria-label="Decrease text size"
+                      className="flex h-8 w-8 items-center justify-center rounded-sm border border-border text-muted-foreground hover:text-foreground"
+                    >
+                      <Minus size={14} />
+                    </button>
+                    <span className="flex-1 text-center text-sm tabular">
+                      {Math.round(scale * 100)}%
+                    </span>
+                    <button
+                      type="button"
+                      onClick={() => setSize(scale + 0.1)}
+                      aria-label="Increase text size"
+                      className="flex h-8 w-8 items-center justify-center rounded-sm border border-border text-muted-foreground hover:text-foreground"
+                    >
+                      <Plus size={14} />
+                    </button>
+                  </div>
+                </div>
+                <div>
+                  <p className="kicker mb-1.5">Line spacing</p>
+                  <div className="flex overflow-hidden rounded-sm border border-border">
+                    {LEADINGS.map((l) => (
+                      <button
+                        key={l.value}
+                        type="button"
+                        onClick={() => setReaderLeading(l.value)}
+                        className={cn(
+                          "flex-1 px-2 py-1.5 text-xs",
+                          Math.abs(leading - l.value) < 0.01
+                            ? "bg-foreground text-background"
+                            : "bg-background text-muted-foreground hover:text-foreground"
+                        )}
+                      >
+                        {l.label}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              </div>
+            )}
+          </div>
         </div>
       </div>
 
@@ -546,7 +667,7 @@ export default function ReaderPage() {
         <ReadAlong
           blocks={segments}
           highlight={highlight}
-          scale={scale}
+          style={contentStyle}
           onSeek={(idx) => playerRef.current?.seekToSentence(idx)}
         />
       ) : clean === null ? (
@@ -554,7 +675,7 @@ export default function ReaderPage() {
       ) : (
         <div
           className="prose-reading"
-          style={{ fontSize: `${1.1875 * scale}rem` }}
+          style={contentStyle}
           dangerouslySetInnerHTML={{ __html: clean }}
         />
       )}
@@ -588,12 +709,12 @@ export default function ReaderPage() {
 function ReadAlong({
   blocks,
   highlight,
-  scale,
+  style,
   onSeek,
 }: {
   blocks: TtsBlock[];
   highlight: number | null;
-  scale: number;
+  style?: CSSProperties;
   onSeek?: (globalSentenceIndex: number) => void;
 }) {
   // Global sentence index at the start of each block — only text blocks advance
@@ -605,7 +726,7 @@ function ReadAlong({
     if (block.type === "text") acc += block.sentences.length;
   }
   return (
-    <div className="prose-reading" style={{ fontSize: `${1.1875 * scale}rem` }}>
+    <div className="prose-reading" style={style}>
       {blocks.map((block, bi) => {
         if (block.type === "image") {
           const src = resolveImgSrc(block.src);
