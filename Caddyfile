@@ -1,0 +1,10 @@
+# Automatic HTTPS (Let's Encrypt) + reverse proxy to the Next.js frontend, which
+# in turn proxies /api/* to the backend. DOMAIN / ACME_EMAIL come from .env.
+{
+	email {$ACME_EMAIL}
+}
+
+{$DOMAIN}, www.{$DOMAIN} {
+	encode zstd gzip
+	reverse_proxy frontend:3000
+}

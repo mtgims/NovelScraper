@@ -22,5 +22,8 @@ node_modules/
 # file:stubs/onnxruntime-node; without it a fresh `npm ci` can't resolve the
 # dependency and the build fails.
 
+# deploy secrets — the real .env holds the admin password (.env.example is tracked)
+.env
+
 # local agent worktrees/scratch (never commit)
 .claude/worktrees/

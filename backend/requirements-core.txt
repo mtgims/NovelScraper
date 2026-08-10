@@ -1,0 +1,23 @@
+# Runtime dependencies for the deployed container image.
+#
+# No server-side TTS: clients synthesize audio themselves (phones via their OS
+# voices, desktops via WebGPU), so `kokoro-onnx`/`onnxruntime` are intentionally
+# omitted — that keeps the image small and dodges ARM wheel pain. `tts.available()`
+# degrades to false when kokoro isn't installed, and the frontend falls back to the
+# client engines automatically.
+#
+# Test-only deps (aiohttp, httpx) are excluded — verified no runtime imports in
+# backend/app/. For local development WITH server TTS, use requirements.txt instead.
+
+# scraper core
+curl_cffi>=0.7            # browser-impersonating HTTP transport (bypasses Cloudflare)
+beautifulsoup4>=4.12
+ebooklib>=0.18
+PyYAML>=6.0
+
+# api layer
+fastapi>=0.115
+uvicorn[standard]>=0.30
+python-multipart>=0.0.9  # multipart/form-data (EPUB upload)
+sse-starlette>=2.1
+sqlmodel>=0.0.22
