@@ -7,6 +7,7 @@ import { useParams, useRouter } from "next/navigation";
 import { useCallback, useEffect, useRef, useState } from "react";
 
 import { Button } from "@/components/ui/button";
+import { Select } from "@/components/ui/select";
 import { TtsPlayer, type TtsPlayerHandle } from "@/components/tts-player";
 import { api, API_BASE, coverUrl } from "@/lib/api";
 import { useBook, useChapter, useChapters, useProgress } from "@/lib/queries";
@@ -449,28 +450,26 @@ export default function ReaderPage() {
             <ChevronLeft size={16} />
           </Button>
           {/* Jump to any chapter without leaving the reader. */}
-          <select
+          <Select
             aria-label="Jump to chapter"
-            value={position}
-            onChange={(e) => {
-              const p = Number(e.target.value);
+            className="min-w-0 max-w-[8.5rem] sm:max-w-[15rem]"
+            value={String(position)}
+            onChange={(v) => {
+              const p = Number(v);
               if (p !== position) {
                 if (p > position) markRead();
                 router.push(`/read/${bookId}/${p}`);
               }
             }}
-            className="min-w-0 max-w-[8.5rem] truncate rounded-sm border border-border bg-background px-2 py-1 text-xs text-foreground outline-none transition-colors focus:border-accent sm:max-w-[15rem]"
-          >
-            {chapterList && chapterList.length > 0 ? (
-              chapterList.map((c) => (
-                <option key={c.position} value={c.position}>
-                  {c.position}. {c.title || `Chapter ${c.number || c.position}`}
-                </option>
-              ))
-            ) : (
-              <option value={position}>Ch. {chapter.number || position}</option>
-            )}
-          </select>
+            options={
+              chapterList && chapterList.length > 0
+                ? chapterList.map((c) => ({
+                    value: String(c.position),
+                    label: `${c.position}. ${c.title || `Chapter ${c.number || c.position}`}`,
+                  }))
+                : [{ value: String(position), label: `Ch. ${chapter.number || position}` }]
+            }
+          />
           <Button variant="ghost" size="icon" aria-label="Next chapter"
             disabled={!chapter.has_next} onClick={() => go(1)}>
             <ChevronRight size={16} />
