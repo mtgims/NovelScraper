@@ -11,7 +11,7 @@ import { Field } from "@/components/ui/field";
 import { Input } from "@/components/ui/input";
 import { EPUB_ACCEPT, pickEpubs } from "@/lib/epub";
 import { useDismiss } from "@/lib/hooks";
-import { useCreateJob, useImportEpubs, useSites } from "@/lib/queries";
+import { useCreateJob, useImportEpubs } from "@/lib/queries";
 import { cn } from "@/lib/utils";
 
 // Scrape defaults, matching the backend, so the number-input spinners increment
@@ -20,17 +20,8 @@ const DEFAULT_PER_VOLUME = 100;
 const DEFAULT_DELAY = 0.1;
 const DEFAULT_CONCURRENCY = 12;
 
-function hostOf(url: string): string {
-  try {
-    return new URL(url).hostname.replace(/^www\./, "");
-  } catch {
-    return "";
-  }
-}
-
 export default function NewScrapePage() {
   const router = useRouter();
-  const { data: sites } = useSites();
   const createJob = useCreateJob();
 
   const [url, setUrl] = useState("");
@@ -47,9 +38,6 @@ export default function NewScrapePage() {
     escape: false,
   });
 
-  const supportedHosts = (sites ?? [])
-    .map((s) => hostOf(s.base_url))
-    .filter(Boolean);
   const speedCustomized =
     delay !== DEFAULT_DELAY || concurrency !== DEFAULT_CONCURRENCY;
 
@@ -135,11 +123,7 @@ export default function NewScrapePage() {
             <Field
               label="Novel URL"
               htmlFor="url"
-              helper={
-                supportedHosts.length
-                  ? `Supported sources: ${supportedHosts.join(", ")}`
-                  : "Paste the link to a novel's page from a supported source."
-              }
+              helper="Paste the link to a novel's page from a supported source."
             >
               <Input
                 id="url"
