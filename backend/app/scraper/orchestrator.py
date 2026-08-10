@@ -163,7 +163,7 @@ async def scrape_book(book_slug: str, profile: SiteProfile, config: ScraperConfi
     volumes: List[VolumeResult] = []
     skipped = 0
 
-    async with AsyncFetcher(config) as fetcher:
+    async with AsyncFetcher(config, cookies=profile.cookies) as fetcher:
         if source_url:
             await _load_metadata(fetcher, profile, book, source_url, config.cover_dir)
         logger.info("enumerating chapters for '%s'", book_slug)

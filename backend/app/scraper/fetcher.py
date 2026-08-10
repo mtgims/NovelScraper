@@ -15,7 +15,7 @@ import logging
 import socket
 import urllib.request
 from pathlib import Path
-from typing import Optional
+from typing import Dict, Optional
 from urllib.parse import urljoin, urlparse
 
 from curl_cffi import CurlError
@@ -63,8 +63,9 @@ def _read_budget(resp):
 class AsyncFetcher:
     """Use as an async context manager so the HTTP session is always closed."""
 
-    def __init__(self, config: ScraperConfig) -> None:
+    def __init__(self, config: ScraperConfig, cookies: Optional[Dict[str, str]] = None) -> None:
         self.config = config
+        self._cookies = cookies or {}
         self._session: Optional[AsyncSession] = None
         self._semaphore = asyncio.Semaphore(config.max_concurrency)
         self._limiter = AdaptiveRateLimiter(
@@ -81,6 +82,9 @@ class AsyncFetcher:
             impersonate=self.config.impersonate,
             timeout=self.config.request_timeout,
             headers={"Accept-Language": "en-US,en;q=0.9"},
+            # Per-site cookies (e.g. to skip an interstitial "site notice" that
+            # would otherwise redirect the book page away from its real content).
+            cookies=self._cookies or None,
         )
         if self.config.respect_robots:
             self._robots = RobotsChecker(self.config.user_agent, self._raw_text)

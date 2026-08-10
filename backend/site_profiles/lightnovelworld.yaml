@@ -14,6 +14,13 @@ chapter_title_selector: ".chapter-title"
 content_selector: ".chapter-content"
 book_title_selector: "h1.novel-title"
 book_author_selector: ".novel-author"
+book_cover_selector: ".novel-header img"
+# The site shows a one-time "site notice" that redirects /novel/... away from the
+# real page — so metadata + cover would come from the notice (whose og:image is a
+# default placeholder). This cookie marks the notice as seen, so the book page
+# loads directly.
+cookies:
+  migration_notice_seen: "1"
 strip_selectors:
   - script
   - style

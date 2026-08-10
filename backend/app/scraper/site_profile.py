@@ -119,6 +119,11 @@ class SiteProfile:
     book_author_selector: Optional[str] = None
     book_cover_selector: Optional[str] = None
 
+    # Cookies sent on every request. Used to skip a site's one-time interstitial
+    # / consent "notice" that would otherwise redirect the book page (so metadata
+    # + cover come from the notice page instead of the real one). name -> value.
+    cookies: Dict[str, str] = field(default_factory=dict)
+
     # content cleaning + safety
     strip_selectors: List[str] = field(default_factory=lambda: ["script", "style"])
     max_pages: int = 10000                 # hard cap on enumeration iterations
