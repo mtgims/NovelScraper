@@ -11,6 +11,7 @@ chapter_title_selector: "strong.chapter-title"
 content_selector: "#content"
 book_title_selector: "h1.novel-title"
 book_author_selector: "[itemprop=author]"
+book_cover_selector: "figure.cover img"
 strip_selectors:
   - script
   - style

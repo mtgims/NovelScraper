@@ -17,7 +17,7 @@ from typing import Callable, List, Optional
 from .errors import ScraperError
 from .fetcher import AsyncFetcher
 from .models import Book, Chapter
-from .parser import dig, find_next_link, parse_chapter_list, parse_title
+from .parser import dig, find_link, find_next_link, parse_chapter_list, parse_title
 from .site_profile import SiteProfile
 
 logger = logging.getLogger(__name__)
@@ -70,11 +70,27 @@ async def enumerate_paginated(fetcher: AsyncFetcher, profile: SiteProfile,
     return chapters
 
 
+async def _first_chapter_url(fetcher: AsyncFetcher, profile: SiteProfile,
+                             book: Book) -> Optional[str]:
+    """Start URL for next_link enumeration: either constructed from
+    first_chapter_url_template, or (when the chapter-1 URL can't be constructed,
+    e.g. it carries a title slug) resolved from an anchor on the book page."""
+    if profile.first_chapter_selector:
+        book_page = format_url(profile.book_page_url_template, profile.base_url, book.slug)
+        html = await fetcher.get_text(book_page, use_cache=False)
+        url = find_link(html, profile.first_chapter_selector, book_page)
+        if not url:
+            raise ScraperError(
+                f"first_chapter_selector '{profile.first_chapter_selector}' "
+                f"matched no chapter link on {book_page}")
+        return url
+    return format_url(profile.first_chapter_url_template, profile.base_url, book.slug)
+
+
 async def enumerate_next_link(fetcher: AsyncFetcher, profile: SiteProfile,
                               book: Book, progress: ProgressCb = None) -> List[Chapter]:
     chapters: List[Chapter] = []
-    url: Optional[str] = format_url(
-        profile.first_chapter_url_template, profile.base_url, book.slug)
+    url = await _first_chapter_url(fetcher, profile, book)
     seen: set[str] = set()
     for _ in range(profile.max_pages):
         if url in seen:

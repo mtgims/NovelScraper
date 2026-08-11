@@ -1,14 +1,25 @@
-# Site profile for novelfire.net (the original script's target).
-# Selectors mirror the original Scraper.py behavior.
+# novelfire.net intermittently 302-deflects chapter requests to a readnovel.site
+# JS shell that bounces to novelphoenix.com — the same operator, same slug
+# (/book/<slug> ↔ /novel/<slug>). Those deflections have no #content, so scraping
+# novelfire.net directly silently skips chapters (worse from a flagged/server IP).
+# novelphoenix.com is the reliable backend for the identical content, so scrape it
+# directly while still accepting pasted novelfire.net URLs (keeps existing
+# site=novelfire books updatable).
 name: novelfire
-base_url: https://novelfire.net
+base_url: https://novelphoenix.com
+extra_hosts:
+  - novelfire.net
 enumeration: paginated
-list_url_template: "{base_url}/book/{book}/chapters?page={page}"
 book_url_regex: "/book/(?P<book>[^/?#]+)"
+book_page_url_template: "{base_url}/novel/{book}"
+list_url_template: "{base_url}/novel/{book}/chapters?page={page}"
 list_container_selector: "ul.chapter-list"
 link_selector: "a"
-chapter_no_selector: "span.chapter-no"
+chapter_title_selector: "strong.chapter-title"
 content_selector: "#content"
+book_title_selector: "h1.novel-title"
+book_author_selector: "[itemprop=author]"
+book_cover_selector: "figure.cover img"
 strip_selectors:
   - script
   - style

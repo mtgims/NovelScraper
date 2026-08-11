@@ -160,15 +160,19 @@ def parse_json_content(text: str, profile: SiteProfile) -> str:
     return "".join(f"<p>{escape(p)}</p>" for p in paragraphs if p)
 
 
-def find_next_link(html: str, profile: SiteProfile, current_url: str) -> Optional[str]:
-    soup = _soup(html)
-    node = soup.select_one(profile.next_link_selector)
+def find_link(html: str, selector: str, base_url: str) -> Optional[str]:
+    """Return the absolute href of the first anchor matching `selector`, or None."""
+    node = _soup(html).select_one(selector)
     if node is None:
         return None
     href = node.get("href")
     if not href:
         return None
-    return urljoin(current_url, href)
+    return urljoin(base_url, href)
+
+
+def find_next_link(html: str, profile: SiteProfile, current_url: str) -> Optional[str]:
+    return find_link(html, profile.next_link_selector, current_url)
 
 
 def parse_title(html: str, profile: SiteProfile) -> str:

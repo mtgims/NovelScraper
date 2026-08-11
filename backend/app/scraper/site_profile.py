@@ -25,9 +25,13 @@ class UnsupportedSourceError(ScraperError):
     """The pasted URL's host doesn't match any known site profile."""
 
 
-def _host(url: str) -> str:
-    host = (urlparse(url).hostname or "").lower()
+def _bare_host(host: str) -> str:
+    host = (host or "").lower()
     return host[4:] if host.startswith("www.") else host
+
+
+def _host(url: str) -> str:
+    return _bare_host(urlparse(url).hostname or "")
 
 
 def resolve_book_url(
@@ -42,22 +46,31 @@ def resolve_book_url(
     if parsed.scheme not in ("http", "https") or not parsed.hostname:
         raise UnsupportedSourceError(f"Not a valid http(s) URL: {url!r}")
     host = _host(url)
-    for profile in profiles.values():
-        if _host(profile.base_url) != host:
-            continue
+    # A profile owns a host if it's the base_url host or one of its extra_hosts
+    # (a site fronted by other domains — e.g. novelfire.net scraped via its
+    # novelphoenix.com backend). Several profiles can share a host (the backend +
+    # a front), so gather all candidates and let the book_url_regex disambiguate.
+    def owns(p: "SiteProfile") -> bool:
+        return host == _host(p.base_url) or host in {_bare_host(h) for h in p.extra_hosts}
+
+    candidates = [p for p in profiles.values() if owns(p)]
+    if not candidates:
+        raise UnsupportedSourceError(f"Unsupported source: {host or url}")
+    # Match against path + query so sites that carry the book id in a query string
+    # (e.g. /novel?id=...) work; path-only regexes are unaffected since their
+    # character classes stop at '?'.
+    target = f"{parsed.path}?{parsed.query}" if parsed.query else parsed.path
+    for profile in candidates:
         if not profile.book_url_regex:
-            raise ProfileError(
-                f"Site '{profile.name}' does not support URL pasting yet")
-        # Match against path + query so sites that carry the book id in a query
-        # string (e.g. /novel?id=...) work; path-only regexes are unaffected
-        # since their character classes stop at '?'.
-        target = f"{parsed.path}?{parsed.query}" if parsed.query else parsed.path
+            continue
         match = re.search(profile.book_url_regex, target)
-        if not match:
-            raise ProfileError(
-                f"Could not find a book id in the URL for '{profile.name}'")
-        return profile, match.group("book")
-    raise UnsupportedSourceError(f"Unsupported source: {host or url}")
+        if match:
+            return profile, match.group("book")
+    if len(candidates) == 1 and not candidates[0].book_url_regex:
+        raise ProfileError(
+            f"Site '{candidates[0].name}' does not support URL pasting yet")
+    raise ProfileError(
+        f"Could not find a book id in the URL for '{candidates[0].name}'")
 
 
 @dataclass
@@ -93,6 +106,17 @@ class SiteProfile:
     first_chapter_url_template: Optional[str] = None
     next_link_selector: Optional[str] = None
     title_selector: Optional[str] = None
+    # Alternative to first_chapter_url_template for sites whose chapter-1 URL can't
+    # be constructed (e.g. it carries an unpredictable title slug): a CSS selector
+    # applied to the book page (see book_page_url_template) whose matched anchor's
+    # href is chapter 1. Requires book_page_url_template.
+    first_chapter_selector: Optional[str] = None
+
+    # Canonical book page, templated with {base_url}/{book}. When set it overrides
+    # the pasted source URL for metadata extraction, and supplies the page that
+    # first_chapter_selector is resolved against. Used when the book we scrape lives
+    # on a different host/path than the URL the user pastes.
+    book_page_url_template: Optional[str] = None
 
     # json_api strategy: chapters and content come from a JSON API rather than
     # HTML pages. `list_url_template` is the book-detail endpoint; json_* values
@@ -112,6 +136,10 @@ class SiteProfile:
     # URL resolution: a regex with a named group `book` that extracts the book
     # id/slug from a pasted book or chapter URL's path (e.g. r"/book/(?P<book>[^/?#]+)").
     book_url_regex: Optional[str] = None
+    # Extra hostnames whose pasted URLs this profile should also handle, beyond
+    # base_url's host — for a site fronted by other domains that we scrape via a
+    # different backend (e.g. novelfire.net pasted, scraped from novelphoenix.com).
+    extra_hosts: List[str] = field(default_factory=list)
 
     # Optional per-site metadata selectors (override the generic OpenGraph/meta
     # extraction when a site's og tags are messy or wrong).
@@ -153,11 +181,19 @@ class SiteProfile:
                 raise ProfileError(
                     f"Profile '{self.name}': paginated strategy requires {missing}")
         if self.enumeration == "next_link":
-            missing = [k for k in ("first_chapter_url_template", "next_link_selector")
-                       if not getattr(self, k)]
-            if missing:
+            if not self.next_link_selector:
                 raise ProfileError(
-                    f"Profile '{self.name}': next_link strategy requires {missing}")
+                    f"Profile '{self.name}': next_link strategy requires next_link_selector")
+            # The start URL comes from either a constructible template or a selector
+            # resolved against the book page (which then needs book_page_url_template).
+            if not self.first_chapter_url_template and not self.first_chapter_selector:
+                raise ProfileError(
+                    f"Profile '{self.name}': next_link strategy requires "
+                    f"first_chapter_url_template or first_chapter_selector")
+            if self.first_chapter_selector and not self.book_page_url_template:
+                raise ProfileError(
+                    f"Profile '{self.name}': first_chapter_selector requires "
+                    f"book_page_url_template")
         if self.enumeration == "json_api":
             missing = [k for k in ("list_url_template", "json_chapters_path",
                                    "chapter_url_template", "json_content_path")

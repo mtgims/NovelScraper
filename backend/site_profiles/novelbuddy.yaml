@@ -1,12 +1,15 @@
-# novelbuddy.me — the novel page only previews ~20 chapters (no usable list
-# pagination), but each chapter page is server-rendered with a "Next" button, so
-# follow those from chapter-1. Content is .novel-tts-content.
+# novelbuddy.me — now a Next.js app. The novel page only previews ~20 chapters
+# (no usable list pagination), but each chapter is server-rendered (.novel-tts-content)
+# with a next-chapter link, so follow those from chapter 1. Chapter URLs carry a
+# title slug (e.g. /shadow-slave/chapter-1-nightmare-begins) so chapter 1 can't be
+# constructed — resolve it from the novel page's "Start Reading" button instead.
 name: novelbuddy
 base_url: https://novelbuddy.me
 enumeration: next_link
 book_url_regex: "/(?P<book>[a-z0-9-]+?)(?:/chapter-[a-z0-9-]+)?/?$"
-first_chapter_url_template: "{base_url}/{book}/chapter-1"
-next_link_selector: 'a:-soup-contains("Next")'
+book_page_url_template: "{base_url}/{book}"
+first_chapter_selector: 'a:-soup-contains("Start Reading")'
+next_link_selector: 'a[aria-label="Next chapter"]'
 content_selector: ".novel-tts-content"
 book_title_selector: "h1"
 book_cover_selector: ".cover img"

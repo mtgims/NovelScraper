@@ -70,13 +70,18 @@ async def _load_metadata(fetcher: AsyncFetcher, profile: SiteProfile, book: Book
     if profile.enumeration == "json_api":
         await _load_metadata_json(fetcher, profile, book, cover_dir)
         return
+    # When the book we scrape lives on a different host than the pasted URL, take
+    # metadata from the canonical book page instead of the (possibly unrelated or
+    # deflecting) source URL.
+    meta_url = (format_url(profile.book_page_url_template, profile.base_url, book.slug)
+                if profile.book_page_url_template else source_url)
     try:
-        html = await fetcher.get_text(source_url, use_cache=False)
+        html = await fetcher.get_text(meta_url, use_cache=False)
     except ScraperError as e:
-        logger.warning("could not fetch book page %s: %s", source_url, e)
+        logger.warning("could not fetch book page %s: %s", meta_url, e)
         return
     meta = extract_metadata(
-        html, source_url,
+        html, meta_url,
         title_selector=profile.book_title_selector,
         author_selector=profile.book_author_selector,
         cover_selector=profile.book_cover_selector,
