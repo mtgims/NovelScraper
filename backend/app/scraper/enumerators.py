@@ -124,10 +124,31 @@ async def enumerate_json_api(fetcher: AsyncFetcher, profile: SiteProfile,
     return chapters
 
 
+async def enumerate_sequential(fetcher: AsyncFetcher, profile: SiteProfile,
+                               book: Book, progress: ProgressCb = None) -> List[Chapter]:
+    """Numeric chapter URLs (``chapter_url_template`` with ``{number}``) walked
+    1, 2, 3, … until a fetch fails — a 404 marks the end of the book. For sites
+    with no chapter-list page and no next-links, but predictable sequential URLs.
+    Each page is cached, so the content pass reuses it (no double fetch)."""
+    chapters: List[Chapter] = []
+    for n in range(1, profile.max_pages + 1):
+        url = profile.chapter_url_template.format(
+            base_url=profile.base_url.rstrip("/"), book=book.slug, number=n)
+        try:
+            html = await fetcher.get_text(url)  # cached: reused by the content pass
+        except ScraperError:
+            break  # out of range -> past the last chapter
+        chapters.append(Chapter(number=str(n), title=parse_title(html, profile), url=url))
+        if progress:
+            progress("enumerating", {"found": len(chapters)})
+    return chapters
+
+
 _STRATEGIES = {
     "paginated": enumerate_paginated,
     "next_link": enumerate_next_link,
     "json_api": enumerate_json_api,
+    "sequential": enumerate_sequential,
 }
 
 

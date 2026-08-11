@@ -18,7 +18,7 @@ import yaml
 
 from .errors import ProfileError, ScraperError
 
-VALID_STRATEGIES = {"paginated", "next_link", "json_api"}
+VALID_STRATEGIES = {"paginated", "next_link", "json_api", "sequential"}
 
 
 class UnsupportedSourceError(ScraperError):
@@ -165,6 +165,9 @@ class SiteProfile:
             if missing:
                 raise ProfileError(
                     f"Profile '{self.name}': json_api strategy requires {missing}")
+        if self.enumeration == "sequential" and not self.chapter_url_template:
+            raise ProfileError(
+                f"Profile '{self.name}': sequential strategy requires chapter_url_template")
         if self.book_url_regex:
             try:
                 compiled = re.compile(self.book_url_regex)

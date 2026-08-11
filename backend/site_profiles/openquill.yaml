@@ -1,0 +1,16 @@
+# openquill.net — Next.js, but chapter pages are server-rendered. The story page
+# caps the chapter list at 20 and chapter pages have no next-links, but chapters
+# live at sequential /chapter/{n} URLs (out-of-range 404s), so walk them by number.
+# Content is <article class="chapterReaderBody">.
+name: openquill
+base_url: https://openquill.net
+enumeration: sequential
+book_url_regex: "/stories/(?P<book>[^/?#]+)"
+chapter_url_template: "{base_url}/stories/{book}/chapter/{number}"
+content_selector: "article.chapterReaderBody"
+title_selector: "h1"
+strip_selectors:
+  - script
+  - style
+  - ins
+  - .ads
