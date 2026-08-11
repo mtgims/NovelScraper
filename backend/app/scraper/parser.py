@@ -166,4 +166,12 @@ def parse_title(html: str, profile: SiteProfile) -> str:
         return ""
     soup = _soup(html)
     node = soup.select_one(profile.title_selector)
-    return node.get_text(strip=True) if node is not None else ""
+    if node is None:
+        return ""
+    # Drop junk nested in the title (e.g. a "| Novel Name" breadcrumb) via the
+    # profile's strip_selectors, so a heading like
+    # "Chapter 1: Begins<div class=category>Novel</div>" yields just the chapter.
+    for selector in profile.strip_selectors:
+        for junk in node.select(selector):
+            junk.decompose()
+    return node.get_text(strip=True)
