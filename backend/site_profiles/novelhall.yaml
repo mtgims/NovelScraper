@@ -1,0 +1,19 @@
+# novelhall.com — the novel page (/{slug}-{id}/) lists the WHOLE chapter catalog
+# in <div id="morelist"> (reading order, no pagination); content in #htmlContent.
+name: novelhall
+base_url: https://www.novelhall.com
+enumeration: paginated
+book_url_regex: "/(?P<book>[^/?#]+-\\d+)/?$"
+list_url_template: "{base_url}/{book}/"
+list_container_selector: "#morelist"
+link_selector: "li a"
+content_selector: "#htmlContent"
+book_title_selector: "h1"
+# (author is loose "Author：<name>" text with no clean node — left to the generic
+#  meta fallback rather than capturing the label/placeholder.)
+book_cover_selector: ".book-img img"
+strip_selectors:
+  - script
+  - style
+  - ins
+  - .ads
