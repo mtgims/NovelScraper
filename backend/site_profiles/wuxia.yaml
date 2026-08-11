@@ -1,0 +1,17 @@
+# wuxia.click — a Next.js SPA, but chapter pages are server-rendered. The novel
+# page's chapter list is JS-only, so follow the "Next Chapter" link from the first
+# chapter (slug "{book}-1"). Content is a series of [data-tts-paragraph] blocks.
+name: wuxia
+base_url: https://wuxia.click
+enumeration: next_link
+book_url_regex: "/novel/(?P<book>[^/?#]+)"
+first_chapter_url_template: "{base_url}/chapter/{book}-1"
+next_link_selector: 'a:-soup-contains("Next Chapter")'
+content_selector: "[data-tts-paragraph]"
+title_selector: "h1"
+# The novel page is JS-rendered, so title/cover only live in meta/__NEXT_DATA__:
+# og:title carries a " - Read Wuxia Novels at WuxiaClick" suffix and og:image is
+# empty. Chapters + content (server-rendered) are complete; metadata is best-effort.
+strip_selectors:
+  - script
+  - style

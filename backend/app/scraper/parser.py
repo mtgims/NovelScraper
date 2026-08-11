@@ -110,10 +110,20 @@ def parse_chapter_list(html: str, profile: SiteProfile) -> List[Chapter]:
 def parse_chapter_content(html: str, profile: SiteProfile) -> str:
     """Return the cleaned chapter body HTML, or raise if the selector misses."""
     soup = _soup(html)
-    content = soup.select_one(profile.content_selector)
-    if content is None:
+    matches = soup.select(profile.content_selector)
+    if not matches:
         raise ContentNotFoundError(
             f"content selector '{profile.content_selector}' matched nothing")
+    if len(matches) == 1:
+        content = matches[0]
+    else:
+        # Some sites split the body across many sibling blocks (e.g. one <div>
+        # per paragraph, keyed by a data-attr) with no clean wrapper — gather the
+        # matched blocks into a single container. (Soup is discarded after, so
+        # reparenting the nodes is safe.)
+        content = soup.new_tag("div")
+        for node in matches:
+            content.append(node.extract())
     for selector in profile.strip_selectors:
         for node in content.select(selector):
             node.decompose()
