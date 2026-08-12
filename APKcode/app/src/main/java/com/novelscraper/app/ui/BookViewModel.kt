@@ -8,6 +8,7 @@ import com.novelscraper.app.data.ChapterListItem
 import com.novelscraper.app.data.CollectionRead
 import com.novelscraper.app.data.ReadingProgressRead
 import com.novelscraper.app.net.Net
+import kotlinx.coroutines.async
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -60,15 +61,29 @@ class BookViewModel : ViewModel() {
     fun load(bookId: Int) {
         _state.value = BookState.Loading
         viewModelScope.launch {
-            _state.value = try {
-                val book = Net.api.book(bookId)
-                val chapters = Net.api.chapters(bookId)
-                // Progress is best-effort: a never-opened book may have none.
-                val progress = try { Net.api.progress(bookId) } catch (e: Exception) { null }
-                _collections.value = runCatching { Net.api.collections() }.getOrDefault(emptyList())
-                BookState.Data(book, chapters, progress)
+            try {
+                // Fetch book + chapters in parallel and render as soon as both
+                // return — don't block the screen on /progress (its server-side
+                // word-count backfill can take seconds on large books).
+                val bookD = async { Net.api.book(bookId) }
+                val chaptersD = async { Net.api.chapters(bookId) }
+                val book = bookD.await()
+                val chapters = chaptersD.await()
+                _state.value = BookState.Data(book, chapters, progress = null)
+
+                // Fill in progress + collections in the background.
+                launch {
+                    val p = runCatching { Net.api.progress(bookId) }.getOrNull()
+                    val now = _state.value
+                    if (p != null && now is BookState.Data && now.book.id == bookId) {
+                        _state.value = now.copy(progress = p)
+                    }
+                }
+                launch {
+                    _collections.value = runCatching { Net.api.collections() }.getOrDefault(emptyList())
+                }
             } catch (e: Exception) {
-                BookState.Error("Couldn't load this book.")
+                _state.value = BookState.Error("Couldn't load this book.")
             }
         }
     }

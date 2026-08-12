@@ -6,6 +6,7 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
@@ -60,8 +61,8 @@ fun NewScrapeScreen(onScraped: () -> Unit, onImported: () -> Unit) {
     val submitting = ui is ScrapeUi.Submitting
 
     Column(
-        Modifier.fillMaxWidth().verticalScroll(rememberScrollState())
-            .padding(horizontal = 20.dp).padding(top = 28.dp, bottom = 120.dp),
+        Modifier.fillMaxWidth().statusBarsPadding().verticalScroll(rememberScrollState())
+            .padding(horizontal = 20.dp).padding(top = 20.dp, bottom = 120.dp),
     ) {
         Text("New Scrape", style = MaterialTheme.typography.headlineMedium)
         Text(

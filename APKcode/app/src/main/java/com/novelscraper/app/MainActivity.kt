@@ -4,6 +4,8 @@ import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
+import androidx.compose.animation.AnimatedContentTransitionScope
+import androidx.compose.animation.core.tween
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.material3.CircularProgressIndicator
@@ -14,6 +16,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.collectAsState
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.unit.IntOffset
 import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.navigation.NavType
 import androidx.navigation.compose.NavHost
@@ -87,14 +90,49 @@ private fun AuthFlow(vm: AuthViewModel) {
     }
 }
 
+private val TAB_ORDER = listOf("library", "new", "jobs", "stats", "settings")
+// Tab rank drives slide direction; detail screens (book/reader) rank high so
+// opening them slides forward (left), and back-navigation slides right.
+private fun routeRank(route: String?): Int {
+    val base = route?.substringBefore("/")
+    val i = TAB_ORDER.indexOf(base)
+    return if (i >= 0) i else 10
+}
+
 @Composable
 private fun AuthedApp(username: String, onLogout: () -> Unit) {
     val nav = rememberNavController()
     val entry by nav.currentBackStackEntryAsState()
     val route = entry?.destination?.route
+    val slideSpec = tween<IntOffset>(260)
 
     Box(Modifier.fillMaxSize()) {
-        NavHost(nav, startDestination = "library") {
+        NavHost(
+            nav,
+            startDestination = "library",
+            enterTransition = {
+                val fwd = routeRank(targetState.destination.route) >= routeRank(initialState.destination.route)
+                slideIntoContainer(
+                    if (fwd) AnimatedContentTransitionScope.SlideDirection.Left
+                    else AnimatedContentTransitionScope.SlideDirection.Right,
+                    slideSpec,
+                )
+            },
+            exitTransition = {
+                val fwd = routeRank(targetState.destination.route) >= routeRank(initialState.destination.route)
+                slideOutOfContainer(
+                    if (fwd) AnimatedContentTransitionScope.SlideDirection.Left
+                    else AnimatedContentTransitionScope.SlideDirection.Right,
+                    slideSpec,
+                )
+            },
+            popEnterTransition = {
+                slideIntoContainer(AnimatedContentTransitionScope.SlideDirection.Right, slideSpec)
+            },
+            popExitTransition = {
+                slideOutOfContainer(AnimatedContentTransitionScope.SlideDirection.Right, slideSpec)
+            },
+        ) {
             composable("library") {
                 LibraryScreen(onOpenBook = { id -> nav.navigate("book/$id") })
             }

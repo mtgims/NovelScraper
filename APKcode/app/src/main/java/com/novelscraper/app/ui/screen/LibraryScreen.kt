@@ -18,13 +18,10 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material3.CircularProgressIndicator
-import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
-import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -46,10 +43,10 @@ import com.novelscraper.app.net.Net
 import com.novelscraper.app.ui.LibraryPhase
 import com.novelscraper.app.ui.LibraryViewModel
 import com.novelscraper.app.ui.components.CollectionTabs
+import com.novelscraper.app.ui.components.ScreenTitle
 import sh.calvin.reorderable.ReorderableItem
 import sh.calvin.reorderable.rememberReorderableLazyGridState
 
-@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun LibraryScreen(onOpenBook: (Int) -> Unit) {
     val vm: LibraryViewModel = viewModel()
@@ -70,20 +67,13 @@ fun LibraryScreen(onOpenBook: (Int) -> Unit) {
         vm.moveBook(from.index, to.index)
     }
 
-    Scaffold(
-        topBar = {
-            TopAppBar(
-                title = { Text("Library") },
-                actions = {
-                    IconButton(onClick = vm::load) {
-                        Icon(Icons.Filled.Refresh, contentDescription = "Refresh")
-                    }
-                },
-            )
-        },
-    ) { inner ->
-        Column(Modifier.fillMaxSize().padding(inner)) {
-            CollectionTabs(
+    Column(Modifier.fillMaxSize()) {
+        ScreenTitle("Library", action = {
+            IconButton(onClick = vm::load) {
+                Icon(Icons.Filled.Refresh, contentDescription = "Refresh")
+            }
+        })
+        CollectionTabs(
                 collections = collections,
                 activeTab = tab,
                 onSelect = vm::selectTab,
@@ -132,8 +122,6 @@ fun LibraryScreen(onOpenBook: (Int) -> Unit) {
             }
         }
     }
-}
-
 @Composable
 private fun BookCard(
     book: BookRead,

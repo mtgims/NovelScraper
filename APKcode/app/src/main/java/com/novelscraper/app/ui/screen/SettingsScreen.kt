@@ -11,6 +11,7 @@ import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.verticalScroll
@@ -41,9 +42,9 @@ fun SettingsScreen(username: String, onLogout: () -> Unit) {
     val fontScale by ReaderPrefs.fontScale.collectAsState()
 
     Column(
-        Modifier.fillMaxWidth().verticalScroll(rememberScrollState())
+        Modifier.fillMaxWidth().statusBarsPadding().verticalScroll(rememberScrollState())
             .padding(horizontal = 20.dp)
-            .padding(top = 28.dp, bottom = 120.dp),
+            .padding(top = 20.dp, bottom = 120.dp),
     ) {
         Text("Settings", style = MaterialTheme.typography.headlineMedium)
 
