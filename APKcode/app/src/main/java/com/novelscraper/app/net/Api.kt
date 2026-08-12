@@ -1,16 +1,23 @@
 package com.novelscraper.app.net
 
 import com.novelscraper.app.data.AuthConfig
+import com.novelscraper.app.data.BookCollectionsUpdate
 import com.novelscraper.app.data.BookRead
+import com.novelscraper.app.data.BookReorder
 import com.novelscraper.app.data.ChapterListItem
 import com.novelscraper.app.data.ChapterRead
+import com.novelscraper.app.data.CollectionCreate
+import com.novelscraper.app.data.CollectionRead
+import com.novelscraper.app.data.CollectionUpdate
 import com.novelscraper.app.data.LoginRequest
 import com.novelscraper.app.data.ProgressUpdate
 import com.novelscraper.app.data.ReadingProgressRead
 import com.novelscraper.app.data.RegisterRequest
 import com.novelscraper.app.data.UserRead
 import retrofit2.http.Body
+import retrofit2.http.DELETE
 import retrofit2.http.GET
+import retrofit2.http.PATCH
 import retrofit2.http.POST
 import retrofit2.http.PUT
 import retrofit2.http.Path
@@ -34,6 +41,24 @@ interface Api {
 
     @GET("api/books")
     suspend fun books(): List<BookRead>
+
+    @GET("api/collections")
+    suspend fun collections(): List<CollectionRead>
+
+    @POST("api/collections")
+    suspend fun createCollection(@Body body: CollectionCreate): CollectionRead
+
+    @PATCH("api/collections/{id}")
+    suspend fun updateCollection(@Path("id") id: Int, @Body body: CollectionUpdate): CollectionRead
+
+    @DELETE("api/collections/{id}")
+    suspend fun deleteCollection(@Path("id") id: Int)
+
+    @POST("api/books/reorder")
+    suspend fun reorderBooks(@Body body: BookReorder)
+
+    @PUT("api/books/{id}/collections")
+    suspend fun setBookCollections(@Path("id") id: Int, @Body body: BookCollectionsUpdate): BookRead
 
     @GET("api/books/{id}")
     suspend fun book(@Path("id") id: Int): BookRead

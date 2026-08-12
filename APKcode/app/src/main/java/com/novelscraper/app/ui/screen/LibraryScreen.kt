@@ -13,6 +13,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.grid.GridCells
 import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
 import androidx.compose.foundation.lazy.grid.items
+import androidx.compose.foundation.lazy.grid.rememberLazyGridState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Refresh
@@ -25,82 +26,118 @@ import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
 import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.collectAsState
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.scale
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.viewmodel.compose.viewModel
 import coil.compose.AsyncImage
 import coil.request.ImageRequest
-import androidx.compose.ui.platform.LocalContext
 import com.novelscraper.app.data.BookRead
 import com.novelscraper.app.net.Net
-import com.novelscraper.app.ui.LibraryState
+import com.novelscraper.app.ui.LibraryPhase
 import com.novelscraper.app.ui.LibraryViewModel
+import com.novelscraper.app.ui.components.CollectionTabs
+import sh.calvin.reorderable.ReorderableItem
+import sh.calvin.reorderable.rememberReorderableLazyGridState
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun LibraryScreen(
-    onOpenBook: (Int) -> Unit,
-) {
+fun LibraryScreen(onOpenBook: (Int) -> Unit) {
     val vm: LibraryViewModel = viewModel()
-    val state by vm.state.collectAsState()
+    val phase by vm.phase.collectAsState()
+    val books by vm.books.collectAsState()
+    val collections by vm.collections.collectAsState()
+    val tab by vm.tab.collectAsState()
+
+    val activeTab = tab
+    val display = if (activeTab == null) books else books.filter { it.collection_ids.contains(activeTab) }
+    val canReorder = activeTab == null
+
+    val gridState = rememberLazyGridState()
+    val reorderState = rememberReorderableLazyGridState(gridState) { from, to ->
+        vm.moveBook(from.index, to.index)
+    }
 
     Scaffold(
         topBar = {
             TopAppBar(
                 title = { Text("Library") },
                 actions = {
-                    IconButton(onClick = vm::refresh) {
+                    IconButton(onClick = vm::load) {
                         Icon(Icons.Filled.Refresh, contentDescription = "Refresh")
                     }
                 },
             )
         },
     ) { inner ->
-        Box(Modifier.fillMaxSize().padding(inner)) {
-            when (val s = state) {
-                is LibraryState.Loading ->
-                    CircularProgressIndicator(Modifier.align(Alignment.Center))
-                is LibraryState.Error ->
-                    Text(
-                        s.message,
-                        modifier = Modifier.align(Alignment.Center).padding(24.dp),
-                        color = MaterialTheme.colorScheme.error,
-                    )
-                is LibraryState.Data ->
-                    if (s.books.isEmpty()) {
-                        Text(
-                            "Your library is empty.",
-                            modifier = Modifier.align(Alignment.Center),
-                            style = MaterialTheme.typography.bodyLarge,
-                        )
-                    } else {
-                        LazyVerticalGrid(
-                            columns = GridCells.Adaptive(minSize = 150.dp),
-                            contentPadding = PaddingValues(start = 12.dp, end = 12.dp, top = 12.dp, bottom = 104.dp),
-                            horizontalArrangement = Arrangement.spacedBy(12.dp),
-                            verticalArrangement = Arrangement.spacedBy(16.dp),
-                            modifier = Modifier.fillMaxSize(),
-                        ) {
-                            items(s.books, key = { it.id }) { book ->
-                                BookCard(book) { onOpenBook(book.id) }
+        Column(Modifier.fillMaxSize().padding(inner)) {
+            CollectionTabs(
+                collections = collections,
+                activeTab = tab,
+                onSelect = vm::selectTab,
+                onCreate = vm::createCollection,
+                onRename = vm::renameCollection,
+                onDelete = vm::deleteCollection,
+            )
+            Box(Modifier.fillMaxSize()) {
+                when (val p = phase) {
+                    is LibraryPhase.Loading ->
+                        CircularProgressIndicator(Modifier.align(Alignment.Center))
+                    is LibraryPhase.Error ->
+                        Text(p.message, Modifier.align(Alignment.Center)
+                            .clickable { vm.load() }.padding(24.dp),
+                            color = MaterialTheme.colorScheme.error)
+                    is LibraryPhase.Ready ->
+                        if (display.isEmpty()) {
+                            Text(
+                                if (tab == null) "Your library is empty." else "Nothing in this collection yet.",
+                                Modifier.align(Alignment.Center), style = MaterialTheme.typography.bodyLarge,
+                            )
+                        } else {
+                            LazyVerticalGrid(
+                                state = gridState,
+                                columns = GridCells.Adaptive(minSize = 150.dp),
+                                contentPadding = PaddingValues(start = 12.dp, end = 12.dp, top = 6.dp, bottom = 104.dp),
+                                horizontalArrangement = Arrangement.spacedBy(12.dp),
+                                verticalArrangement = Arrangement.spacedBy(16.dp),
+                                modifier = Modifier.fillMaxSize(),
+                            ) {
+                                items(display, key = { it.id }) { book ->
+                                    ReorderableItem(reorderState, key = book.id) { dragging ->
+                                        BookCard(
+                                            book = book,
+                                            modifier = if (canReorder) Modifier.longPressDraggableHandle(
+                                                onDragStopped = { vm.commitOrder() },
+                                            ) else Modifier,
+                                            elevated = dragging,
+                                            onClick = { onOpenBook(book.id) },
+                                        )
+                                    }
+                                }
                             }
                         }
-                    }
+                }
             }
         }
     }
 }
 
 @Composable
-private fun BookCard(book: BookRead, onClick: () -> Unit) {
-    Column(modifier = Modifier.fillMaxWidth().clickable(onClick = onClick)) {
+private fun BookCard(
+    book: BookRead,
+    modifier: Modifier = Modifier,
+    elevated: Boolean = false,
+    onClick: () -> Unit,
+) {
+    Column(modifier = modifier.fillMaxWidth().scale(if (elevated) 1.03f else 1f).clickable(onClick = onClick)) {
         Box(
             modifier = Modifier
                 .fillMaxWidth()
@@ -112,35 +149,20 @@ private fun BookCard(book: BookRead, onClick: () -> Unit) {
             if (book.has_cover) {
                 AsyncImage(
                     model = ImageRequest.Builder(LocalContext.current)
-                        .data(Net.coverUrl(book.id))
-                        .crossfade(true)
-                        .build(),
+                        .data(Net.coverUrl(book.id)).crossfade(true).build(),
                     contentDescription = book.title,
                     contentScale = ContentScale.Crop,
                     modifier = Modifier.fillMaxSize(),
                 )
             } else {
-                Text(
-                    book.title.take(2).uppercase(),
+                Text(book.title.take(2).uppercase(),
                     style = MaterialTheme.typography.headlineMedium,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                )
+                    color = MaterialTheme.colorScheme.onSurfaceVariant)
             }
         }
-        Text(
-            book.title,
-            style = MaterialTheme.typography.titleSmall,
-            fontWeight = FontWeight.SemiBold,
-            maxLines = 2,
-            overflow = TextOverflow.Ellipsis,
-            modifier = Modifier.padding(top = 6.dp),
-        )
-        Text(
-            book.author,
-            style = MaterialTheme.typography.bodySmall,
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
-            maxLines = 1,
-            overflow = TextOverflow.Ellipsis,
-        )
+        Text(book.title, style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.SemiBold,
+            maxLines = 2, overflow = TextOverflow.Ellipsis, modifier = Modifier.padding(top = 6.dp))
+        Text(book.author, style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 1, overflow = TextOverflow.Ellipsis)
     }
 }

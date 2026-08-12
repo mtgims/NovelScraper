@@ -66,6 +66,9 @@ dependencies {
     // Image loading (covers / inline chapter images) — shares the auth cookie.
     implementation("io.coil-kt:coil-compose:2.7.0")
 
+    // Drag-to-reorder for the library grid.
+    implementation("sh.calvin.reorderable:reorderable:2.4.3")
+
     // MediaSession + media-style notification for background/lock-screen TTS.
     implementation("androidx.media:media:1.7.0")
 
