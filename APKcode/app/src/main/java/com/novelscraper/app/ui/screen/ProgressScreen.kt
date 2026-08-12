@@ -37,8 +37,10 @@ fun ProgressScreen() {
     val jobs by vm.jobs.collectAsState()
     val loaded by vm.loaded.collectAsState()
 
-    // Poll while this screen is visible so live scrapes update.
+    // Poll while this screen is visible so live scrapes update. The first tick is
+    // deferred so the network result + list recompose don't land mid-transition.
     LaunchedEffect(Unit) {
+        delay(300)
         while (true) { vm.refresh(); delay(1500) }
     }
 

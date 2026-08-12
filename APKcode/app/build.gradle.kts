@@ -19,7 +19,12 @@ android {
 
     buildTypes {
         release {
+            // Not debuggable -> ART/Compose run optimized (debug builds are far
+            // jankier). Minify left off to avoid keep-rule risk; signed with the
+            // debug key so the release APK sideloads without extra key setup.
             isMinifyEnabled = false
+            isDebuggable = false
+            signingConfig = signingConfigs.getByName("debug")
             proguardFiles(
                 getDefaultProguardFile("proguard-android-optimize.txt"),
                 "proguard-rules.pro",

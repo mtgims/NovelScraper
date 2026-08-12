@@ -51,8 +51,10 @@ import sh.calvin.reorderable.rememberReorderableLazyGridState
 fun LibraryScreen(onOpenBook: (Int) -> Unit) {
     val vm: LibraryViewModel = viewModel()
     // Loads on first entry and refreshes on return (e.g. after assigning a book to
-    // a collection), keeping current books visible (no loading flash).
-    LaunchedEffect(Unit) { vm.load() }
+    // a collection), keeping current books visible (no loading flash). Deferred
+    // past the slide transition so the network result + grid recompose don't land
+    // mid-animation (which caused stutter).
+    LaunchedEffect(Unit) { kotlinx.coroutines.delay(300); vm.load() }
     val phase by vm.phase.collectAsState()
     val books by vm.books.collectAsState()
     val collections by vm.collections.collectAsState()
