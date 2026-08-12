@@ -213,11 +213,19 @@ private fun VoicePicker(current: String, onPick: (String) -> Unit) {
         var engine: TextToSpeech? = null
         engine = TextToSpeech(ctx) { status ->
             if (status == TextToSpeech.SUCCESS) {
-                val lang = Locale.getDefault().language
+                val cur = Locale.getDefault().language
                 voices = runCatching {
                     engine!!.voices
-                        ?.filter { !it.isNetworkConnectionRequired && it.locale.language == lang }
-                        ?.sortedBy { it.name }
+                        // Every installed voice, all languages; skip only ones the
+                        // engine reports as not-installed. Current language first.
+                        ?.filter { it.name != null && it.features?.contains("notInstalled") != true }
+                        ?.sortedWith(
+                            compareBy(
+                                { it.locale.language != cur },
+                                { it.locale.displayName },
+                                { it.name },
+                            ),
+                        )
                         ?.map { VoiceOpt(it.name, "${it.locale.displayName} · ${it.name.substringAfterLast('-')}") }
                         ?: emptyList()
                 }.getOrDefault(emptyList())
