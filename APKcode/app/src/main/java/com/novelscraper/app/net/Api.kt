@@ -9,6 +9,9 @@ import com.novelscraper.app.data.ChapterRead
 import com.novelscraper.app.data.CollectionCreate
 import com.novelscraper.app.data.CollectionRead
 import com.novelscraper.app.data.CollectionUpdate
+import com.novelscraper.app.data.JobCreate
+import com.novelscraper.app.data.JobRead
+import com.novelscraper.app.data.StatsRead
 import com.novelscraper.app.data.LoginRequest
 import com.novelscraper.app.data.ProgressUpdate
 import com.novelscraper.app.data.ReadingProgressRead
@@ -59,6 +62,25 @@ interface Api {
 
     @PUT("api/books/{id}/collections")
     suspend fun setBookCollections(@Path("id") id: Int, @Body body: BookCollectionsUpdate): BookRead
+
+    // Scraping jobs
+    @POST("api/jobs")
+    suspend fun createJob(@Body body: JobCreate): JobRead
+
+    @GET("api/jobs")
+    suspend fun jobs(): List<JobRead>
+
+    @POST("api/jobs/{id}/cancel")
+    suspend fun cancelJob(@Path("id") id: String)
+
+    @DELETE("api/jobs/{id}")
+    suspend fun deleteJob(@Path("id") id: String)
+
+    @DELETE("api/jobs")
+    suspend fun clearFinishedJobs()
+
+    @GET("api/stats")
+    suspend fun stats(): StatsRead
 
     @GET("api/books/{id}")
     suspend fun book(@Path("id") id: Int): BookRead

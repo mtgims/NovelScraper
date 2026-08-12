@@ -6,10 +6,6 @@ import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.AddCircleOutline
-import androidx.compose.material.icons.filled.BarChart
-import androidx.compose.material.icons.filled.Sync
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
@@ -30,12 +26,14 @@ import com.novelscraper.app.ui.AuthViewModel
 import com.novelscraper.app.ui.components.PillNavBar
 import com.novelscraper.app.ui.components.isTopLevelRoute
 import com.novelscraper.app.ui.screen.BookScreen
-import com.novelscraper.app.ui.screen.ComingSoon
 import com.novelscraper.app.ui.screen.LibraryScreen
 import com.novelscraper.app.ui.screen.LoginScreen
+import com.novelscraper.app.ui.screen.NewScrapeScreen
+import com.novelscraper.app.ui.screen.ProgressScreen
 import com.novelscraper.app.ui.screen.ReaderScreen
 import com.novelscraper.app.ui.screen.RegisterScreen
 import com.novelscraper.app.ui.screen.SettingsScreen
+import com.novelscraper.app.ui.screen.StatsScreen
 import com.novelscraper.app.ui.theme.NovelScraperTheme
 
 class MainActivity : ComponentActivity() {
@@ -101,15 +99,16 @@ private fun AuthedApp(username: String, onLogout: () -> Unit) {
                 LibraryScreen(onOpenBook = { id -> nav.navigate("book/$id") })
             }
             composable("new") {
-                ComingSoon("New Scrape", Icons.Filled.AddCircleOutline,
-                    "Paste a novel URL to scrape — landing in the next update.")
+                NewScrapeScreen(onScraped = {
+                    nav.navigate("jobs") {
+                        launchSingleTop = true
+                        popUpTo("library") { saveState = true }
+                        restoreState = true
+                    }
+                })
             }
-            composable("jobs") {
-                ComingSoon("Progress", Icons.Filled.Sync, "Live scrape progress — coming soon.")
-            }
-            composable("stats") {
-                ComingSoon("Statistics", Icons.Filled.BarChart, "Your reading stats — coming soon.")
-            }
+            composable("jobs") { ProgressScreen() }
+            composable("stats") { StatsScreen() }
             composable("settings") { SettingsScreen(username = username, onLogout = onLogout) }
             composable(
                 "book/{id}",
