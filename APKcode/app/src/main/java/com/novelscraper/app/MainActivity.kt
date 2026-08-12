@@ -14,18 +14,20 @@ import androidx.compose.material3.Surface
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.collectAsState
-import androidx.compose.runtime.mutableStateOf
-import androidx.compose.runtime.remember
-import androidx.compose.runtime.saveable.rememberSaveable
-import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.lifecycle.viewmodel.compose.viewModel
+import androidx.navigation.compose.NavHost
+import androidx.navigation.compose.composable
+import androidx.navigation.compose.rememberNavController
+import androidx.navigation.NavType
+import androidx.navigation.navArgument
 import com.novelscraper.app.ui.AuthState
 import com.novelscraper.app.ui.AuthViewModel
 import com.novelscraper.app.ui.screen.BookScreen
 import com.novelscraper.app.ui.screen.LibraryScreen
 import com.novelscraper.app.ui.screen.LoginScreen
+import com.novelscraper.app.ui.screen.ReaderScreen
 import com.novelscraper.app.ui.theme.NovelScraperTheme
 
 class MainActivity : ComponentActivity() {
@@ -71,12 +73,37 @@ private fun AppRoot(modifier: Modifier = Modifier) {
 
 @Composable
 private fun AuthedApp(onLogout: () -> Unit) {
-    // Minimal library <-> book navigation; a NavHost lands with more screens later.
-    var openBookId by rememberSaveable { mutableStateOf<Int?>(null) }
-    val bookId = openBookId
-    if (bookId == null) {
-        LibraryScreen(onOpenBook = { openBookId = it }, onLogout = onLogout)
-    } else {
-        BookScreen(bookId = bookId, onBack = { openBookId = null })
+    val nav = rememberNavController()
+    NavHost(navController = nav, startDestination = "library") {
+        composable("library") {
+            LibraryScreen(
+                onOpenBook = { id -> nav.navigate("book/$id") },
+                onLogout = onLogout,
+            )
+        }
+        composable(
+            "book/{id}",
+            arguments = listOf(navArgument("id") { type = NavType.IntType }),
+        ) { entry ->
+            val id = entry.arguments!!.getInt("id")
+            BookScreen(
+                bookId = id,
+                onBack = { nav.popBackStack() },
+                onOpenReader = { pos -> nav.navigate("reader/$id/$pos") },
+            )
+        }
+        composable(
+            "reader/{id}/{pos}",
+            arguments = listOf(
+                navArgument("id") { type = NavType.IntType },
+                navArgument("pos") { type = NavType.IntType },
+            ),
+        ) { entry ->
+            ReaderScreen(
+                bookId = entry.arguments!!.getInt("id"),
+                position = entry.arguments!!.getInt("pos"),
+                onBack = { nav.popBackStack() },
+            )
+        }
     }
 }
