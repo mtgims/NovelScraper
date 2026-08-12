@@ -35,6 +35,23 @@ class BookViewModel : ViewModel() {
         load(bookId)
     }
 
+    /** Re-fetch just the progress (read count / resume point) without a full
+     *  reload — called when returning from the reader so the detail reflects
+     *  chapters just read. Keeps the current data visible (no Loading flash). */
+    fun refreshProgress(bookId: Int) {
+        val cur = _state.value
+        if (cur !is BookState.Data || cur.book.id != bookId) return
+        viewModelScope.launch {
+            try {
+                val p = Net.api.progress(bookId)
+                val now = _state.value
+                if (now is BookState.Data && now.book.id == bookId) {
+                    _state.value = now.copy(progress = p)
+                }
+            } catch (_: Exception) { /* keep showing current */ }
+        }
+    }
+
     fun load(bookId: Int) {
         _state.value = BookState.Loading
         viewModelScope.launch {

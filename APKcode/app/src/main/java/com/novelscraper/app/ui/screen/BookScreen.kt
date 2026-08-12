@@ -62,7 +62,12 @@ fun BookScreen(
 ) {
     BackHandler(onBack = onBack)
     val vm: BookViewModel = viewModel()
-    LaunchedEffect(bookId) { vm.ensureLoaded(bookId) }
+    // Loads once; on re-entry (e.g. back from the reader) refreshes progress so
+    // the read count / resume point reflect chapters just read.
+    LaunchedEffect(bookId) {
+        vm.ensureLoaded(bookId)
+        vm.refreshProgress(bookId)
+    }
     val state by vm.state.collectAsState()
 
     Scaffold(
