@@ -9,9 +9,8 @@ import kotlinx.coroutines.flow.asStateFlow
 
 /**
  * UI-facing handle to [TtsService]. The UI observes [state] and issues commands
- * that are delivered to the foreground service via intents; the service writes
- * back into [state] so the reader's play/pause control and the media notification
- * stay in sync.
+ * delivered to the foreground service via intents; the service writes back into
+ * [state] so the reader "Listen" pill + media notification stay in sync.
  */
 object TtsController {
 
@@ -21,6 +20,10 @@ object TtsController {
         val bookId: Int = 0,
         val position: Int = 0,
         val chapterTitle: String = "",
+        val sentenceIndex: Int = 0,
+        val sentenceCount: Int = 0,
+        val elapsedSec: Int = 0,
+        val totalSec: Int = 0,
     )
 
     private val _state = MutableStateFlow(State())
@@ -37,9 +40,18 @@ object TtsController {
         }
 
     fun toggle(ctx: Context) = send(ctx, TtsService.ACTION_TOGGLE)
-    fun next(ctx: Context) = send(ctx, TtsService.ACTION_NEXT)
-    fun prev(ctx: Context) = send(ctx, TtsService.ACTION_PREV)
+    fun nextChapter(ctx: Context) = send(ctx, TtsService.ACTION_NEXT)
+    fun prevChapter(ctx: Context) = send(ctx, TtsService.ACTION_PREV)
     fun stop(ctx: Context) = send(ctx, TtsService.ACTION_STOP)
+
+    fun seek(ctx: Context, index: Int) =
+        send(ctx, TtsService.ACTION_SEEK) { putExtra(TtsService.EXTRA_INDEX, index) }
+
+    fun rewind(ctx: Context) = seek(ctx, (_state.value.sentenceIndex - 1).coerceAtLeast(0))
+    fun forward(ctx: Context) = seek(ctx, _state.value.sentenceIndex + 1)
+
+    /** Re-apply the current speech rate / voice to ongoing playback. */
+    fun applySettings(ctx: Context) = send(ctx, TtsService.ACTION_SETRATE)
 
     private inline fun send(ctx: Context, action: String, extras: Intent.() -> Unit = {}) {
         val intent = Intent(ctx, TtsService::class.java).setAction(action).apply(extras)

@@ -1,11 +1,6 @@
 package com.novelscraper.app.ui.screen
 
-import android.Manifest
-import android.content.pm.PackageManager
-import android.os.Build
 import androidx.activity.compose.BackHandler
-import androidx.activity.compose.rememberLauncherForActivityResult
-import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -18,10 +13,8 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
-import androidx.compose.material.icons.automirrored.filled.VolumeUp
 import androidx.compose.material.icons.filled.ChevronLeft
 import androidx.compose.material.icons.filled.ChevronRight
-import androidx.compose.material.icons.filled.Pause
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
@@ -44,7 +37,6 @@ import androidx.compose.runtime.setValue
 import androidx.compose.runtime.snapshotFlow
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.fromHtml
@@ -52,7 +44,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.novelscraper.app.data.ReaderPrefs
-import com.novelscraper.app.tts.TtsController
+import com.novelscraper.app.ui.components.ReaderTtsBar
 import com.novelscraper.app.ui.theme.Serif
 import com.novelscraper.app.ui.ReaderState
 import com.novelscraper.app.ui.ReaderViewModel
@@ -71,24 +63,6 @@ fun ReaderScreen(bookId: Int, position: Int, onBack: () -> Unit) {
     val fontScale by ReaderPrefs.fontScale.collectAsState()
     val data = state as? ReaderState.Data
 
-    val ctx = LocalContext.current
-    val tts by TtsController.state.collectAsState()
-    val narratingThis = tts.active && tts.playing && tts.bookId == bookId && tts.position == pos
-    val notifPerm = rememberLauncherForActivityResult(
-        ActivityResultContracts.RequestPermission()
-    ) { TtsController.play(ctx, bookId, pos, "") }
-    fun onNarrate() {
-        val sameChapter = tts.active && tts.bookId == bookId && tts.position == pos
-        if (sameChapter) {
-            TtsController.toggle(ctx)
-        } else if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU &&
-            ctx.checkSelfPermission(Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED) {
-            notifPerm.launch(Manifest.permission.POST_NOTIFICATIONS)
-        } else {
-            TtsController.play(ctx, bookId, pos, "")
-        }
-    }
-
     Scaffold(
         topBar = {
             TopAppBar(
@@ -99,13 +73,6 @@ fun ReaderScreen(bookId: Int, position: Int, onBack: () -> Unit) {
                     }
                 },
                 actions = {
-                    IconButton(onClick = ::onNarrate) {
-                        Icon(
-                            if (narratingThis) Icons.Filled.Pause
-                            else Icons.AutoMirrored.Filled.VolumeUp,
-                            contentDescription = if (narratingThis) "Pause narration" else "Narrate",
-                        )
-                    }
                     TextButton(onClick = { ReaderPrefs.decreaseFont() }) { Text("A-") }
                     TextButton(onClick = { ReaderPrefs.increaseFont() }) { Text("A+") }
                 },
@@ -139,6 +106,14 @@ fun ReaderScreen(bookId: Int, position: Int, onBack: () -> Unit) {
                 is ReaderState.Data ->
                     ChapterBody(bookId, pos, s, fontScale, vm)
             }
+            // Floating "Listen" pill (web-style), above the chapter Prev/Next bar.
+            ReaderTtsBar(
+                bookId = bookId,
+                position = pos,
+                bookTitle = "",
+                modifier = Modifier.align(Alignment.BottomCenter)
+                    .padding(horizontal = 16.dp, vertical = 10.dp),
+            )
         }
     }
 }
@@ -192,6 +167,6 @@ private fun ChapterBody(
             lineHeight = (31 * fontScale).sp,
             modifier = measure,
         )
-        Box(Modifier.padding(bottom = 40.dp))
+        Box(Modifier.padding(bottom = 110.dp)) // clear the floating Listen pill
     }
 }
