@@ -3,6 +3,7 @@ package com.novelscraper.app.ui
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.novelscraper.app.data.LoginRequest
+import com.novelscraper.app.data.RegisterRequest
 import com.novelscraper.app.data.UserRead
 import com.novelscraper.app.net.Net
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -45,6 +46,8 @@ class AuthViewModel : ViewModel() {
         }
     }
 
+    fun clearError() { _error.value = null }
+
     fun setBaseUrl(url: String) {
         Net.setBaseUrl(url)
         _error.value = null
@@ -61,6 +64,37 @@ class AuthViewModel : ViewModel() {
                 _state.value = AuthState.SignedIn(user)
             } catch (e: HttpException) {
                 _error.value = detailOf(e) ?: "Sign-in failed (${e.code()})"
+            } catch (e: Exception) {
+                _error.value = "Can't reach the server. Check the address and your connection."
+            } finally {
+                _busy.value = false
+            }
+        }
+    }
+
+    private val _openSignup = MutableStateFlow(false)
+    val openSignup: StateFlow<Boolean> = _openSignup.asStateFlow()
+
+    /** Whether open signup is enabled (else an invite code is required). Fetched
+     *  lazily for the register screen. */
+    fun loadAuthConfig() {
+        viewModelScope.launch {
+            try { _openSignup.value = Net.api.authConfig().allow_open_signup } catch (_: Exception) {}
+        }
+    }
+
+    fun register(username: String, password: String, invite: String) {
+        if (_busy.value) return
+        _busy.value = true
+        _error.value = null
+        viewModelScope.launch {
+            try {
+                val user = Net.api.register(
+                    RegisterRequest(username.trim(), password, invite.trim().ifBlank { null }),
+                )
+                _state.value = AuthState.SignedIn(user)
+            } catch (e: HttpException) {
+                _error.value = detailOf(e) ?: "Sign-up failed (${e.code()})"
             } catch (e: Exception) {
                 _error.value = "Can't reach the server. Check the address and your connection."
             } finally {

@@ -154,6 +154,7 @@ class TtsService : LifecycleService() {
         index = from.coerceIn(0, sentences.size)
         if (index >= sentences.size) { onChapterFinished(); return }
         playing = true
+        tts.setSpeechRate(com.novelscraper.app.data.ReaderPrefs.ttsRate.value)
         var q = TextToSpeech.QUEUE_FLUSH
         for (i in index until sentences.size) {
             tts.speak(sentences[i], q, null, i.toString())

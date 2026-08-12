@@ -36,6 +36,7 @@ fun LoginScreen(
     error: String?,
     onLogin: (String, String) -> Unit,
     onSetBaseUrl: (String) -> Unit,
+    onRegister: () -> Unit,
 ) {
     var username by rememberSaveable { mutableStateOf("") }
     var password by rememberSaveable { mutableStateOf("") }
@@ -106,10 +107,11 @@ fun LoginScreen(
             Text("Sign in")
         }
 
-        TextButton(
-            onClick = { showServer = !showServer },
-            modifier = Modifier.padding(top = 8.dp),
-        ) {
+        TextButton(onClick = onRegister, modifier = Modifier.padding(top = 8.dp)) {
+            Text("Create an account")
+        }
+
+        TextButton(onClick = { showServer = !showServer }) {
             Text(if (showServer) "Hide server address" else "Server address")
         }
 

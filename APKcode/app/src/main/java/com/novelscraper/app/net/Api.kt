@@ -7,6 +7,7 @@ import com.novelscraper.app.data.ChapterRead
 import com.novelscraper.app.data.LoginRequest
 import com.novelscraper.app.data.ProgressUpdate
 import com.novelscraper.app.data.ReadingProgressRead
+import com.novelscraper.app.data.RegisterRequest
 import com.novelscraper.app.data.UserRead
 import retrofit2.http.Body
 import retrofit2.http.GET
@@ -21,6 +22,9 @@ interface Api {
 
     @POST("api/auth/login")
     suspend fun login(@Body body: LoginRequest): UserRead
+
+    @POST("api/auth/register")
+    suspend fun register(@Body body: RegisterRequest): UserRead
 
     @POST("api/auth/logout")
     suspend fun logout()
