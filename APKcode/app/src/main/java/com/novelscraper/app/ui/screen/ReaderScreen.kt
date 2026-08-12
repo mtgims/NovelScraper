@@ -1,6 +1,7 @@
 package com.novelscraper.app.ui.screen
 
 import androidx.activity.compose.BackHandler
+import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -30,6 +31,7 @@ import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.saveable.rememberSaveable
@@ -37,13 +39,18 @@ import androidx.compose.runtime.setValue
 import androidx.compose.runtime.snapshotFlow
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.text.AnnotatedString
+import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.text.SpanStyle
+import androidx.compose.ui.text.TextLayoutResult
+import androidx.compose.ui.text.buildAnnotatedString
 import androidx.compose.ui.text.font.FontWeight
-import androidx.compose.ui.text.fromHtml
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.novelscraper.app.data.ReaderPrefs
+import com.novelscraper.app.data.Sentences
+import com.novelscraper.app.tts.TtsController
 import com.novelscraper.app.ui.components.ReaderTtsBar
 import com.novelscraper.app.ui.theme.Serif
 import com.novelscraper.app.ui.ReaderState
@@ -106,7 +113,6 @@ fun ReaderScreen(bookId: Int, position: Int, onBack: () -> Unit) {
                 is ReaderState.Data ->
                     ChapterBody(bookId, pos, s, fontScale, vm)
             }
-            // Floating "Listen" pill (web-style), above the chapter Prev/Next bar.
             ReaderTtsBar(
                 bookId = bookId,
                 position = pos,
@@ -126,10 +132,27 @@ private fun ChapterBody(
     fontScale: Float,
     vm: ReaderViewModel,
 ) {
+    val ctx = LocalContext.current
     val scroll = rememberScrollState()
-    val body = remember(data.chapter.content) { AnnotatedString.fromHtml(data.chapter.content) }
+    val tts by TtsController.state.collectAsState()
+    val activeHere = tts.active && tts.bookId == bookId && tts.position == pos
+    val curIdx = if (activeHere) tts.sentenceIndex else -1
 
-    // Restore saved in-chapter scroll once the content has laid out.
+    val plain = remember(data.chapter.content) { Sentences.plain(data.chapter.content) }
+    val ranges = remember(plain) { Sentences.ranges(plain) }
+    val highlight = MaterialTheme.colorScheme.primary.copy(alpha = 0.22f)
+    val annotated = remember(plain, curIdx, highlight) {
+        buildAnnotatedString {
+            append(plain)
+            ranges.getOrNull(curIdx)?.let { addStyle(SpanStyle(background = highlight), it.first, it.last + 1) }
+        }
+    }
+
+    var layout by remember { mutableStateOf<TextLayoutResult?>(null) }
+    val layoutRef = rememberUpdatedState(layout)
+    val rangesRef = rememberUpdatedState(ranges)
+
+    // Restore saved in-chapter scroll once content has laid out.
     LaunchedEffect(bookId, pos) {
         snapshotFlow { scroll.maxValue }.first { it > 0 }
         val f = ReaderPrefs.getScroll(bookId, pos)
@@ -140,19 +163,32 @@ private fun ChapterBody(
         snapshotFlow { if (scroll.maxValue > 0) scroll.value.toFloat() / scroll.maxValue else 0f }
             .collect { f -> ReaderPrefs.setScroll(bookId, pos, f) }
     }
-    // On leaving this chapter, sync the scroll fraction to the server.
     val fracNow = rememberUpdatedState(
         if (scroll.maxValue > 0) scroll.value.toFloat() / scroll.maxValue else 0f
     )
-    DisposableEffect(bookId, pos) {
-        onDispose { vm.saveScroll(bookId, pos, fracNow.value) }
+    DisposableEffect(bookId, pos) { onDispose { vm.saveScroll(bookId, pos, fracNow.value) } }
+
+    // Keep the spoken sentence in view while narrating (proportional to its
+    // position in the text — approximate but avoids fighting layout coordinates).
+    LaunchedEffect(curIdx) {
+        if (curIdx < 0) return@LaunchedEffect
+        val r = ranges.getOrNull(curIdx) ?: return@LaunchedEffect
+        if (scroll.maxValue <= 0) snapshotFlow { scroll.maxValue }.first { it > 0 }
+        val frac = r.first.toFloat() / plain.length.coerceAtLeast(1)
+        val target = (frac * scroll.maxValue - 250f).roundToInt().coerceIn(0, scroll.maxValue)
+        runCatching { scroll.animateScrollTo(target) }
+    }
+
+    fun onSentenceTap(idx: Int) {
+        val s = TtsController.state.value
+        if (s.active && s.bookId == bookId && s.position == pos) TtsController.seek(ctx, idx)
+        else TtsController.play(ctx, bookId, pos, "", idx)
     }
 
     Column(
         Modifier.fillMaxSize().verticalScroll(scroll).padding(horizontal = 22.dp, vertical = 16.dp),
         horizontalAlignment = Alignment.CenterHorizontally,
     ) {
-        // Constrain to a comfortable reading measure (~the web's 68ch), centered.
         val measure = Modifier.fillMaxWidth().widthIn(max = 620.dp)
         Text(
             data.chapter.title,
@@ -161,11 +197,20 @@ private fun ChapterBody(
             modifier = measure.padding(bottom = 20.dp),
         )
         Text(
-            body,
+            annotated,
             fontFamily = Serif,
             fontSize = (19 * fontScale).sp,
             lineHeight = (31 * fontScale).sp,
-            modifier = measure,
+            onTextLayout = { layout = it },
+            modifier = measure
+                .pointerInput(bookId, pos) {
+                    detectTapGestures { offset ->
+                        val lr = layoutRef.value ?: return@detectTapGestures
+                        val off = lr.getOffsetForPosition(offset)
+                        val idx = rangesRef.value.indexOfFirst { off >= it.first && off <= it.last }
+                        if (idx >= 0) onSentenceTap(idx)
+                    }
+                },
         )
         Box(Modifier.padding(bottom = 110.dp)) // clear the floating Listen pill
     }

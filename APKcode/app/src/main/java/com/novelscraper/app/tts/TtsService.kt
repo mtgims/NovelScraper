@@ -22,7 +22,6 @@ import android.support.v4.media.session.PlaybackStateCompat
 import androidx.core.app.NotificationCompat
 import androidx.core.app.ServiceCompat
 import androidx.core.content.ContextCompat
-import androidx.core.text.HtmlCompat
 import androidx.lifecycle.LifecycleService
 import androidx.lifecycle.lifecycleScope
 import androidx.media.app.NotificationCompat.MediaStyle
@@ -118,8 +117,9 @@ class TtsService : LifecycleService() {
                 bookId = intent.getIntExtra(EXTRA_BOOK_ID, 0)
                 position = intent.getIntExtra(EXTRA_POSITION, 1)
                 bookTitle = intent.getStringExtra(EXTRA_BOOK_TITLE) ?: "NovelScraper"
+                val start = intent.getIntExtra(EXTRA_INDEX, 0)
                 startForegroundLoading()
-                runWhenReady { loadAndSpeak(position) }
+                runWhenReady { loadAndSpeak(position, start) }
             }
             ACTION_TOGGLE -> if (playing) pause() else resume()
             ACTION_NEXT -> skip(+1)
@@ -140,7 +140,7 @@ class TtsService : LifecycleService() {
         if (ready) block() else pending = block
     }
 
-    private fun loadAndSpeak(pos: Int) {
+    private fun loadAndSpeak(pos: Int, startIndex: Int = 0) {
         lifecycleScope.launch {
             val chapter: ChapterRead = try {
                 Net.api.chapter(bookId, pos)
@@ -164,7 +164,7 @@ class TtsService : LifecycleService() {
             }
             if (sentences.isEmpty()) { skip(+1); return@launch }
             requestFocus()
-            speakFrom(0)
+            speakFrom(startIndex)
         }
     }
 
@@ -356,10 +356,10 @@ class TtsService : LifecycleService() {
     }
 
     private fun toSentences(html: String): List<String> {
-        val text = HtmlCompat.fromHtml(html, HtmlCompat.FROM_HTML_MODE_COMPACT).toString()
-        return text.split(Regex("(?<=[.!?。！？])\\s+|\\n+"))
-            .map { it.trim() }
-            .filter { it.isNotEmpty() }
+        // Shared splitter so reader highlight/tap indices match what we speak.
+        val plain = com.novelscraper.app.data.Sentences.plain(html)
+        return com.novelscraper.app.data.Sentences.ranges(plain)
+            .map { plain.substring(it.first, it.last + 1) }
     }
 
     companion object {

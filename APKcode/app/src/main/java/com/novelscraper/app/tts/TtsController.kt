@@ -32,11 +32,12 @@ object TtsController {
     internal fun update(s: State) { _state.value = s }
     internal fun clear() { _state.value = State() }
 
-    fun play(ctx: Context, bookId: Int, position: Int, bookTitle: String) =
+    fun play(ctx: Context, bookId: Int, position: Int, bookTitle: String, startIndex: Int = 0) =
         send(ctx, TtsService.ACTION_PLAY) {
             putExtra(TtsService.EXTRA_BOOK_ID, bookId)
             putExtra(TtsService.EXTRA_POSITION, position)
             putExtra(TtsService.EXTRA_BOOK_TITLE, bookTitle)
+            putExtra(TtsService.EXTRA_INDEX, startIndex)
         }
 
     fun toggle(ctx: Context) = send(ctx, TtsService.ACTION_TOGGLE)
