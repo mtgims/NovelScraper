@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- Base app theme: the activity is pure Compose, so this framework theme just
+         provides a NoActionBar window before Compose draws. Colors come from the
+         Compose theme (ui/theme/Theme.kt). -->
+    <style name="Theme.NovelScraper" parent="android:Theme.Material.Light.NoActionBar" />
+</resources>

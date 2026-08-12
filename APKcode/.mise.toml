@@ -1,0 +1,4 @@
+# The Android Gradle Plugin + Gradle 8.11 need JDK 17-21; the machine's global
+# JDK is 26 (too new). Pin JDK 21 here so `./gradlew` in this dir uses it.
+[tools]
+java = "temurin-21.0.12+8.0.LTS"
