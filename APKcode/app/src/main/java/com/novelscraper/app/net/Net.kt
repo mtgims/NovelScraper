@@ -16,7 +16,7 @@ import com.jakewharton.retrofit2.converter.kotlinx.serialization.asConverterFact
  * Initialised once from [com.novelscraper.app.App].
  */
 object Net {
-    const val DEFAULT_BASE_URL = "https://novelscraper.com"
+    const val DEFAULT_BASE_URL = "https://novelscraper.com/"
 
     private lateinit var prefs: SharedPreferences
     lateinit var cookieJar: AppCookieJar
@@ -38,7 +38,9 @@ object Net {
     fun init(context: Context) {
         prefs = context.applicationContext.getSharedPreferences("ns", Context.MODE_PRIVATE)
         cookieJar = AppCookieJar(prefs)
-        _baseUrl = prefs.getString(KEY_BASE_URL, DEFAULT_BASE_URL) ?: DEFAULT_BASE_URL
+        // Always normalise (guarantee a trailing slash) so string-built URLs like
+        // coverUrl()/imageUrl() are correct even for the default/persisted value.
+        _baseUrl = normalize(prefs.getString(KEY_BASE_URL, DEFAULT_BASE_URL) ?: DEFAULT_BASE_URL)
         rebuild()
     }
 
