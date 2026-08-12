@@ -24,6 +24,8 @@ object Net {
 
     @Volatile private var _baseUrl: String = DEFAULT_BASE_URL
     @Volatile private lateinit var _api: Api
+    @Volatile lateinit var client: OkHttpClient      // shared with Coil (carries the cookie)
+        private set
 
     val baseUrl: String get() = _baseUrl
     val api: Api get() = _api
@@ -51,7 +53,7 @@ object Net {
     }
 
     private fun rebuild() {
-        val client = OkHttpClient.Builder()
+        client = OkHttpClient.Builder()
             .cookieJar(cookieJar)
             .addInterceptor(HttpLoggingInterceptor().apply {
                 level = HttpLoggingInterceptor.Level.BASIC

@@ -62,5 +62,8 @@ dependencies {
     implementation("com.squareup.okhttp3:okhttp:4.12.0")
     implementation("com.squareup.okhttp3:logging-interceptor:4.12.0")
 
+    // Image loading (covers / inline chapter images) — shares the auth cookie.
+    implementation("io.coil-kt:coil-compose:2.7.0")
+
     debugImplementation("androidx.compose.ui:ui-tooling")
 }
