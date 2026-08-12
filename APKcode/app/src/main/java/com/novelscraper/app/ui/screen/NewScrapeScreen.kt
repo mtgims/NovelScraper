@@ -1,5 +1,7 @@
 package com.novelscraper.app.ui.screen
 
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -9,7 +11,9 @@ import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.Button
 import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
@@ -24,13 +28,24 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.viewmodel.compose.viewModel
+import com.novelscraper.app.ui.ImportUi
+import com.novelscraper.app.ui.ImportViewModel
 import com.novelscraper.app.ui.NewScrapeViewModel
 import com.novelscraper.app.ui.ScrapeUi
 
 @Composable
-fun NewScrapeScreen(onScraped: () -> Unit) {
+fun NewScrapeScreen(onScraped: () -> Unit, onImported: () -> Unit) {
     val vm: NewScrapeViewModel = viewModel()
     val ui by vm.ui.collectAsState()
+    val importVm: ImportViewModel = viewModel()
+    val importUi by importVm.ui.collectAsState()
+    val picker = rememberLauncherForActivityResult(
+        ActivityResultContracts.GetMultipleContents()
+    ) { uris -> if (uris.isNotEmpty()) importVm.importEpubs(uris) }
+
+    LaunchedEffect(importUi) {
+        if (importUi is ImportUi.Done) { importVm.reset(); onImported() }
+    }
 
     var url by remember { mutableStateOf("") }
     var advanced by remember { mutableStateOf(false) }
@@ -104,6 +119,29 @@ fun NewScrapeScreen(onScraped: () -> Unit) {
         ) {
             if (submitting) CircularProgressIndicator(Modifier.padding(end = 8.dp), strokeWidth = 2.dp)
             Text("Scrape")
+        }
+
+        HorizontalDivider(Modifier.padding(vertical = 24.dp))
+
+        Text("Import EPUB", style = MaterialTheme.typography.titleMedium)
+        Text(
+            "Add books from EPUB files (e.g. scraped on another device).",
+            style = MaterialTheme.typography.bodyMedium,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            modifier = Modifier.padding(top = 4.dp, bottom = 12.dp),
+        )
+        val importing = importUi is ImportUi.Uploading
+        (importUi as? ImportUi.Error)?.let {
+            Text(it.message, color = MaterialTheme.colorScheme.error,
+                style = MaterialTheme.typography.bodySmall, modifier = Modifier.padding(bottom = 8.dp))
+        }
+        OutlinedButton(
+            onClick = { picker.launch("application/epub+zip") },
+            enabled = !importing,
+            modifier = Modifier.fillMaxWidth(),
+        ) {
+            if (importing) CircularProgressIndicator(Modifier.padding(end = 8.dp), strokeWidth = 2.dp)
+            Text(if (importing) "Importing…" else "Choose EPUB files")
         }
     }
 }

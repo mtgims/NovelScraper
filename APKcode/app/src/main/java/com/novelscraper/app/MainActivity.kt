@@ -99,13 +99,21 @@ private fun AuthedApp(username: String, onLogout: () -> Unit) {
                 LibraryScreen(onOpenBook = { id -> nav.navigate("book/$id") })
             }
             composable("new") {
-                NewScrapeScreen(onScraped = {
-                    nav.navigate("jobs") {
-                        launchSingleTop = true
-                        popUpTo("library") { saveState = true }
-                        restoreState = true
-                    }
-                })
+                NewScrapeScreen(
+                    onScraped = {
+                        nav.navigate("jobs") {
+                            launchSingleTop = true
+                            popUpTo("library") { saveState = true }
+                            restoreState = true
+                        }
+                    },
+                    onImported = {
+                        nav.navigate("library") {
+                            launchSingleTop = true
+                            popUpTo("library") { inclusive = true }
+                        }
+                    },
+                )
             }
             composable("jobs") { ProgressScreen() }
             composable("stats") { StatsScreen() }

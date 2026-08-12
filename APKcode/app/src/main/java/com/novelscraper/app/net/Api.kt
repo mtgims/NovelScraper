@@ -17,12 +17,15 @@ import com.novelscraper.app.data.ProgressUpdate
 import com.novelscraper.app.data.ReadingProgressRead
 import com.novelscraper.app.data.RegisterRequest
 import com.novelscraper.app.data.UserRead
+import okhttp3.MultipartBody
 import retrofit2.http.Body
 import retrofit2.http.DELETE
 import retrofit2.http.GET
+import retrofit2.http.Multipart
 import retrofit2.http.PATCH
 import retrofit2.http.POST
 import retrofit2.http.PUT
+import retrofit2.http.Part
 import retrofit2.http.Path
 
 /** Typed view of the NovelScraper REST API (backend app/api routers). */
@@ -96,4 +99,8 @@ interface Api {
 
     @PUT("api/books/{id}/progress")
     suspend fun putProgress(@Path("id") id: Int, @Body body: ProgressUpdate): ReadingProgressRead
+
+    @Multipart
+    @POST("api/import")
+    suspend fun importEpubs(@Part files: List<MultipartBody.Part>): BookRead
 }
