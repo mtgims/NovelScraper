@@ -35,8 +35,6 @@ class LibraryViewModel : ViewModel() {
     private val _tab = MutableStateFlow<Int?>(null)
     val tab: StateFlow<Int?> = _tab.asStateFlow()
 
-    init { load() }
-
     fun load() {
         if (_books.value.isEmpty()) _phase.value = LibraryPhase.Loading
         viewModelScope.launch {

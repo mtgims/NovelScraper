@@ -26,6 +26,7 @@ import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
 import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.collectAsState
 import androidx.compose.ui.Alignment
@@ -52,6 +53,9 @@ import sh.calvin.reorderable.rememberReorderableLazyGridState
 @Composable
 fun LibraryScreen(onOpenBook: (Int) -> Unit) {
     val vm: LibraryViewModel = viewModel()
+    // Loads on first entry and refreshes on return (e.g. after assigning a book to
+    // a collection), keeping current books visible (no loading flash).
+    LaunchedEffect(Unit) { vm.load() }
     val phase by vm.phase.collectAsState()
     val books by vm.books.collectAsState()
     val collections by vm.collections.collectAsState()

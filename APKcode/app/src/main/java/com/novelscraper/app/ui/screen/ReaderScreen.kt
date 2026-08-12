@@ -13,6 +13,7 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
@@ -52,6 +53,7 @@ import androidx.compose.ui.unit.sp
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.novelscraper.app.data.ReaderPrefs
 import com.novelscraper.app.tts.TtsController
+import com.novelscraper.app.ui.theme.Serif
 import com.novelscraper.app.ui.ReaderState
 import com.novelscraper.app.ui.ReaderViewModel
 import kotlinx.coroutines.flow.first
@@ -172,19 +174,24 @@ private fun ChapterBody(
     }
 
     Column(
-        Modifier.fillMaxSize().verticalScroll(scroll).padding(horizontal = 20.dp, vertical = 16.dp),
+        Modifier.fillMaxSize().verticalScroll(scroll).padding(horizontal = 22.dp, vertical = 16.dp),
+        horizontalAlignment = Alignment.CenterHorizontally,
     ) {
+        // Constrain to a comfortable reading measure (~the web's 68ch), centered.
+        val measure = Modifier.fillMaxWidth().widthIn(max = 620.dp)
         Text(
             data.chapter.title,
             style = MaterialTheme.typography.headlineSmall,
             fontWeight = FontWeight.Bold,
-            modifier = Modifier.padding(bottom = 16.dp),
+            modifier = measure.padding(bottom = 20.dp),
         )
         Text(
             body,
-            fontSize = (18 * fontScale).sp,
-            lineHeight = (28 * fontScale).sp,
+            fontFamily = Serif,
+            fontSize = (19 * fontScale).sp,
+            lineHeight = (31 * fontScale).sp,
+            modifier = measure,
         )
-        Box(Modifier.padding(bottom = 32.dp))
+        Box(Modifier.padding(bottom = 40.dp))
     }
 }
