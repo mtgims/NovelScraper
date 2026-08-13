@@ -115,10 +115,33 @@ object KokoroEngine {
         if (t.isEmpty()) return FloatArray(0)
         val sid = speaker.coerceIn(0, (numSpeakers - 1).coerceAtLeast(0))
         return try {
-            engine.generate(t, sid, speed.coerceIn(0.5f, 2.5f)).samples
+            val samples = engine.generate(t, sid, speed.coerceIn(0.5f, 2.5f)).samples
+            condition(samples)
+            samples
         } catch (t2: Throwable) {
             Log.e(TAG, "generate failed", t2)
             FloatArray(0)
+        }
+    }
+
+    /**
+     * Clean up a synthesized chunk before playback:
+     *  - clamp out-of-range samples the vocoder occasionally emits (they get
+     *    hard-clipped by AudioTrack into a loud "pop"), and
+     *  - apply a ~4 ms fade at both edges so the joins between back-to-back
+     *    sentences don't click (edges are near-silence, so this is inaudible).
+     */
+    private fun condition(s: FloatArray) {
+        if (s.isEmpty()) return
+        for (i in s.indices) {
+            val v = s[i]
+            if (v > 1f) s[i] = 1f else if (v < -1f) s[i] = -1f
+        }
+        val fade = (sampleRate / 250).coerceAtMost(s.size / 2) // ~4 ms
+        for (i in 0 until fade) {
+            val g = i.toFloat() / fade
+            s[i] *= g
+            s[s.size - 1 - i] *= g
         }
     }
 

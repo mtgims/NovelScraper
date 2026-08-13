@@ -298,7 +298,10 @@ class TtsService : LifecycleService() {
         return AudioTrack(
             AudioAttributes.Builder()
                 .setUsage(AudioAttributes.USAGE_MEDIA)
-                .setContentType(AudioAttributes.CONTENT_TYPE_SPEECH)
+                // MUSIC, not SPEECH: some OEMs (e.g. MIUI) run SPEECH content through
+                // a bandlimited voice-processing path ("old radio" sound); MUSIC keeps
+                // the full-fidelity media path.
+                .setContentType(AudioAttributes.CONTENT_TYPE_MUSIC)
                 .build(),
             AudioFormat.Builder()
                 .setSampleRate(sampleRate)
