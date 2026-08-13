@@ -205,16 +205,20 @@ private fun SettingsPanel() {
             modifier = Modifier.fillMaxWidth(),
         )
 
-        if (engine == ReaderPrefs.ENGINE_KOKORO) {
-            KokoroVoicePicker(currentId = kokoroSpeaker) { id ->
-                ReaderPrefs.setKokoroSpeaker(id)
-                TtsController.applySettings(ctx)
-            }
-        } else {
-            VoicePicker(current = voiceName) { name ->
-                ReaderPrefs.setTtsVoice(name)
-                TtsController.applySettings(ctx)
-            }
+        when (engine) {
+            ReaderPrefs.ENGINE_KOKORO ->
+                KokoroVoicePicker(currentId = kokoroSpeaker) { id ->
+                    ReaderPrefs.setKokoroSpeaker(id)
+                    TtsController.applySettings(ctx)
+                }
+            ReaderPrefs.ENGINE_PIPER ->
+                Text("Voice · Amy (US English) · fast", style = MaterialTheme.typography.bodyMedium,
+                    modifier = Modifier.padding(vertical = 8.dp))
+            else ->
+                VoicePicker(current = voiceName) { name ->
+                    ReaderPrefs.setTtsVoice(name)
+                    TtsController.applySettings(ctx)
+                }
         }
 
         Row(

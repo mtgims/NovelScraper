@@ -107,20 +107,13 @@ fun SettingsScreen(username: String, onLogout: () -> Unit) {
 }
 
 /**
- * Engine picker (device vs on-device Kokoro) plus the Kokoro model download.
- * Downloading runs off the main thread; progress is mirrored back to Compose state.
+ * Engine picker (device / on-device Kokoro / on-device Piper) plus each neural
+ * engine's model download. Downloading runs off the main thread; progress is
+ * mirrored back to Compose state.
  */
 @Composable
 private fun NarrationEngine() {
-    val context = LocalContext.current
-    val scope = rememberCoroutineScope()
     val engine by ReaderPrefs.ttsEngine.collectAsState()
-    val speaker by ReaderPrefs.kokoroSpeaker.collectAsState()
-
-    var installed by remember { mutableStateOf(KokoroEngine.isModelReady(context)) }
-    var progress by remember { mutableStateOf<KokoroDownloader.Progress?>(null) }
-    val downloading = progress is KokoroDownloader.Progress.Downloading ||
-        progress is KokoroDownloader.Progress.Extracting
 
     Text("Engine", style = MaterialTheme.typography.bodyMedium,
         modifier = Modifier.padding(top = 14.dp, bottom = 6.dp))
@@ -131,58 +124,84 @@ private fun NarrationEngine() {
         EngineChip("Kokoro", engine == ReaderPrefs.ENGINE_KOKORO) {
             ReaderPrefs.setTtsEngine(ReaderPrefs.ENGINE_KOKORO)
         }
+        EngineChip("Piper", engine == ReaderPrefs.ENGINE_PIPER) {
+            ReaderPrefs.setTtsEngine(ReaderPrefs.ENGINE_PIPER)
+        }
     }
 
-    if (engine == ReaderPrefs.ENGINE_KOKORO) {
-        when {
-            downloading -> {
-                val p = progress
-                val label = when (p) {
-                    is KokoroDownloader.Progress.Downloading ->
-                        "Downloading  ${p.bytes / 1_000_000} / ${p.total / 1_000_000} MB"
-                    else -> "Extracting…"
-                }
-                Text(label, style = MaterialTheme.typography.bodySmall,
-                    modifier = Modifier.padding(top = 12.dp, bottom = 6.dp))
-                val frac = (progress as? KokoroDownloader.Progress.Downloading)
-                    ?.let { it.bytes.toFloat() / it.total.coerceAtLeast(1) }
-                if (frac != null) {
-                    LinearProgressIndicator(progress = { frac.coerceIn(0f, 1f) },
-                        modifier = Modifier.fillMaxWidth())
-                } else {
-                    LinearProgressIndicator(modifier = Modifier.fillMaxWidth())
-                }
+    if (engine == ReaderPrefs.ENGINE_KOKORO || engine == ReaderPrefs.ENGINE_PIPER) {
+        NeuralModel(engine)
+    }
+}
+
+/** Download state + (for Kokoro) the voice picker, for one neural engine. */
+@Composable
+private fun NeuralModel(engine: String) {
+    val context = LocalContext.current
+    val scope = rememberCoroutineScope()
+    val speaker by ReaderPrefs.kokoroSpeaker.collectAsState()
+
+    var installed by remember(engine) { mutableStateOf(KokoroEngine.isModelReady(context, engine)) }
+    var progress by remember(engine) { mutableStateOf<KokoroDownloader.Progress?>(null) }
+    val downloading = progress is KokoroDownloader.Progress.Downloading ||
+        progress is KokoroDownloader.Progress.Extracting
+
+    val blurb = if (engine == ReaderPrefs.ENGINE_KOKORO)
+        "~125 MB · multilingual, most natural (English, Spanish, French, Chinese, Japanese…). ~1× real time."
+    else
+        "~65 MB · fast English voice (Amy) — several times real time, no buffering; less expressive than Kokoro."
+
+    when {
+        downloading -> {
+            val p = progress
+            val label = when (p) {
+                is KokoroDownloader.Progress.Downloading ->
+                    "Downloading  ${p.bytes / 1_000_000} / ${p.total / 1_000_000} MB"
+                else -> "Extracting…"
             }
-            installed -> {
-                Text("Voice model installed", style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    modifier = Modifier.padding(top = 12.dp))
+            Text(label, style = MaterialTheme.typography.bodySmall,
+                modifier = Modifier.padding(top = 12.dp, bottom = 6.dp))
+            val frac = (progress as? KokoroDownloader.Progress.Downloading)
+                ?.let { it.bytes.toFloat() / it.total.coerceAtLeast(1) }
+            if (frac != null) {
+                LinearProgressIndicator(progress = { frac.coerceIn(0f, 1f) },
+                    modifier = Modifier.fillMaxWidth())
+            } else {
+                LinearProgressIndicator(modifier = Modifier.fillMaxWidth())
+            }
+        }
+        installed -> {
+            Text("Voice model installed", style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                modifier = Modifier.padding(top = 12.dp))
+            if (engine == ReaderPrefs.ENGINE_KOKORO) {
                 KokoroVoicePicker(currentId = speaker) { ReaderPrefs.setKokoroSpeaker(it) }
+            } else {
+                Text("Voice · Amy (US English)", style = MaterialTheme.typography.bodyMedium,
+                    modifier = Modifier.padding(top = 8.dp))
             }
-            else -> {
-                (progress as? KokoroDownloader.Progress.Failed)?.let {
-                    Text("Download failed: ${it.message}",
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.error,
-                        modifier = Modifier.padding(top = 12.dp))
-                }
-                Text("A ~125 MB multilingual neural voice pack (English, Spanish, French, " +
-                    "Chinese, Japanese…) runs fully on-device — no server, works offline.",
+        }
+        else -> {
+            (progress as? KokoroDownloader.Progress.Failed)?.let {
+                Text("Download failed: ${it.message}",
                     style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    modifier = Modifier.padding(top = 12.dp, bottom = 8.dp))
-                Button(onClick = {
-                    progress = KokoroDownloader.Progress.Downloading(0, 1)
-                    scope.launch(Dispatchers.IO) {
-                        KokoroDownloader.download(context, Net.client) { p ->
-                            scope.launch(Dispatchers.Main) {
-                                progress = p
-                                if (p is KokoroDownloader.Progress.Done) installed = true
-                            }
+                    color = MaterialTheme.colorScheme.error,
+                    modifier = Modifier.padding(top = 12.dp))
+            }
+            Text(blurb, style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                modifier = Modifier.padding(top = 12.dp, bottom = 8.dp))
+            Button(onClick = {
+                progress = KokoroDownloader.Progress.Downloading(0, 1)
+                scope.launch(Dispatchers.IO) {
+                    KokoroDownloader.download(context, Net.client, engine) { p ->
+                        scope.launch(Dispatchers.Main) {
+                            progress = p
+                            if (p is KokoroDownloader.Progress.Done) installed = true
                         }
                     }
-                }) { Text("Download voice model") }
-            }
+                }
+            }) { Text("Download voice model") }
         }
     }
 }

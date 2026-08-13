@@ -8,17 +8,15 @@ import org.apache.commons.compress.compressors.bzip2.BZip2CompressorInputStream
 import java.io.File
 
 /**
- * Downloads + extracts the Kokoro model package into the app's filesDir on first
- * use. Blocking — run off the main thread. Extraction is atomic: files land in a
- * temp dir which is renamed into place only on full success, so a killed download
- * never leaves a half-model that [KokoroEngine.isModelReady] would accept.
+ * Downloads + extracts an on-device TTS model package (Kokoro or Piper) into the
+ * app's filesDir on first use. Blocking — run off the main thread. Extraction is
+ * atomic: files land in a temp dir which is renamed into place only on full
+ * success, so a killed download never leaves a half-model that
+ * [KokoroEngine.isModelReady] would accept.
  */
 object KokoroDownloader {
-    const val URL =
-        "https://github.com/k2-fsa/sherpa-onnx/releases/download/tts-models/kokoro-int8-multi-lang-v1_0.tar.bz2"
-
     // Fallback total for the progress bar when the CDN omits Content-Length.
-    private const val APPROX_BYTES = 126_000_000L
+    private const val APPROX_BYTES = 90_000_000L
 
     sealed interface Progress {
         data class Downloading(val bytes: Long, val total: Long) : Progress
@@ -27,22 +25,27 @@ object KokoroDownloader {
         data class Failed(val message: String) : Progress
     }
 
-    fun download(context: Context, client: OkHttpClient, onProgress: (Progress) -> Unit) {
-        val finalDir = KokoroEngine.modelDir(context)
-        val tmpTar = File(context.cacheDir, "kokoro.tar.bz2")
-        val tmpDir = File(context.filesDir, "${KokoroEngine.MODEL_DIR_NAME}.tmp")
+    fun download(
+        context: Context,
+        client: OkHttpClient,
+        engine: String,
+        onProgress: (Progress) -> Unit,
+    ) {
+        val finalDir = KokoroEngine.modelDir(context, engine)
+        val tmpTar = File(context.cacheDir, "tts-model.tar.bz2")
+        val tmpDir = File(context.filesDir, "${finalDir.name}.tmp")
         try {
             // cacheDir/filesDir can be absent on a fresh install; opening a stream
             // into a missing dir fails with ENOENT.
             context.cacheDir.mkdirs()
             context.filesDir.mkdirs()
             tmpTar.parentFile?.mkdirs()
-            // Reclaim space from any previous model (e.g. an old v1.1 install).
+            // Reclaim space from any stale model (e.g. an old Kokoro v1.1 install).
             KokoroEngine.cleanupOtherModels(context)
             tmpDir.deleteRecursively()
 
             // 1. download the archive.
-            val req = Request.Builder().url(URL).build()
+            val req = Request.Builder().url(KokoroEngine.downloadUrl(engine)).build()
             client.newCall(req).execute().use { resp ->
                 if (!resp.isSuccessful) {
                     onProgress(Progress.Failed("Download failed (HTTP ${resp.code})")); return
@@ -99,7 +102,7 @@ object KokoroDownloader {
             }
 
             onProgress(
-                if (KokoroEngine.isModelReady(context)) Progress.Done
+                if (KokoroEngine.isModelReady(context, engine)) Progress.Done
                 else Progress.Failed("Model incomplete after extraction"),
             )
         } catch (t: Throwable) {

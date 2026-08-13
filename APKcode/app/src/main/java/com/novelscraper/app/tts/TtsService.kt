@@ -74,7 +74,8 @@ class TtsService : LifecycleService() {
 
     // Kokoro (on-device neural) backend. Decided per chapter in loadAndSpeak; when
     // false we use the device TextToSpeech path above.
-    private var useKokoro = false
+    private var useKokoro = false      // true = on-device neural engine (Kokoro or Piper)
+    private var neuralEngine = ReaderPrefs.ENGINE_KOKORO
     private var audioTrack: AudioTrack? = null
     private var kokoroJob: Job? = null
 
@@ -178,12 +179,15 @@ class TtsService : LifecycleService() {
                 catch (_: Exception) {}
             }
             if (sentences.isEmpty()) { skip(+1); return@launch }
-            // Decide the engine for this chapter: use Kokoro only if selected, the
-            // model is present, and the native engine loads — else fall back to device.
-            useKokoro = if (ReaderPrefs.ttsEngine.value == ReaderPrefs.ENGINE_KOKORO &&
-                KokoroEngine.isModelReady(this@TtsService)
+            // Decide the engine for this chapter: use the selected on-device neural
+            // engine (Kokoro or Piper) only if its model is present and it loads —
+            // else fall back to the device TextToSpeech.
+            val sel = ReaderPrefs.ttsEngine.value
+            useKokoro = if ((sel == ReaderPrefs.ENGINE_KOKORO || sel == ReaderPrefs.ENGINE_PIPER) &&
+                KokoroEngine.isModelReady(this@TtsService, sel)
             ) {
-                withContext(Dispatchers.Default) { KokoroEngine.ensureLoaded(this@TtsService) }
+                neuralEngine = sel
+                withContext(Dispatchers.Default) { KokoroEngine.ensureLoaded(this@TtsService, sel) }
             } else false
             requestFocus()
             speakFrom(startIndex)
@@ -228,7 +232,8 @@ class TtsService : LifecycleService() {
         playing = true
         publish(true)
 
-        val speaker = ReaderPrefs.kokoroSpeaker.value
+        // Piper voice is single-speaker; Kokoro uses the picked speaker id.
+        val speaker = if (neuralEngine == ReaderPrefs.ENGINE_PIPER) 0 else ReaderPrefs.kokoroSpeaker.value
         val speed = ReaderPrefs.ttsRate.value.coerceIn(0.5f, 2.5f)
         val start = index
         val sampleRate = KokoroEngine.sampleRate

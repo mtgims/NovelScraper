@@ -18,6 +18,7 @@ object ReaderPrefs {
 
     const val ENGINE_DEVICE = "device"
     const val ENGINE_KOKORO = "kokoro"
+    const val ENGINE_PIPER = "piper"
 
     private lateinit var prefs: SharedPreferences
     private val _fontScale = MutableStateFlow(1.0f)
@@ -60,7 +61,11 @@ object ReaderPrefs {
     }
 
     fun setTtsEngine(engine: String) {
-        val e = if (engine == ENGINE_KOKORO) ENGINE_KOKORO else ENGINE_DEVICE
+        val e = when (engine) {
+            ENGINE_KOKORO -> ENGINE_KOKORO
+            ENGINE_PIPER -> ENGINE_PIPER
+            else -> ENGINE_DEVICE
+        }
         _ttsEngine.value = e
         prefs.edit().putString("tts_engine", e).apply()
     }

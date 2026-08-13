@@ -6,45 +6,77 @@ import com.k2fsa.sherpa.onnx.OfflineTts
 import com.k2fsa.sherpa.onnx.OfflineTtsConfig
 import com.k2fsa.sherpa.onnx.OfflineTtsKokoroModelConfig
 import com.k2fsa.sherpa.onnx.OfflineTtsModelConfig
+import com.k2fsa.sherpa.onnx.OfflineTtsVitsModelConfig
 import java.io.File
 
 /**
- * On-device neural TTS (Kokoro) via sherpa-onnx. The ~150 MB model package is
- * downloaded on first use ([KokoroDownloader]) into [modelDir]; this thin wrapper
- * builds the native [OfflineTts] from those files and synthesizes one span at a time.
+ * On-device neural TTS via sherpa-onnx, supporting two downloadable engines:
+ *  - "kokoro" — Kokoro 82M multi-lang (53 voices, most natural; ~1x real time on
+ *    a fast phone CPU), and
+ *  - "piper"  — a Piper/VITS voice (single speaker, much lighter → several times
+ *    real time; less expressive but no buffering).
  *
- * Not thread-safe: [generate] must be serialized by the caller (the native engine
- * is single-inference). [ensureLoaded]/[release] are synchronized.
+ * Only one is loaded at a time (switching rebuilds). Not thread-safe: generate()
+ * is serialized with load/release via the object monitor.
  */
 object KokoroEngine {
-    // v1.0 = the multilingual model (American/British English, Spanish, French,
-    // Italian, Hindi, Japanese, Portuguese, Chinese) — 53 voices. (v1.1 was
-    // English+Chinese only, with 100 Chinese voices.)
-    const val MODEL_DIR_NAME = "kokoro-int8-multi-lang-v1_0"
     private const val TAG = "KokoroEngine"
+    const val KOKORO = "kokoro"
+    const val PIPER = "piper"
 
-    // Files the engine needs to be present before it can load.
-    private val REQUIRED = listOf(
-        "model.int8.onnx", "voices.bin", "tokens.txt", "lexicon-us-en.txt",
+    private const val BASE =
+        "https://github.com/k2-fsa/sherpa-onnx/releases/download/tts-models"
+
+    private data class Spec(
+        val dir: String,
+        val url: String,
+        val kind: String,          // "kokoro" | "vits"
+        val onnx: String,
+        val required: List<String>,
     )
 
-    @Volatile private var tts: OfflineTts? = null
+    private val SPECS = mapOf(
+        KOKORO to Spec(
+            dir = "kokoro-int8-multi-lang-v1_0",
+            url = "$BASE/kokoro-int8-multi-lang-v1_0.tar.bz2",
+            kind = "kokoro",
+            onnx = "model.int8.onnx",
+            required = listOf("model.int8.onnx", "voices.bin", "tokens.txt", "lexicon-us-en.txt"),
+        ),
+        PIPER to Spec(
+            dir = "vits-piper-en_US-amy-medium",
+            url = "$BASE/vits-piper-en_US-amy-medium.tar.bz2",
+            kind = "vits",
+            onnx = "en_US-amy-medium.onnx",
+            required = listOf("en_US-amy-medium.onnx", "tokens.txt"),
+        ),
+    )
 
-    fun modelDir(context: Context): File = File(context.filesDir, MODEL_DIR_NAME)
+    private fun spec(engine: String): Spec = SPECS[engine] ?: SPECS.getValue(KOKORO)
+
+    fun modelDir(context: Context, engine: String): File =
+        File(context.filesDir, spec(engine).dir)
+
+    fun downloadUrl(engine: String): String = spec(engine).url
 
     /** True once every file the engine needs is present on disk. */
-    fun isModelReady(context: Context): Boolean {
-        val d = modelDir(context)
-        return REQUIRED.all { File(d, it).exists() } && File(d, "espeak-ng-data").isDirectory
+    fun isModelReady(context: Context, engine: String): Boolean {
+        val s = spec(engine)
+        val d = File(context.filesDir, s.dir)
+        return s.required.all { File(d, it).exists() } && File(d, "espeak-ng-data").isDirectory
     }
 
-    /** Delete any previously-downloaded Kokoro model that isn't the current one
-     *  (e.g. an old v1.1 install), reclaiming its ~200 MB. */
+    /** Delete previously-downloaded models that aren't one of the current two
+     *  (e.g. an old Kokoro v1.1), reclaiming space; keeps both current engines. */
     fun cleanupOtherModels(context: Context) {
+        val keep = SPECS.values.map { it.dir }.toSet()
         context.filesDir.listFiles()
-            ?.filter { it.isDirectory && it.name.startsWith("kokoro-") && it.name != MODEL_DIR_NAME }
+            ?.filter { it.isDirectory && (it.name.startsWith("kokoro-") || it.name.startsWith("vits-")) && it.name !in keep }
             ?.forEach { runCatching { it.deleteRecursively() } }
     }
+
+    @Volatile private var tts: OfflineTts? = null
+    @Volatile private var loadedEngine: String? = null
 
     val sampleRate: Int get() = tts?.sampleRate() ?: 24000
     val numSpeakers: Int get() = tts?.numSpeakers() ?: 0
@@ -52,51 +84,58 @@ object KokoroEngine {
     /**
      * Cap synthesis threads at 4. On big.LITTLE phones (e.g. Dimensity 8400 =
      * 4 fast cores @3.0-3.25 GHz + 4 @2.1 GHz) an ONNX op finishes only when its
-     * slowest thread does, so spilling onto the slow cores makes each generation
-     * *slower*, not faster. 4 threads keeps work on the fast cores. Measured:
-     * 6 threads gave RTF ~1.1 (slower than real time); this targets < 1.
+     * slowest thread does, so spilling onto the slow cores makes generation
+     * *slower*. 4 keeps work on the fast cores.
      */
     private fun defaultThreads(): Int =
         Runtime.getRuntime().availableProcessors().coerceIn(2, 4)
 
     /**
-     * Lazily build the native engine from the downloaded files. Returns false if the
-     * model isn't present or native init throws (caller should fall back to device TTS).
-     * Uses the plain CPU EP: on this model/device XNNPACK measured *slower*
-     * (RTF ~1.1 vs the plain-CPU ~0.8-0.9 bench).
+     * Load [engine] ("kokoro"/"piper"), rebuilding if a different one is active.
+     * Returns false if the model isn't present or native init throws (caller falls
+     * back to device TTS). Plain CPU EP (XNNPACK measured slower for these models).
      */
     @Synchronized
-    fun ensureLoaded(context: Context, numThreads: Int = defaultThreads()): Boolean {
-        if (tts != null) return true
-        if (!isModelReady(context)) return false
+    fun ensureLoaded(context: Context, engine: String, numThreads: Int = defaultThreads()): Boolean {
+        if (tts != null && loadedEngine == engine) return true
+        if (tts != null) { runCatching { tts?.release() }; tts = null; loadedEngine = null }
+        if (!isModelReady(context, engine)) return false
         val threads = numThreads.coerceIn(1, 8)
-        val engine = tryBuild(context, threads, "cpu") ?: return false
-        tts = engine
-        Log.i(TAG, "Kokoro loaded: provider=cpu threads=$threads sr=$sampleRate speakers=$numSpeakers")
+        val built = tryBuild(context, engine, threads) ?: return false
+        tts = built
+        loadedEngine = engine
+        Log.i(TAG, "loaded engine=$engine threads=$threads sr=$sampleRate speakers=$numSpeakers")
         return true
     }
 
-    private fun tryBuild(context: Context, threads: Int, provider: String): OfflineTts? {
+    private fun tryBuild(context: Context, engine: String, threads: Int): OfflineTts? {
         return try {
-            val d = modelDir(context).absolutePath
-            val kokoro = OfflineTtsKokoroModelConfig().apply {
-                model = "$d/model.int8.onnx"
-                voices = "$d/voices.bin"
-                tokens = "$d/tokens.txt"
-                dataDir = "$d/espeak-ng-data"
-                lexicon = "$d/lexicon-us-en.txt"
-                lang = "en"
-            }
+            val s = spec(engine)
+            val d = File(context.filesDir, s.dir).absolutePath
             val modelConfig = OfflineTtsModelConfig().apply {
-                this.kokoro = kokoro
+                if (s.kind == "vits") {
+                    this.vits = OfflineTtsVitsModelConfig().apply {
+                        model = "$d/${s.onnx}"
+                        tokens = "$d/tokens.txt"
+                        dataDir = "$d/espeak-ng-data"
+                    }
+                } else {
+                    this.kokoro = OfflineTtsKokoroModelConfig().apply {
+                        model = "$d/${s.onnx}"
+                        voices = "$d/voices.bin"
+                        tokens = "$d/tokens.txt"
+                        dataDir = "$d/espeak-ng-data"
+                        lexicon = "$d/lexicon-us-en.txt"
+                        lang = "en"
+                    }
+                }
                 this.numThreads = threads
-                this.provider = provider
+                provider = "cpu"
                 debug = false
             }
-            // assetManager = null -> paths are treated as filesystem paths.
             OfflineTts(null, OfflineTtsConfig().apply { this.model = modelConfig })
         } catch (t: Throwable) {
-            Log.w(TAG, "Kokoro build failed (provider=$provider): ${t.message}")
+            Log.w(TAG, "build failed (engine=$engine): ${t.message}")
             null
         }
     }
@@ -104,8 +143,8 @@ object KokoroEngine {
     /**
      * Synthesize one text span to mono float PCM at [sampleRate]. Empty on failure.
      * `@Synchronized` (same monitor as [ensureLoaded]/[release]) so generation is
-     * single-flight — ONNX Runtime is not thread-safe, and this also guarantees
-     * [release] cannot free the engine while a generate is in flight (use-after-free).
+     * single-flight — ONNX Runtime is not thread-safe, and this also prevents
+     * [release] freeing the engine while a generate is in flight (use-after-free).
      */
     @Synchronized
     fun generate(text: String, speaker: Int, speed: Float): FloatArray {
@@ -118,8 +157,6 @@ object KokoroEngine {
             val out = engine.generate(t, sid, speed.coerceIn(0.5f, 2.5f))
             val samples = out.samples
             condition(samples)
-            // Report real-time factor so on-device speed can be measured/tuned:
-            //   adb logcat -s KokoroEngine:I   (RTF<1 = faster than real time)
             val inferMs = (System.nanoTime() - t0) / 1_000_000.0
             val audioSec = samples.size.toDouble() / out.sampleRate.coerceAtLeast(1)
             if (audioSec > 0) {
@@ -134,11 +171,9 @@ object KokoroEngine {
     }
 
     /**
-     * Clean up a synthesized chunk before playback:
-     *  - clamp out-of-range samples the vocoder occasionally emits (they get
-     *    hard-clipped by AudioTrack into a loud "pop"), and
-     *  - apply a ~4 ms fade at both edges so the joins between back-to-back
-     *    sentences don't click (edges are near-silence, so this is inaudible).
+     * Clean up a synthesized chunk: clamp out-of-range samples the vocoder can emit
+     * (they hard-clip into a loud "pop"), and apply a ~4 ms fade at both edges so
+     * joins between sentences don't click (edges are near-silence → inaudible).
      */
     private fun condition(s: FloatArray) {
         if (s.isEmpty()) return
@@ -158,5 +193,6 @@ object KokoroEngine {
     fun release() {
         runCatching { tts?.release() }
         tts = null
+        loadedEngine = null
     }
 }
