@@ -49,32 +49,31 @@ object KokoroEngine {
     val sampleRate: Int get() = tts?.sampleRate() ?: 24000
     val numSpeakers: Int get() = tts?.numSpeakers() ?: 0
 
-    /** Use most cores for synthesis (lowers RTF → fewer underruns) but leave a
-     *  couple free for the audio consumer / UI / GC. */
+    /**
+     * Cap synthesis threads at 4. On big.LITTLE phones (e.g. Dimensity 8400 =
+     * 4 fast cores @3.0-3.25 GHz + 4 @2.1 GHz) an ONNX op finishes only when its
+     * slowest thread does, so spilling onto the slow cores makes each generation
+     * *slower*, not faster. 4 threads keeps work on the fast cores. Measured:
+     * 6 threads gave RTF ~1.1 (slower than real time); this targets < 1.
+     */
     private fun defaultThreads(): Int =
-        (Runtime.getRuntime().availableProcessors() - 2).coerceIn(4, 6)
+        Runtime.getRuntime().availableProcessors().coerceIn(2, 4)
 
     /**
      * Lazily build the native engine from the downloaded files. Returns false if the
      * model isn't present or native init throws (caller should fall back to device TTS).
-     * Prefers the XNNPACK CPU backend (faster NEON/quantized kernels), falling back
-     * to the default CPU EP if this onnxruntime build lacks it.
+     * Uses the plain CPU EP: on this model/device XNNPACK measured *slower*
+     * (RTF ~1.1 vs the plain-CPU ~0.8-0.9 bench).
      */
     @Synchronized
     fun ensureLoaded(context: Context, numThreads: Int = defaultThreads()): Boolean {
         if (tts != null) return true
         if (!isModelReady(context)) return false
         val threads = numThreads.coerceIn(1, 8)
-        for (provider in listOf("xnnpack", "cpu")) {
-            val engine = tryBuild(context, threads, provider)
-            if (engine != null) {
-                tts = engine
-                Log.i(TAG, "Kokoro loaded: provider=$provider threads=$threads " +
-                    "sr=$sampleRate speakers=$numSpeakers")
-                return true
-            }
-        }
-        return false
+        val engine = tryBuild(context, threads, "cpu") ?: return false
+        tts = engine
+        Log.i(TAG, "Kokoro loaded: provider=cpu threads=$threads sr=$sampleRate speakers=$numSpeakers")
+        return true
     }
 
     private fun tryBuild(context: Context, threads: Int, provider: String): OfflineTts? {
