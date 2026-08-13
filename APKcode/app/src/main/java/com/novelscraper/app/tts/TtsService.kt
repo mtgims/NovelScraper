@@ -183,11 +183,13 @@ class TtsService : LifecycleService() {
             // engine (Kokoro or Piper) only if its model is present and it loads —
             // else fall back to the device TextToSpeech.
             val sel = ReaderPrefs.ttsEngine.value
+            val modelId = if (sel == ReaderPrefs.ENGINE_PIPER) ReaderPrefs.piperVoice.value
+            else KokoroEngine.KOKORO
             useKokoro = if ((sel == ReaderPrefs.ENGINE_KOKORO || sel == ReaderPrefs.ENGINE_PIPER) &&
-                KokoroEngine.isModelReady(this@TtsService, sel)
+                KokoroEngine.isModelReady(this@TtsService, modelId)
             ) {
                 neuralEngine = sel
-                withContext(Dispatchers.Default) { KokoroEngine.ensureLoaded(this@TtsService, sel) }
+                withContext(Dispatchers.Default) { KokoroEngine.ensureLoaded(this@TtsService, modelId) }
             } else false
             requestFocus()
             speakFrom(startIndex)

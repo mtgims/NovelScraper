@@ -15,8 +15,12 @@ import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.verticalScroll
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material3.Button
+import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.Icon
 import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
@@ -129,8 +133,95 @@ private fun NarrationEngine() {
         }
     }
 
-    if (engine == ReaderPrefs.ENGINE_KOKORO || engine == ReaderPrefs.ENGINE_PIPER) {
-        NeuralModel(engine)
+    when (engine) {
+        ReaderPrefs.ENGINE_KOKORO -> NeuralModel(ReaderPrefs.ENGINE_KOKORO)
+        ReaderPrefs.ENGINE_PIPER -> PiperVoiceList()
+    }
+}
+
+/** Piper voices, grouped by accent. Tap a downloaded voice to use it; tap an
+ *  un-downloaded one to fetch it (~65 MB each) and then use it. */
+@Composable
+private fun PiperVoiceList() {
+    val context = LocalContext.current
+    val scope = rememberCoroutineScope()
+    val selected by ReaderPrefs.piperVoice.collectAsState()
+    var busyId by remember { mutableStateOf<String?>(null) }
+    var progress by remember { mutableStateOf<KokoroDownloader.Progress?>(null) }
+    var tick by remember { mutableStateOf(0) } // bump to re-check installed after a download
+
+    Text("Fast English voices · ~65 MB each, downloaded on demand.",
+        style = MaterialTheme.typography.bodySmall,
+        color = MaterialTheme.colorScheme.onSurfaceVariant,
+        modifier = Modifier.padding(top = 12.dp))
+
+    KokoroEngine.PIPER_VOICES.groupBy { it.accent }.forEach { (accent, voices) ->
+        Text(accent.uppercase(),
+            style = Kicker.copy(fontSize = MaterialTheme.typography.labelSmall.fontSize),
+            color = MaterialTheme.colorScheme.primary,
+            modifier = Modifier.padding(top = 14.dp, bottom = 2.dp))
+        voices.forEach { v ->
+            val installed = remember(tick, v.id) { KokoroEngine.isModelReady(context, v.id) }
+            val busy = busyId == v.id
+            Row(
+                Modifier.fillMaxWidth()
+                    .clickable(enabled = busyId == null) {
+                        if (installed) {
+                            ReaderPrefs.setPiperVoice(v.id)
+                        } else {
+                            busyId = v.id
+                            progress = KokoroDownloader.Progress.Downloading(0, 1)
+                            scope.launch(Dispatchers.IO) {
+                                KokoroDownloader.download(context, Net.client, v.id) { p ->
+                                    scope.launch(Dispatchers.Main) {
+                                        progress = p
+                                        when (p) {
+                                            is KokoroDownloader.Progress.Done -> {
+                                                busyId = null; tick++; ReaderPrefs.setPiperVoice(v.id)
+                                            }
+                                            is KokoroDownloader.Progress.Failed -> busyId = null
+                                            else -> {}
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                    .padding(vertical = 10.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Column(Modifier.weight(1f)) {
+                    Text("${v.name} · ${v.gender}", style = MaterialTheme.typography.bodyMedium)
+                    if (busy) {
+                        val p = progress
+                        val lbl = when (p) {
+                            is KokoroDownloader.Progress.Downloading ->
+                                "Downloading ${p.bytes / 1_000_000} / ${p.total / 1_000_000} MB"
+                            is KokoroDownloader.Progress.Extracting -> "Extracting…"
+                            else -> "…"
+                        }
+                        Text(lbl, style = MaterialTheme.typography.labelSmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    }
+                }
+                when {
+                    busy -> CircularProgressIndicator(Modifier.size(18.dp), strokeWidth = 2.dp)
+                    installed && v.id == selected ->
+                        Icon(Icons.Filled.CheckCircle, contentDescription = "Selected",
+                            tint = MaterialTheme.colorScheme.primary, modifier = Modifier.size(20.dp))
+                    installed ->
+                        Text("Use", style = MaterialTheme.typography.labelMedium,
+                            color = MaterialTheme.colorScheme.primary)
+                    else ->
+                        Text("Download", style = MaterialTheme.typography.labelMedium,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant)
+                }
+            }
+        }
+    }
+    (progress as? KokoroDownloader.Progress.Failed)?.let {
+        Text("Download failed: ${it.message}", style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.error, modifier = Modifier.padding(top = 8.dp))
     }
 }
 

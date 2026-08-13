@@ -10,22 +10,37 @@ import com.k2fsa.sherpa.onnx.OfflineTtsVitsModelConfig
 import java.io.File
 
 /**
- * On-device neural TTS via sherpa-onnx, supporting two downloadable engines:
- *  - "kokoro" — Kokoro 82M multi-lang (53 voices, most natural; ~1x real time on
- *    a fast phone CPU), and
- *  - "piper"  — a Piper/VITS voice (single speaker, much lighter → several times
- *    real time; less expressive but no buffering).
+ * On-device neural TTS via sherpa-onnx. Two engine families, each a downloadable
+ * model addressed by a "model id":
+ *  - "kokoro" — Kokoro 82M multi-lang (53 voices; most natural, ~1x real time), and
+ *  - a Piper/VITS voice (each id like "en_US-amy-medium"; single speaker, several×
+ *    real time; less expressive but far faster).
  *
- * Only one is loaded at a time (switching rebuilds). Not thread-safe: generate()
- * is serialized with load/release via the object monitor.
+ * Only one model is loaded at a time (switching rebuilds). Not thread-safe:
+ * generate() is serialized with load/release via the object monitor.
  */
 object KokoroEngine {
     private const val TAG = "KokoroEngine"
     const val KOKORO = "kokoro"
-    const val PIPER = "piper"
 
     private const val BASE =
         "https://github.com/k2-fsa/sherpa-onnx/releases/download/tts-models"
+
+    /** A named Piper voice (id == the sherpa model basename). */
+    data class PiperVoice(val id: String, val name: String, val accent: String, val gender: String)
+
+    val PIPER_VOICES: List<PiperVoice> = listOf(
+        PiperVoice("en_US-amy-medium", "Amy", "American English", "Female"),
+        PiperVoice("en_US-ryan-medium", "Ryan", "American English", "Male"),
+        PiperVoice("en_US-lessac-medium", "Lessac", "American English", "Female"),
+        PiperVoice("en_US-joe-medium", "Joe", "American English", "Male"),
+        PiperVoice("en_GB-alan-medium", "Alan", "British English", "Male"),
+        PiperVoice("en_GB-cori-medium", "Cori", "British English", "Female"),
+        PiperVoice("en_GB-alba-medium", "Alba", "British English", "Female"),
+        PiperVoice("en_GB-northern_english_male-medium", "Northern", "British English", "Male"),
+    )
+
+    fun defaultPiperVoice(): String = PIPER_VOICES.first().id
 
     private data class Spec(
         val dir: String,
@@ -35,39 +50,47 @@ object KokoroEngine {
         val required: List<String>,
     )
 
-    private val SPECS = mapOf(
-        KOKORO to Spec(
-            dir = "kokoro-int8-multi-lang-v1_0",
-            url = "$BASE/kokoro-int8-multi-lang-v1_0.tar.bz2",
-            kind = "kokoro",
-            onnx = "model.int8.onnx",
-            required = listOf("model.int8.onnx", "voices.bin", "tokens.txt", "lexicon-us-en.txt"),
-        ),
-        PIPER to Spec(
-            dir = "vits-piper-en_US-amy-medium",
-            url = "$BASE/vits-piper-en_US-amy-medium.tar.bz2",
-            kind = "vits",
-            onnx = "en_US-amy-medium.onnx",
-            required = listOf("en_US-amy-medium.onnx", "tokens.txt"),
-        ),
-    )
+    private val SPECS: Map<String, Spec> = buildMap {
+        put(
+            KOKORO,
+            Spec(
+                dir = "kokoro-int8-multi-lang-v1_0",
+                url = "$BASE/kokoro-int8-multi-lang-v1_0.tar.bz2",
+                kind = "kokoro",
+                onnx = "model.int8.onnx",
+                required = listOf("model.int8.onnx", "voices.bin", "tokens.txt", "lexicon-us-en.txt"),
+            ),
+        )
+        for (v in PIPER_VOICES) {
+            put(
+                v.id,
+                Spec(
+                    dir = "vits-piper-${v.id}",
+                    url = "$BASE/vits-piper-${v.id}.tar.bz2",
+                    kind = "vits",
+                    onnx = "${v.id}.onnx",
+                    required = listOf("${v.id}.onnx", "tokens.txt"),
+                ),
+            )
+        }
+    }
 
-    private fun spec(engine: String): Spec = SPECS[engine] ?: SPECS.getValue(KOKORO)
+    private fun spec(modelId: String): Spec = SPECS[modelId] ?: SPECS.getValue(KOKORO)
 
-    fun modelDir(context: Context, engine: String): File =
-        File(context.filesDir, spec(engine).dir)
+    fun modelDir(context: Context, modelId: String): File =
+        File(context.filesDir, spec(modelId).dir)
 
-    fun downloadUrl(engine: String): String = spec(engine).url
+    fun downloadUrl(modelId: String): String = spec(modelId).url
 
-    /** True once every file the engine needs is present on disk. */
-    fun isModelReady(context: Context, engine: String): Boolean {
-        val s = spec(engine)
+    /** True once every file the model needs is present on disk. */
+    fun isModelReady(context: Context, modelId: String): Boolean {
+        val s = spec(modelId)
         val d = File(context.filesDir, s.dir)
         return s.required.all { File(d, it).exists() } && File(d, "espeak-ng-data").isDirectory
     }
 
-    /** Delete previously-downloaded models that aren't one of the current two
-     *  (e.g. an old Kokoro v1.1), reclaiming space; keeps both current engines. */
+    /** Delete previously-downloaded models no longer offered (e.g. an old Kokoro
+     *  v1.1); keeps Kokoro and every listed Piper voice the user may have fetched. */
     fun cleanupOtherModels(context: Context) {
         val keep = SPECS.values.map { it.dir }.toSet()
         context.filesDir.listFiles()
@@ -76,41 +99,40 @@ object KokoroEngine {
     }
 
     @Volatile private var tts: OfflineTts? = null
-    @Volatile private var loadedEngine: String? = null
+    @Volatile private var loadedId: String? = null
 
     val sampleRate: Int get() = tts?.sampleRate() ?: 24000
     val numSpeakers: Int get() = tts?.numSpeakers() ?: 0
 
     /**
-     * Cap synthesis threads at 4. On big.LITTLE phones (e.g. Dimensity 8400 =
-     * 4 fast cores @3.0-3.25 GHz + 4 @2.1 GHz) an ONNX op finishes only when its
-     * slowest thread does, so spilling onto the slow cores makes generation
+     * Cap synthesis threads at 4. On big.LITTLE phones an ONNX op finishes only
+     * when its slowest thread does, so spilling onto slow cores makes generation
      * *slower*. 4 keeps work on the fast cores.
      */
     private fun defaultThreads(): Int =
         Runtime.getRuntime().availableProcessors().coerceIn(2, 4)
 
     /**
-     * Load [engine] ("kokoro"/"piper"), rebuilding if a different one is active.
-     * Returns false if the model isn't present or native init throws (caller falls
-     * back to device TTS). Plain CPU EP (XNNPACK measured slower for these models).
+     * Load [modelId] ("kokoro" or a Piper voice id), rebuilding if a different one
+     * is active. False if the model isn't present or native init throws (caller
+     * falls back to device TTS). Plain CPU EP (XNNPACK measured slower here).
      */
     @Synchronized
-    fun ensureLoaded(context: Context, engine: String, numThreads: Int = defaultThreads()): Boolean {
-        if (tts != null && loadedEngine == engine) return true
-        if (tts != null) { runCatching { tts?.release() }; tts = null; loadedEngine = null }
-        if (!isModelReady(context, engine)) return false
+    fun ensureLoaded(context: Context, modelId: String, numThreads: Int = defaultThreads()): Boolean {
+        if (tts != null && loadedId == modelId) return true
+        if (tts != null) { runCatching { tts?.release() }; tts = null; loadedId = null }
+        if (!isModelReady(context, modelId)) return false
         val threads = numThreads.coerceIn(1, 8)
-        val built = tryBuild(context, engine, threads) ?: return false
+        val built = tryBuild(context, modelId, threads) ?: return false
         tts = built
-        loadedEngine = engine
-        Log.i(TAG, "loaded engine=$engine threads=$threads sr=$sampleRate speakers=$numSpeakers")
+        loadedId = modelId
+        Log.i(TAG, "loaded id=$modelId threads=$threads sr=$sampleRate speakers=$numSpeakers")
         return true
     }
 
-    private fun tryBuild(context: Context, engine: String, threads: Int): OfflineTts? {
+    private fun tryBuild(context: Context, modelId: String, threads: Int): OfflineTts? {
         return try {
-            val s = spec(engine)
+            val s = spec(modelId)
             val d = File(context.filesDir, s.dir).absolutePath
             val modelConfig = OfflineTtsModelConfig().apply {
                 if (s.kind == "vits") {
@@ -135,7 +157,7 @@ object KokoroEngine {
             }
             OfflineTts(null, OfflineTtsConfig().apply { this.model = modelConfig })
         } catch (t: Throwable) {
-            Log.w(TAG, "build failed (engine=$engine): ${t.message}")
+            Log.w(TAG, "build failed (id=$modelId): ${t.message}")
             null
         }
     }
@@ -193,6 +215,6 @@ object KokoroEngine {
     fun release() {
         runCatching { tts?.release() }
         tts = null
-        loadedEngine = null
+        loadedId = null
     }
 }

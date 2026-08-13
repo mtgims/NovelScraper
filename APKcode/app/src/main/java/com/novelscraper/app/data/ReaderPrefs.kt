@@ -41,6 +41,10 @@ object ReaderPrefs {
     private val _kokoroSpeaker = MutableStateFlow(0)
     val kokoroSpeaker: StateFlow<Int> = _kokoroSpeaker.asStateFlow()
 
+    // Selected Piper voice model id (e.g. "en_US-amy-medium").
+    private val _piperVoice = MutableStateFlow("en_US-amy-medium")
+    val piperVoice: StateFlow<String> = _piperVoice.asStateFlow()
+
     // Roll narration into the next chapter automatically when one finishes.
     private val _ttsAutoNext = MutableStateFlow(true)
     val ttsAutoNext: StateFlow<Boolean> = _ttsAutoNext.asStateFlow()
@@ -52,7 +56,13 @@ object ReaderPrefs {
         _ttsVoice.value = prefs.getString("tts_voice", "") ?: ""
         _ttsEngine.value = prefs.getString("tts_engine", ENGINE_DEVICE) ?: ENGINE_DEVICE
         _kokoroSpeaker.value = prefs.getInt("kokoro_speaker", 0)
+        _piperVoice.value = prefs.getString("piper_voice", "en_US-amy-medium") ?: "en_US-amy-medium"
         _ttsAutoNext.value = prefs.getBoolean("tts_auto_next", true)
+    }
+
+    fun setPiperVoice(id: String) {
+        _piperVoice.value = id
+        prefs.edit().putString("piper_voice", id).apply()
     }
 
     fun setTtsAutoNext(on: Boolean) {

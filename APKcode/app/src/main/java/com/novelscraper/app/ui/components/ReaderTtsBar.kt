@@ -19,6 +19,8 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.ArrowDropDown
+import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.FastForward
 import androidx.compose.material.icons.filled.FastRewind
@@ -49,6 +51,7 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import com.novelscraper.app.data.ReaderPrefs
+import com.novelscraper.app.tts.KokoroEngine
 import com.novelscraper.app.tts.TtsController
 import java.util.Locale
 
@@ -193,6 +196,7 @@ private fun SettingsPanel() {
     val engine by ReaderPrefs.ttsEngine.collectAsState()
     val autoNext by ReaderPrefs.ttsAutoNext.collectAsState()
     val kokoroSpeaker by ReaderPrefs.kokoroSpeaker.collectAsState()
+    val piperVoice by ReaderPrefs.piperVoice.collectAsState()
 
     Column(Modifier.fillMaxWidth().padding(horizontal = 6.dp, vertical = 4.dp)) {
         Text("Speed · ${"%.1f".format(rate)}×", style = MaterialTheme.typography.labelMedium,
@@ -212,8 +216,10 @@ private fun SettingsPanel() {
                     TtsController.applySettings(ctx)
                 }
             ReaderPrefs.ENGINE_PIPER ->
-                Text("Voice · Amy (US English) · fast", style = MaterialTheme.typography.bodyMedium,
-                    modifier = Modifier.padding(vertical = 8.dp))
+                PiperVoiceDropdown(current = piperVoice) { id ->
+                    ReaderPrefs.setPiperVoice(id)
+                    TtsController.applySettings(ctx)
+                }
             else ->
                 VoicePicker(current = voiceName) { name ->
                     ReaderPrefs.setTtsVoice(name)
@@ -284,6 +290,49 @@ private fun VoicePicker(current: String, onPick: (String) -> Unit) {
             voices.forEach { v ->
                 DropdownMenuItem(text = { Text(v.label) }, onClick = { onPick(v.name); open = false })
             }
+        }
+    }
+}
+
+/** Switch among already-downloaded Piper voices (new ones are added in Settings). */
+@Composable
+private fun PiperVoiceDropdown(current: String, onPick: (String) -> Unit) {
+    val ctx = LocalContext.current
+    var open by remember { mutableStateOf(false) }
+    val installed = KokoroEngine.PIPER_VOICES.filter { KokoroEngine.isModelReady(ctx, it.id) }
+    val cur = KokoroEngine.PIPER_VOICES.firstOrNull { it.id == current }
+
+    Box {
+        Row(
+            Modifier.fillMaxWidth().clickable { open = true }.padding(vertical = 8.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Text("Voice", style = MaterialTheme.typography.labelMedium,
+                color = MaterialTheme.colorScheme.onSurfaceVariant)
+            Text(cur?.let { "${it.name} · ${it.accent}" } ?: "Amy",
+                style = MaterialTheme.typography.bodyMedium,
+                modifier = Modifier.weight(1f).padding(start = 10.dp))
+            Icon(Icons.Filled.ArrowDropDown, contentDescription = null,
+                tint = MaterialTheme.colorScheme.onSurfaceVariant)
+        }
+        DropdownMenu(expanded = open, onDismissRequest = { open = false }) {
+            installed.forEach { v ->
+                DropdownMenuItem(
+                    text = { Text("${v.name} · ${v.accent}") },
+                    onClick = { onPick(v.id); open = false },
+                    trailingIcon = if (v.id == current) {
+                        { Icon(Icons.Filled.Check, contentDescription = null,
+                            tint = MaterialTheme.colorScheme.primary) }
+                    } else null,
+                )
+            }
+            DropdownMenuItem(
+                text = {
+                    Text("More voices in Settings…", style = MaterialTheme.typography.labelSmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant)
+                },
+                onClick = { open = false }, enabled = false,
+            )
         }
     }
 }
