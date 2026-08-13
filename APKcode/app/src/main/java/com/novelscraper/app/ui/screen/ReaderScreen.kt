@@ -40,7 +40,9 @@ import androidx.compose.runtime.setValue
 import androidx.compose.runtime.snapshotFlow
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.SpanStyle
 import androidx.compose.ui.text.TextLayoutResult
@@ -200,6 +202,11 @@ private fun ChapterBody(
     val layoutRef = rememberUpdatedState(layout)
     val rangesRef = rememberUpdatedState(ranges)
 
+    // Absolute (root) positions used to centre the spoken sentence in the viewport.
+    var textRootY by remember { mutableStateOf(0f) }
+    var viewportRootY by remember { mutableStateOf(0f) }
+    var viewportH by remember { mutableStateOf(0) }
+
     // Restore the saved in-chapter scroll once content has laid out. `savedFrac` is
     // captured before the persist effect can overwrite it; `restored` gates writes
     // so we don't clobber the saved value with 0 during the pre-layout window.
@@ -221,14 +228,21 @@ private fun ChapterBody(
         onDispose { if (restored) vm.saveScroll(bookId, pos, fracNow.value) }
     }
 
-    // Keep the spoken sentence in view while narrating (proportional to its
-    // position in the text — approximate but avoids fighting layout coordinates).
+    // Keep the spoken sentence centred in the viewport (so the floating Listen pill
+    // never covers it). Uses the text layout's real line position + absolute root
+    // coordinates, then scrolls by the delta needed to bring that line to centre.
     LaunchedEffect(curIdx) {
         if (curIdx < 0) return@LaunchedEffect
         val r = ranges.getOrNull(curIdx) ?: return@LaunchedEffect
         if (scroll.maxValue <= 0) snapshotFlow { scroll.maxValue }.first { it > 0 }
-        val frac = r.first.toFloat() / plain.length.coerceAtLeast(1)
-        val target = (frac * scroll.maxValue - 250f).roundToInt().coerceIn(0, scroll.maxValue)
+        val l = layoutRef.value ?: return@LaunchedEffect
+        if (viewportH <= 0) return@LaunchedEffect
+        val line = l.getLineForOffset(r.first.coerceIn(0, (plain.length - 1).coerceAtLeast(0)))
+        val lineCenter = (l.getLineTop(line) + l.getLineBottom(line)) / 2f
+        val sentenceAbsY = textRootY + lineCenter                 // on-screen Y of the line
+        val desiredAbsY = viewportRootY + viewportH / 2f          // viewport centre
+        val target = (scroll.value + (sentenceAbsY - desiredAbsY)).roundToInt()
+            .coerceIn(0, scroll.maxValue)
         runCatching { scroll.animateScrollTo(target) }
     }
 
@@ -239,7 +253,10 @@ private fun ChapterBody(
     }
 
     Column(
-        Modifier.fillMaxSize().verticalScroll(scroll).padding(horizontal = 22.dp, vertical = 16.dp),
+        Modifier.fillMaxSize()
+            .onGloballyPositioned { viewportRootY = it.localToRoot(Offset.Zero).y; viewportH = it.size.height }
+            .verticalScroll(scroll)
+            .padding(horizontal = 22.dp, vertical = 16.dp),
         horizontalAlignment = Alignment.CenterHorizontally,
     ) {
         val measure = Modifier.fillMaxWidth().widthIn(max = 620.dp)
@@ -256,6 +273,7 @@ private fun ChapterBody(
             lineHeight = (31 * fontScale).sp,
             onTextLayout = { layout = it },
             modifier = measure
+                .onGloballyPositioned { textRootY = it.localToRoot(Offset.Zero).y }
                 .pointerInput(bookId, pos) {
                     detectTapGestures { offset ->
                         val lr = layoutRef.value ?: return@detectTapGestures
