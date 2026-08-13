@@ -22,10 +22,18 @@ const MODEL_ID = "onnx-community/Kokoro-82M-v1.0-ONNX";
 //     accelerate → it runs on the CPU: slow but *correct*.
 // f16-less devices (many phones) should therefore use the SERVER engine; q8 is
 // just a "make some sound" fallback.
-type Dtype = "fp16" | "q8";
+type Dtype = "fp16" | "fp32" | "q8";
 
+interface GpuAdapterInfoLike {
+  vendor?: string;
+  architecture?: string;
+  device?: string;
+  description?: string;
+}
 interface GpuAdapterLike {
   features: { has(name: string): boolean };
+  info?: GpuAdapterInfoLike;
+  requestAdapterInfo?: () => Promise<GpuAdapterInfoLike>;
 }
 interface GpuLike {
   requestAdapter(): Promise<GpuAdapterLike | null>;
@@ -64,16 +72,48 @@ export async function browserTtsUsable(): Promise<boolean> {
   return (await getAdapter()) !== null;
 }
 
+async function getAdapterInfo(adapter: GpuAdapterLike): Promise<GpuAdapterInfoLike> {
+  try {
+    if (adapter.info) return adapter.info;
+    if (adapter.requestAdapterInfo) return await adapter.requestAdapterInfo();
+  } catch {
+    /* ignore — info is best-effort (some browsers redact it) */
+  }
+  return {};
+}
+
+function isMobile(): boolean {
+  if (typeof navigator === "undefined") return false;
+  const uaData = (navigator as unknown as { userAgentData?: { mobile?: boolean } }).userAgentData;
+  if (uaData && typeof uaData.mobile === "boolean") return uaData.mobile;
+  return /Mobi|Android|iPhone|iPad|iPod/i.test(navigator.userAgent || "");
+}
+
 /**
- * fp16 (GPU, via the native WebGPU EP) when the adapter exposes `shader-f16`,
- * else q8. q8 runs on the CPU (int8 isn't WebGPU-accelerated) — slow but
- * correct; we deliberately avoid fp32, which uses the GPU but yields
- * corrupted/silent audio on some mobile GPUs. f16-less devices should prefer the
- * server engine.
+ * Choose the model precision, preferring a GPU-accelerated path:
+ *  - fp16 when the adapter exposes `shader-f16` (GPU, smallest of the GPU paths);
+ *  - else fp32, which still runs on the GPU via the WebGPU EP (fp32 is core
+ *    WebGPU, not an optional feature Brave/others can strip like shader-f16) and
+ *    is correct on desktop GPUs. This is the fix for "no f16 → fell back to q8 on
+ *    the CPU → slow";
+ *  - q8 (CPU, int8 isn't WebGPU-accelerated) ONLY on mobile GPUs, because some
+ *    (Mali, Adreno, PowerVR, Apple mobile) render fp32 WebGPU as corrupted/silent
+ *    audio. Correct-but-slow beats broken there.
+ * When adapter info is redacted (e.g. Brave), trust fp32 on desktop and stay safe
+ * with q8 on mobile.
  */
 async function pickDtype(): Promise<Dtype> {
   const adapter = await getAdapter();
-  return adapter?.features.has("shader-f16") ? "fp16" : "q8";
+  if (!adapter) return "q8";
+  if (adapter.features.has("shader-f16")) return "fp16";
+
+  const info = await getAdapterInfo(adapter);
+  const desc = `${info.vendor ?? ""} ${info.architecture ?? ""} ${info.device ?? ""} ${info.description ?? ""}`.toLowerCase();
+  const mobileBadGpu = /mali|adreno|powervr|imagination|\bimg\b|apple a\d/.test(desc);
+  const desktopGpu = /nvidia|geforce|amd|radeon|rdna|intel|arc|iris/.test(desc);
+  if (mobileBadGpu) return "q8";
+  if (desktopGpu) return "fp32";
+  return isMobile() ? "q8" : "fp32"; // unknown vendor (redacted): desktop → fp32
 }
 
 let enginePromise: Promise<KokoroTTS> | null = null;
@@ -102,7 +142,7 @@ export function onModelProgress(cb: (percent: number) => void): () => void {
 }
 
 /** Lazily load the model (singleton). First call kicks off the model download
- *  (~163MB fp16 / ~90MB q8), cached by the browser thereafter. */
+ *  (~326MB fp32 / ~163MB fp16 / ~90MB q8), cached by the browser thereafter. */
 export function loadBrowserTts(): Promise<KokoroTTS> {
   if (!enginePromise) {
     enginePromise = (async () => {
