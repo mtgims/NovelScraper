@@ -115,8 +115,18 @@ object KokoroEngine {
         if (t.isEmpty()) return FloatArray(0)
         val sid = speaker.coerceIn(0, (numSpeakers - 1).coerceAtLeast(0))
         return try {
-            val samples = engine.generate(t, sid, speed.coerceIn(0.5f, 2.5f)).samples
+            val t0 = System.nanoTime()
+            val out = engine.generate(t, sid, speed.coerceIn(0.5f, 2.5f))
+            val samples = out.samples
             condition(samples)
+            // Report real-time factor so on-device speed can be measured/tuned:
+            //   adb logcat -s KokoroEngine:I   (RTF<1 = faster than real time)
+            val inferMs = (System.nanoTime() - t0) / 1_000_000.0
+            val audioSec = samples.size.toDouble() / out.sampleRate.coerceAtLeast(1)
+            if (audioSec > 0) {
+                Log.i(TAG, "gen chars=${t.length} infer=${inferMs.toInt()}ms " +
+                    "audio=${"%.2f".format(audioSec)}s RTF=${"%.2f".format(inferMs / 1000.0 / audioSec)}")
+            }
             samples
         } catch (t2: Throwable) {
             Log.e(TAG, "generate failed", t2)
