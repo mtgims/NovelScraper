@@ -62,7 +62,7 @@ fun KokoroVoicePicker(currentId: Int, onPick: (Int) -> Unit) {
                 )
                 voices.forEach { v ->
                     DropdownMenuItem(
-                        text = { Text(v.name) },
+                        text = { Text(v.label) },
                         onClick = { onPick(v.id); open = false },
                         trailingIcon = if (v.id == currentId) {
                             { Icon(Icons.Filled.Check, contentDescription = null,

@@ -166,7 +166,8 @@ private fun NarrationEngine() {
                         color = MaterialTheme.colorScheme.error,
                         modifier = Modifier.padding(top = 12.dp))
                 }
-                Text("A ~150 MB neural voice runs fully on-device (no server, works offline).",
+                Text("A ~125 MB multilingual neural voice pack (English, Spanish, French, " +
+                    "Chinese, Japanese…) runs fully on-device — no server, works offline.",
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                     modifier = Modifier.padding(top = 12.dp, bottom = 8.dp))

@@ -17,7 +17,10 @@ import java.io.File
  * is single-inference). [ensureLoaded]/[release] are synchronized.
  */
 object KokoroEngine {
-    const val MODEL_DIR_NAME = "kokoro-int8-multi-lang-v1_1"
+    // v1.0 = the multilingual model (American/British English, Spanish, French,
+    // Italian, Hindi, Japanese, Portuguese, Chinese) — 53 voices. (v1.1 was
+    // English+Chinese only, with 100 Chinese voices.)
+    const val MODEL_DIR_NAME = "kokoro-int8-multi-lang-v1_0"
     private const val TAG = "KokoroEngine"
 
     // Files the engine needs to be present before it can load.
@@ -33,6 +36,14 @@ object KokoroEngine {
     fun isModelReady(context: Context): Boolean {
         val d = modelDir(context)
         return REQUIRED.all { File(d, it).exists() } && File(d, "espeak-ng-data").isDirectory
+    }
+
+    /** Delete any previously-downloaded Kokoro model that isn't the current one
+     *  (e.g. an old v1.1 install), reclaiming its ~200 MB. */
+    fun cleanupOtherModels(context: Context) {
+        context.filesDir.listFiles()
+            ?.filter { it.isDirectory && it.name.startsWith("kokoro-") && it.name != MODEL_DIR_NAME }
+            ?.forEach { runCatching { it.deleteRecursively() } }
     }
 
     val sampleRate: Int get() = tts?.sampleRate() ?: 24000
@@ -84,8 +95,9 @@ object KokoroEngine {
         val engine = tts ?: return FloatArray(0)
         val t = text.trim()
         if (t.isEmpty()) return FloatArray(0)
+        val sid = speaker.coerceIn(0, (numSpeakers - 1).coerceAtLeast(0))
         return try {
-            engine.generate(t, speaker.coerceAtLeast(0), speed.coerceIn(0.5f, 2.5f)).samples
+            engine.generate(t, sid, speed.coerceIn(0.5f, 2.5f)).samples
         } catch (t2: Throwable) {
             Log.e(TAG, "generate failed", t2)
             FloatArray(0)

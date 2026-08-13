@@ -15,10 +15,10 @@ import java.io.File
  */
 object KokoroDownloader {
     const val URL =
-        "https://github.com/k2-fsa/sherpa-onnx/releases/download/tts-models/kokoro-int8-multi-lang-v1_1.tar.bz2"
+        "https://github.com/k2-fsa/sherpa-onnx/releases/download/tts-models/kokoro-int8-multi-lang-v1_0.tar.bz2"
 
     // Fallback total for the progress bar when the CDN omits Content-Length.
-    private const val APPROX_BYTES = 141_000_000L
+    private const val APPROX_BYTES = 126_000_000L
 
     sealed interface Progress {
         data class Downloading(val bytes: Long, val total: Long) : Progress
@@ -37,6 +37,8 @@ object KokoroDownloader {
             context.cacheDir.mkdirs()
             context.filesDir.mkdirs()
             tmpTar.parentFile?.mkdirs()
+            // Reclaim space from any previous model (e.g. an old v1.1 install).
+            KokoroEngine.cleanupOtherModels(context)
             tmpDir.deleteRecursively()
 
             // 1. download the archive.
