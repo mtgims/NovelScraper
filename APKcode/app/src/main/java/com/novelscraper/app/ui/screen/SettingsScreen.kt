@@ -39,6 +39,7 @@ import com.novelscraper.app.data.ReaderPrefs
 import com.novelscraper.app.net.Net
 import com.novelscraper.app.tts.KokoroDownloader
 import com.novelscraper.app.tts.KokoroEngine
+import com.novelscraper.app.ui.components.KokoroVoicePicker
 import com.novelscraper.app.ui.theme.Kicker
 import com.novelscraper.app.ui.theme.THEMES
 import com.novelscraper.app.ui.theme.ThemeController
@@ -156,18 +157,7 @@ private fun NarrationEngine() {
                 Text("Voice model installed", style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                     modifier = Modifier.padding(top = 12.dp))
-                Row(verticalAlignment = Alignment.CenterVertically,
-                    modifier = Modifier.padding(top = 8.dp)) {
-                    Text("Voice  ·  #$speaker", style = MaterialTheme.typography.bodyMedium,
-                        modifier = Modifier.weight(1f))
-                    OutlinedButton(onClick = {
-                        ReaderPrefs.setKokoroSpeaker(speaker - 1)
-                    }) { Text("◀") }
-                    Text("  ")
-                    OutlinedButton(onClick = {
-                        ReaderPrefs.setKokoroSpeaker(speaker + 1)
-                    }) { Text("▶") }
-                }
+                KokoroVoicePicker(currentId = speaker) { ReaderPrefs.setKokoroSpeaker(it) }
             }
             else -> {
                 (progress as? KokoroDownloader.Progress.Failed)?.let {

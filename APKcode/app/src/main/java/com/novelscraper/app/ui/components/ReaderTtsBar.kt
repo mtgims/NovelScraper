@@ -185,9 +185,6 @@ private fun SeekSlider(count: Int, index: Int, onSeek: (Int) -> Unit) {
     )
 }
 
-// This model (kokoro-int8-multi-lang-v1_1) ships 103 speaker embeddings.
-private const val KOKORO_SPEAKER_COUNT = 103
-
 @Composable
 private fun SettingsPanel() {
     val ctx = LocalContext.current
@@ -209,22 +206,9 @@ private fun SettingsPanel() {
         )
 
         if (engine == ReaderPrefs.ENGINE_KOKORO) {
-            // Kokoro voices are speaker ids; names aren't published for this model,
-            // so step through them numerically and audition by ear.
-            Row(
-                Modifier.fillMaxWidth().padding(vertical = 4.dp),
-                verticalAlignment = Alignment.CenterVertically,
-            ) {
-                Text("Voice · #$kokoroSpeaker", style = MaterialTheme.typography.bodyMedium,
-                    modifier = Modifier.weight(1f))
-                IconButton(onClick = {
-                    ReaderPrefs.setKokoroSpeaker((kokoroSpeaker - 1).coerceAtLeast(0))
-                    TtsController.applySettings(ctx)
-                }) { Text("◀") }
-                IconButton(onClick = {
-                    ReaderPrefs.setKokoroSpeaker((kokoroSpeaker + 1).coerceAtMost(KOKORO_SPEAKER_COUNT - 1))
-                    TtsController.applySettings(ctx)
-                }) { Text("▶") }
+            KokoroVoicePicker(currentId = kokoroSpeaker) { id ->
+                ReaderPrefs.setKokoroSpeaker(id)
+                TtsController.applySettings(ctx)
             }
         } else {
             VoicePicker(current = voiceName) { name ->
