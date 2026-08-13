@@ -63,7 +63,15 @@ import kotlin.math.roundToInt
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun ReaderScreen(bookId: Int, position: Int, onBack: () -> Unit) {
-    BackHandler(onBack = onBack)
+    val ctx = LocalContext.current
+    // Leaving the chapter (back button / system back — the only ways out of the
+    // reader) stops narration. Backgrounding or turning the screen off never calls
+    // this, so playback keeps running there.
+    val exit = {
+        if (TtsController.state.value.active) TtsController.stop(ctx)
+        onBack()
+    }
+    BackHandler(onBack = exit)
     val vm: ReaderViewModel = viewModel()
     var pos by rememberSaveable { mutableIntStateOf(position) }
     LaunchedEffect(pos) { vm.load(bookId, pos) }
@@ -97,7 +105,7 @@ fun ReaderScreen(bookId: Int, position: Int, onBack: () -> Unit) {
             TopAppBar(
                 title = { Text(data?.chapter?.title ?: "Loading…", maxLines = 1) },
                 navigationIcon = {
-                    IconButton(onClick = onBack) {
+                    IconButton(onClick = exit) {
                         Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back")
                     }
                 },
