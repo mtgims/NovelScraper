@@ -15,6 +15,9 @@ android {
         targetSdk = 34
         versionCode = 1
         versionName = "0.1.0"
+        // Ship only the ABIs we target: the phone (arm64) + the emulator (x86_64).
+        // Keeps the APK smaller despite the sherpa-onnx native libs.
+        ndk { abiFilters += listOf("arm64-v8a", "x86_64") }
     }
 
     buildTypes {
@@ -76,6 +79,11 @@ dependencies {
 
     // MediaSession + media-style notification for background/lock-screen TTS.
     implementation("androidx.media:media:1.7.0")
+
+    // On-device Kokoro TTS via sherpa-onnx (ONNX model + espeak-ng phonemizer +
+    // voices), and tar.bz2 extraction for the downloaded model package.
+    implementation(files("libs/sherpa-onnx-1.13.5.aar"))
+    implementation("org.apache.commons:commons-compress:1.27.1")
 
     debugImplementation("androidx.compose.ui:ui-tooling")
 }

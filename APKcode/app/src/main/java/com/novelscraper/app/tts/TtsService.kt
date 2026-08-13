@@ -11,7 +11,9 @@ import android.content.IntentFilter
 import android.content.pm.ServiceInfo
 import android.media.AudioAttributes
 import android.media.AudioFocusRequest
+import android.media.AudioFormat
 import android.media.AudioManager
+import android.media.AudioTrack
 import android.os.Build
 import android.os.Bundle
 import android.os.IBinder
@@ -29,9 +31,15 @@ import com.novelscraper.app.MainActivity
 import com.novelscraper.app.R
 import com.novelscraper.app.data.ChapterRead
 import com.novelscraper.app.data.ProgressUpdate
+import com.novelscraper.app.data.ReaderPrefs
 import com.novelscraper.app.net.Net
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.channels.Channel
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 
 /**
  * Foreground service that narrates chapters with the device's native
@@ -49,6 +57,7 @@ class TtsService : LifecycleService() {
     private lateinit var session: MediaSessionCompat
     private lateinit var audioManager: AudioManager
     private var focusRequest: AudioFocusRequest? = null
+    private var hasFocus = false
 
     // current chapter
     private var bookId = 0
@@ -62,6 +71,12 @@ class TtsService : LifecycleService() {
     private var hasNext = false
     private var hasPrev = false
     private var playing = false
+
+    // Kokoro (on-device neural) backend. Decided per chapter in loadAndSpeak; when
+    // false we use the device TextToSpeech path above.
+    private var useKokoro = false
+    private var audioTrack: AudioTrack? = null
+    private var kokoroJob: Job? = null
 
     private fun rate() = com.novelscraper.app.data.ReaderPrefs.ttsRate.value.coerceAtLeast(0.1f)
     private fun elapsedSec(): Int {
@@ -163,12 +178,24 @@ class TtsService : LifecycleService() {
                 catch (_: Exception) {}
             }
             if (sentences.isEmpty()) { skip(+1); return@launch }
+            // Decide the engine for this chapter: use Kokoro only if selected, the
+            // model is present, and the native engine loads — else fall back to device.
+            useKokoro = if (ReaderPrefs.ttsEngine.value == ReaderPrefs.ENGINE_KOKORO &&
+                KokoroEngine.isModelReady(this@TtsService)
+            ) {
+                withContext(Dispatchers.Default) { KokoroEngine.ensureLoaded(this@TtsService) }
+            } else false
             requestFocus()
             speakFrom(startIndex)
         }
     }
 
+    /** Dispatch to whichever backend was chosen for the current chapter. */
     private fun speakFrom(from: Int) {
+        if (useKokoro) kokoroSpeakFrom(from) else deviceSpeakFrom(from)
+    }
+
+    private fun deviceSpeakFrom(from: Int) {
         index = from.coerceIn(0, sentences.size)
         if (index >= sentences.size) { onChapterFinished(); return }
         playing = true
@@ -185,6 +212,104 @@ class TtsService : LifecycleService() {
         publish(true)
     }
 
+    // --- Kokoro (on-device neural) backend ------------------------------
+
+    /**
+     * Narrate with Kokoro from sentence [from]. A producer coroutine synthesizes
+     * sentences a couple ahead (RTF < 1 on the target CPU) into a bounded channel; a
+     * consumer streams the PCM to an [AudioTrack] with blocking writes (which pace to
+     * real time). A ticker maps the playback head back to the audible sentence so the
+     * reader highlight stays in sync rather than jumping ahead of the buffer.
+     */
+    private fun kokoroSpeakFrom(from: Int) {
+        index = from.coerceIn(0, sentences.size)
+        if (index >= sentences.size) { onChapterFinished(); return }
+        releaseKokoroAudio()
+        playing = true
+        publish(true)
+
+        val speaker = ReaderPrefs.kokoroSpeaker.value
+        val speed = ReaderPrefs.ttsRate.value.coerceIn(0.5f, 2.5f)
+        val start = index
+        val sampleRate = KokoroEngine.sampleRate
+        val track = buildAudioTrack(sampleRate).also { audioTrack = it }
+        val frameStarts = IntArray(sentences.size) { -1 } // audible start frame per sentence
+
+        kokoroJob = lifecycleScope.launch(Dispatchers.Default) {
+            val channel = Channel<Pair<Int, FloatArray>>(capacity = 2)
+            val producer = launch {
+                for (i in start until sentences.size) {
+                    if (!isActive) break
+                    channel.send(i to KokoroEngine.generate(sentences[i], speaker, speed))
+                }
+                channel.close()
+            }
+            // Highlight ticker: report the sentence currently under the playback head.
+            val ticker = launch(Dispatchers.Main) {
+                var shown = -1
+                while (isActive) {
+                    val head = runCatching { track.playbackHeadPosition }.getOrDefault(0)
+                    var cur = shown
+                    for (i in start until sentences.size) {
+                        val s = frameStarts[i]
+                        if (s < 0) break
+                        if (s <= head) cur = i else break
+                    }
+                    if (cur >= 0 && cur != shown) { shown = cur; index = cur; publish(false) }
+                    delay(120)
+                }
+            }
+            var framesWritten = 0
+            try {
+                track.play()
+                for ((i, pcm) in channel) {
+                    if (!isActive) break
+                    frameStarts[i] = framesWritten
+                    var off = 0
+                    while (off < pcm.size && isActive) {
+                        val n = track.write(pcm, off, pcm.size - off, AudioTrack.WRITE_BLOCKING)
+                        if (n <= 0) break
+                        off += n
+                    }
+                    framesWritten += pcm.size
+                }
+                // Let the buffered tail drain before advancing to the next chapter.
+                while (isActive &&
+                    runCatching { track.playbackHeadPosition }.getOrDefault(framesWritten) < framesWritten
+                ) delay(60)
+                ticker.cancel()
+                if (isActive) withContext(Dispatchers.Main) { onChapterFinished() }
+            } finally {
+                producer.cancel()
+                ticker.cancel()
+            }
+        }
+    }
+
+    private fun buildAudioTrack(sampleRate: Int): AudioTrack {
+        val minBuf = AudioTrack.getMinBufferSize(
+            sampleRate, AudioFormat.CHANNEL_OUT_MONO, AudioFormat.ENCODING_PCM_FLOAT,
+        ).coerceAtLeast(sampleRate) // >= ~1s of float mono to ride out synthesis jitter
+        return AudioTrack(
+            AudioAttributes.Builder()
+                .setUsage(AudioAttributes.USAGE_MEDIA)
+                .setContentType(AudioAttributes.CONTENT_TYPE_SPEECH)
+                .build(),
+            AudioFormat.Builder()
+                .setSampleRate(sampleRate)
+                .setEncoding(AudioFormat.ENCODING_PCM_FLOAT)
+                .setChannelMask(AudioFormat.CHANNEL_OUT_MONO)
+                .build(),
+            minBuf * 2, AudioTrack.MODE_STREAM, AudioManager.AUDIO_SESSION_ID_GENERATE,
+        )
+    }
+
+    private fun releaseKokoroAudio() {
+        kokoroJob?.cancel(); kokoroJob = null
+        audioTrack?.let { runCatching { it.pause(); it.flush(); it.release() } }
+        audioTrack = null
+    }
+
     private fun resume() {
         if (playing || sentences.isEmpty()) return
         runWhenReady { requestFocus(); speakFrom(index) }
@@ -193,7 +318,7 @@ class TtsService : LifecycleService() {
     private fun pause() {
         if (!playing) return
         playing = false
-        if (::tts.isInitialized) tts.stop()
+        if (useKokoro) releaseKokoroAudio() else if (::tts.isInitialized) tts.stop()
         publish(true)
     }
 
@@ -202,7 +327,7 @@ class TtsService : LifecycleService() {
         if (delta > 0 && !hasNext) return
         if (delta < 0 && !hasPrev) return
         if (target < 1) return
-        if (::tts.isInitialized) tts.stop()
+        if (useKokoro) releaseKokoroAudio() else if (::tts.isInitialized) tts.stop()
         startForegroundLoading()
         runWhenReady { loadAndSpeak(target) }
     }
@@ -213,6 +338,7 @@ class TtsService : LifecycleService() {
 
     private fun stopPlayback() {
         playing = false
+        releaseKokoroAudio()
         if (::tts.isInitialized) tts.stop()
         abandonFocus()
         TtsController.clear()
@@ -239,12 +365,15 @@ class TtsService : LifecycleService() {
     // --- audio focus ----------------------------------------------------
 
     private fun requestFocus() {
-        val attrs = AudioAttributes.Builder()
-            .setUsage(AudioAttributes.USAGE_MEDIA)
-            .setContentType(AudioAttributes.CONTENT_TYPE_SPEECH)
-            .build()
-        val req = AudioFocusRequest.Builder(AudioManager.AUDIOFOCUS_GAIN)
-            .setAudioAttributes(attrs)
+        if (hasFocus) return // Re-requesting builds a fresh listener, which the system
+                             // revokes from the old one -> self-inflicted AUDIOFOCUS_LOSS.
+        val req = focusRequest ?: AudioFocusRequest.Builder(AudioManager.AUDIOFOCUS_GAIN)
+            .setAudioAttributes(
+                AudioAttributes.Builder()
+                    .setUsage(AudioAttributes.USAGE_MEDIA)
+                    .setContentType(AudioAttributes.CONTENT_TYPE_SPEECH)
+                    .build(),
+            )
             .setOnAudioFocusChangeListener { change ->
                 when (change) {
                     AudioManager.AUDIOFOCUS_LOSS -> stopPlayback()
@@ -253,13 +382,16 @@ class TtsService : LifecycleService() {
                 }
             }
             .build()
-        focusRequest = req
-        audioManager.requestAudioFocus(req)
+            .also { focusRequest = it }
+        if (audioManager.requestAudioFocus(req) == AudioManager.AUDIOFOCUS_REQUEST_GRANTED) {
+            hasFocus = true
+        }
     }
 
     private fun abandonFocus() {
+        // Keep the request instance (same listener) for reuse; just drop the grant.
         focusRequest?.let { audioManager.abandonAudioFocusRequest(it) }
-        focusRequest = null
+        hasFocus = false
     }
 
     // --- notification / session -----------------------------------------
@@ -350,6 +482,10 @@ class TtsService : LifecycleService() {
         super.onDestroy()
         unregisterReceiver(noisyReceiver)
         abandonFocus()
+        releaseKokoroAudio()
+        // release() waits on the generate lock; do it off the main thread to avoid an
+        // ANR if a synthesis call is still in flight when the service is torn down.
+        Thread { KokoroEngine.release() }.start()
         if (::tts.isInitialized) { tts.stop(); tts.shutdown() }
         if (::session.isInitialized) session.release()
         TtsController.clear()

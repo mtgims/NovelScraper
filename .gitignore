@@ -1,6 +1,9 @@
 # Scraper runtime data — regenerable caches (data/cache, data/audio), generated
 # EPUBs, covers, and the SQLite db. Bounded by the LRU cache pruner at runtime.
-data/
+# NOTE: anchored to the repo root — an unanchored `data/` also matched the
+# Android app's `.../com/novelscraper/app/data/` source package and silently
+# left it untracked.
+/data/
 backend/data/
 
 # TTS model files (large, downloaded on first use)
