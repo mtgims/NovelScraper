@@ -49,14 +49,35 @@ object KokoroEngine {
     val sampleRate: Int get() = tts?.sampleRate() ?: 24000
     val numSpeakers: Int get() = tts?.numSpeakers() ?: 0
 
+    /** Use most cores for synthesis (lowers RTF → fewer underruns) but leave a
+     *  couple free for the audio consumer / UI / GC. */
+    private fun defaultThreads(): Int =
+        (Runtime.getRuntime().availableProcessors() - 2).coerceIn(4, 6)
+
     /**
      * Lazily build the native engine from the downloaded files. Returns false if the
      * model isn't present or native init throws (caller should fall back to device TTS).
+     * Prefers the XNNPACK CPU backend (faster NEON/quantized kernels), falling back
+     * to the default CPU EP if this onnxruntime build lacks it.
      */
     @Synchronized
-    fun ensureLoaded(context: Context, numThreads: Int = 4): Boolean {
+    fun ensureLoaded(context: Context, numThreads: Int = defaultThreads()): Boolean {
         if (tts != null) return true
         if (!isModelReady(context)) return false
+        val threads = numThreads.coerceIn(1, 8)
+        for (provider in listOf("xnnpack", "cpu")) {
+            val engine = tryBuild(context, threads, provider)
+            if (engine != null) {
+                tts = engine
+                Log.i(TAG, "Kokoro loaded: provider=$provider threads=$threads " +
+                    "sr=$sampleRate speakers=$numSpeakers")
+                return true
+            }
+        }
+        return false
+    }
+
+    private fun tryBuild(context: Context, threads: Int, provider: String): OfflineTts? {
         return try {
             val d = modelDir(context).absolutePath
             val kokoro = OfflineTtsKokoroModelConfig().apply {
@@ -69,18 +90,15 @@ object KokoroEngine {
             }
             val modelConfig = OfflineTtsModelConfig().apply {
                 this.kokoro = kokoro
-                this.numThreads = numThreads.coerceIn(1, 8)
-                provider = "cpu"
+                this.numThreads = threads
+                this.provider = provider
                 debug = false
             }
             // assetManager = null -> paths are treated as filesystem paths.
-            tts = OfflineTts(null, OfflineTtsConfig().apply { this.model = modelConfig })
-            Log.i(TAG, "Kokoro loaded: sr=${sampleRate} speakers=${numSpeakers}")
-            true
+            OfflineTts(null, OfflineTtsConfig().apply { this.model = modelConfig })
         } catch (t: Throwable) {
-            Log.e(TAG, "Kokoro init failed", t)
-            tts = null
-            false
+            Log.w(TAG, "Kokoro build failed (provider=$provider): ${t.message}")
+            null
         }
     }
 

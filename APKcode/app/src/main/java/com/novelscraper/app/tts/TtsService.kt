@@ -236,7 +236,9 @@ class TtsService : LifecycleService() {
         val frameStarts = IntArray(sentences.size) { -1 } // audible start frame per sentence
 
         kokoroJob = lifecycleScope.launch(Dispatchers.Default) {
-            val channel = Channel<Pair<Int, FloatArray>>(capacity = 2)
+            // Generate several sentences ahead so a transient slow synthesis is
+            // absorbed by the queue + the ~3 s AudioTrack buffer (avoids underruns).
+            val channel = Channel<Pair<Int, FloatArray>>(capacity = 6)
             val producer = launch {
                 for (i in start until sentences.size) {
                     if (!isActive) break
@@ -287,9 +289,12 @@ class TtsService : LifecycleService() {
     }
 
     private fun buildAudioTrack(sampleRate: Int): AudioTrack {
+        // ~3 s of buffered float-mono audio so a slow sentence synthesis can't
+        // underrun ("buffer"). 4 bytes/frame (ENCODING_PCM_FLOAT, mono).
         val minBuf = AudioTrack.getMinBufferSize(
             sampleRate, AudioFormat.CHANNEL_OUT_MONO, AudioFormat.ENCODING_PCM_FLOAT,
-        ).coerceAtLeast(sampleRate) // >= ~1s of float mono to ride out synthesis jitter
+        )
+        val bufSize = (sampleRate * 4 * 3).coerceAtLeast(minBuf)
         return AudioTrack(
             AudioAttributes.Builder()
                 .setUsage(AudioAttributes.USAGE_MEDIA)
@@ -300,7 +305,7 @@ class TtsService : LifecycleService() {
                 .setEncoding(AudioFormat.ENCODING_PCM_FLOAT)
                 .setChannelMask(AudioFormat.CHANNEL_OUT_MONO)
                 .build(),
-            minBuf * 2, AudioTrack.MODE_STREAM, AudioManager.AUDIO_SESSION_ID_GENERATE,
+            bufSize, AudioTrack.MODE_STREAM, AudioManager.AUDIO_SESSION_ID_GENERATE,
         )
     }
 
