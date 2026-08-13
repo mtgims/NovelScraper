@@ -53,16 +53,16 @@ fun KokoroVoicePicker(currentId: Int, onPick: (Int) -> Unit) {
             onDismissRequest = { open = false },
             modifier = Modifier.heightIn(max = 420.dp),
         ) {
-            KokoroVoices.byNationality.forEach { (nationality, voices) ->
+            KokoroVoices.groups.forEach { (section, voices) ->
                 Text(
-                    nationality.uppercase(),
+                    "${section.uppercase()} · ${voices.size}",
                     style = Kicker.copy(fontSize = MaterialTheme.typography.labelSmall.fontSize),
                     color = MaterialTheme.colorScheme.primary,
                     modifier = Modifier.padding(start = 16.dp, end = 16.dp, top = 12.dp, bottom = 4.dp),
                 )
                 voices.forEach { v ->
                     DropdownMenuItem(
-                        text = { Text(v.label) },
+                        text = { Text(v.name) },
                         onClick = { onPick(v.id); open = false },
                         trailingIcon = if (v.id == currentId) {
                             { Icon(Icons.Filled.Check, contentDescription = null,

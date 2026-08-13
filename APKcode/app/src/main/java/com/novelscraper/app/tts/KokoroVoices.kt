@@ -35,10 +35,7 @@ object KokoroVoices {
         val nationality: String,
         val gender: String,
         val name: String,
-    ) {
-        /** e.g. "Maple · Female" or "001 · Male". */
-        val label: String get() = "$name · $gender"
-    }
+    )
 
     val all: List<Voice> = CODES.mapIndexed { id, code ->
         val nationality = when (code.firstOrNull()) {
@@ -57,10 +54,22 @@ object KokoroVoices {
         Voice(id, code, nationality, gender, name)
     }
 
-    /** Fixed nationality order (English first), each with its voices in id order. */
-    val byNationality: List<Pair<String, List<Voice>>> =
-        listOf("American English", "British English", "Chinese (Mandarin)", "Other")
-            .mapNotNull { nat -> all.filter { it.nationality == nat }.takeIf { it.isNotEmpty() }?.let { nat to it } }
+    /**
+     * Voices split into sensible sections for the picker, English first. Chinese is
+     * split by gender so each section's numbers run monotonically (otherwise the
+     * combined list jumps 099 -> 009 at the female/male boundary and looks unsorted).
+     * Each pair is (section label, voices in ascending id order).
+     */
+    val groups: List<Pair<String, List<Voice>>> = buildList {
+        fun section(label: String, predicate: (Voice) -> Boolean) {
+            all.filter(predicate).takeIf { it.isNotEmpty() }?.let { add(label to it) }
+        }
+        section("American English") { it.nationality == "American English" }
+        section("British English") { it.nationality == "British English" }
+        section("Chinese · Female") { it.nationality == "Chinese (Mandarin)" && it.gender == "Female" }
+        section("Chinese · Male") { it.nationality == "Chinese (Mandarin)" && it.gender == "Male" }
+        section("Other") { it.nationality == "Other" }
+    }
 
     fun voice(id: Int): Voice? = all.getOrNull(id)
 
