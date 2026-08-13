@@ -24,6 +24,7 @@ import {
 
 import { api, audioChunkUrl } from "@/lib/api";
 import {
+  BROWSER_VOICES,
   browserTtsUsable,
   browserVoices,
   onModelProgress,
@@ -129,7 +130,10 @@ export const TtsPlayer = forwardRef<TtsPlayerHandle, Props>(function TtsPlayer(
 
   const [browserSupported, setBrowserSupported] = useState(false);
   const [engine, setEngine] = useState<Engine | null>(null);
-  const [browserVoiceList, setBrowserVoiceList] = useState<string[]>([]);
+  // Seed with the full static list so the on-device picker shows every voice
+  // (grouped by language) immediately — before the slow model load resolves and
+  // even when the server engine is unavailable. Refined once the model reports in.
+  const [browserVoiceList, setBrowserVoiceList] = useState<string[]>(BROWSER_VOICES);
   // Native OS TTS (Web Speech API) — a screen-on engine using the device's own
   // installed voices; no PC/GPU. See lib/os-tts.ts for the trade-offs.
   const [osSupported, setOsSupported] = useState(false);
