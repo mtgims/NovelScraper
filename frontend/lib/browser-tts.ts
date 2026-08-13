@@ -116,6 +116,30 @@ async function pickDtype(): Promise<Dtype> {
   return isMobile() ? "q8" : "fp32"; // unknown vendor (redacted): desktop → fp32
 }
 
+function isFirefox(): boolean {
+  return typeof navigator !== "undefined" && /firefox/i.test(navigator.userAgent || "");
+}
+
+// Set to "wasm" after a WebGPU synthesis attempt fails, so we stop retrying the GPU.
+let deviceOverride: "wasm" | null = null;
+
+/**
+ * "webgpu" where it can actually run the model, else "wasm" (CPU). Firefox's
+ * onnxruntime-web WebGPU EP produces silent/garbage audio for Kokoro, so we go
+ * straight to CPU there instead of downloading the big fp32 model only to fail;
+ * Chromium (Brave/Chrome/Edge) runs it on the GPU. [deviceOverride] pins CPU
+ * after a runtime WebGPU failure on any other browser.
+ */
+function chosenDevice(): "webgpu" | "wasm" {
+  if (deviceOverride) return deviceOverride;
+  return isFirefox() ? "wasm" : "webgpu";
+}
+
+/** True audio backend in use, for a UI note ("GPU" vs "CPU"). */
+export function browserTtsBackend(): "gpu" | "cpu" {
+  return chosenDevice() === "webgpu" ? "gpu" : "cpu";
+}
+
 let enginePromise: Promise<KokoroTTS> | null = null;
 
 // Aggregate download progress across the model's files (0..100).
@@ -147,10 +171,13 @@ export function loadBrowserTts(): Promise<KokoroTTS> {
   if (!enginePromise) {
     enginePromise = (async () => {
       const { KokoroTTS } = await import("kokoro-js");
-      const dtype = await pickDtype();
+      const device = chosenDevice();
+      // CPU (wasm) runs int8 well and downloads far less; the GPU path wants fp32
+      // (no shader-f16) or fp16.
+      const dtype: Dtype = device === "wasm" ? "q8" : await pickDtype();
       const tts = await KokoroTTS.from_pretrained(MODEL_ID, {
         dtype,
-        device: "webgpu",
+        device,
         progress_callback: (p: unknown) => {
           const e = p as { file?: string; loaded?: number; total?: number };
           if (e && e.file && typeof e.total === "number") {
@@ -202,19 +229,50 @@ export async function browserVoices(): Promise<string[]> {
 // on it. Chaining keeps them strictly one-at-a-time.
 let synthChain: Promise<unknown> = Promise.resolve();
 
-/** Synthesize `text` to a WAV Blob on the user's GPU. */
+/** True when the generated buffer is empty or effectively silent — some WebGPU
+ *  backends (notably Firefox) return that instead of throwing. */
+function isSilent(audio: unknown): boolean {
+  const data = (audio as { audio?: Float32Array }).audio;
+  if (!data || data.length === 0) return true;
+  let max = 0;
+  const step = Math.max(1, Math.floor(data.length / 2000));
+  for (let i = 0; i < data.length; i += step) {
+    const v = Math.abs(data[i]);
+    if (v > max) max = v;
+  }
+  return max < 1e-4;
+}
+
+async function synthOnce(text: string, voice: string, speed: number): Promise<Blob> {
+  const tts = await loadBrowserTts();
+  const audio = await tts.generate(text, {
+    voice: voice as NonNullable<Parameters<KokoroTTS["generate"]>[1]>["voice"],
+    speed,
+  });
+  if (isSilent(audio)) throw new Error(`empty audio from ${chosenDevice()} backend`);
+  return audio.toBlob();
+}
+
+/** Synthesize `text` to a WAV Blob on the user's GPU — falling back to CPU (wasm)
+ *  if the WebGPU path throws or returns silence (e.g. Firefox's WebGPU EP). */
 export function synthesizeBlob(
   text: string,
   voice: string,
   speed: number
 ): Promise<Blob> {
   const run = synthChain.then(async () => {
-    const tts = await loadBrowserTts();
-    const audio = await tts.generate(text, {
-      voice: voice as NonNullable<Parameters<KokoroTTS["generate"]>[1]>["voice"],
-      speed,
-    });
-    return audio.toBlob();
+    try {
+      return await synthOnce(text, voice, speed);
+    } catch (e) {
+      if (chosenDevice() === "webgpu") {
+        // GPU synthesis failed/was silent — pin CPU, rebuild, and retry so
+        // playback works instead of silently dying back to idle.
+        deviceOverride = "wasm";
+        enginePromise = null;
+        return await synthOnce(text, voice, speed);
+      }
+      throw e;
+    }
   });
   synthChain = run.catch(() => {});
   return run;
