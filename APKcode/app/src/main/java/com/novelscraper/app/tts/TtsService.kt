@@ -333,7 +333,7 @@ class TtsService : LifecycleService() {
     }
 
     private fun onChapterFinished() {
-        if (hasNext) skip(+1) else stopPlayback()
+        if (hasNext && ReaderPrefs.ttsAutoNext.value) skip(+1) else stopPlayback()
     }
 
     private fun stopPlayback() {

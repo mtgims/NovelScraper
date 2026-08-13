@@ -1,6 +1,7 @@
 package com.novelscraper.app.ui.screen
 
 import androidx.activity.compose.BackHandler
+import androidx.compose.foundation.ScrollState
 import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -10,10 +11,10 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.widthIn
-import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material.icons.automirrored.filled.List
 import androidx.compose.material.icons.filled.ChevronLeft
 import androidx.compose.material.icons.filled.ChevronRight
 import androidx.compose.material3.CircularProgressIndicator
@@ -51,6 +52,7 @@ import androidx.lifecycle.viewmodel.compose.viewModel
 import com.novelscraper.app.data.ReaderPrefs
 import com.novelscraper.app.data.Sentences
 import com.novelscraper.app.tts.TtsController
+import com.novelscraper.app.ui.components.ChaptersSheet
 import com.novelscraper.app.ui.components.ReaderTtsBar
 import com.novelscraper.app.ui.theme.Serif
 import com.novelscraper.app.ui.ReaderState
@@ -65,10 +67,30 @@ fun ReaderScreen(bookId: Int, position: Int, onBack: () -> Unit) {
     val vm: ReaderViewModel = viewModel()
     var pos by rememberSaveable { mutableIntStateOf(position) }
     LaunchedEffect(pos) { vm.load(bookId, pos) }
+    LaunchedEffect(bookId) { vm.ensureMeta(bookId) }
 
     val state by vm.state.collectAsState()
+    val meta by vm.meta.collectAsState()
     val fontScale by ReaderPrefs.fontScale.collectAsState()
-    val data = state as? ReaderState.Data
+    // Only treat the loaded chapter as current when it matches `pos` — otherwise a
+    // stale (previous) chapter renders for a frame during navigation.
+    val data = (state as? ReaderState.Data)?.takeIf { it.chapter.position == pos }
+
+    var showChapters by remember { mutableStateOf(false) }
+
+    // Scroll + sentence model hoisted here so the Listen pill can start narration
+    // from the sentence currently on screen. Fresh scroll state per chapter.
+    val scroll = remember(bookId, pos) { ScrollState(0) }
+    val content = data?.chapter?.content
+    val plain = remember(content) { content?.let { Sentences.plain(it) } ?: "" }
+    val ranges = remember(plain) { Sentences.ranges(plain) }
+    fun currentStartIndex(): Int {
+        if (ranges.isEmpty() || scroll.maxValue <= 0) return 0
+        val frac = scroll.value.toFloat() / scroll.maxValue
+        val off = (frac * plain.length).roundToInt()
+        val i = ranges.indexOfFirst { off <= it.last }
+        return if (i >= 0) i else 0
+    }
 
     Scaffold(
         topBar = {
@@ -80,6 +102,9 @@ fun ReaderScreen(bookId: Int, position: Int, onBack: () -> Unit) {
                     }
                 },
                 actions = {
+                    IconButton(onClick = { showChapters = true }) {
+                        Icon(Icons.AutoMirrored.Filled.List, contentDescription = "Chapters")
+                    }
                     TextButton(onClick = { ReaderPrefs.decreaseFont() }) { Text("A-") }
                     TextButton(onClick = { ReaderPrefs.increaseFont() }) { Text("A+") }
                 },
@@ -104,23 +129,38 @@ fun ReaderScreen(bookId: Int, position: Int, onBack: () -> Unit) {
         },
     ) { inner ->
         Box(Modifier.fillMaxSize().padding(inner)) {
-            when (val s = state) {
-                is ReaderState.Loading ->
-                    CircularProgressIndicator(Modifier.align(Alignment.Center))
-                is ReaderState.Error ->
+            val s = state
+            when {
+                s is ReaderState.Error ->
                     Text(s.message, Modifier.align(Alignment.Center).padding(24.dp),
                         color = MaterialTheme.colorScheme.error)
-                is ReaderState.Data ->
-                    ChapterBody(bookId, pos, s, fontScale, vm)
+                data == null ->
+                    CircularProgressIndicator(Modifier.align(Alignment.Center))
+                else ->
+                    ChapterBody(bookId, pos, data, fontScale, vm, scroll, plain, ranges)
             }
             ReaderTtsBar(
                 bookId = bookId,
                 position = pos,
-                bookTitle = "",
+                bookTitle = meta?.book?.title ?: "",
+                startIndex = { currentStartIndex() },
                 modifier = Modifier.align(Alignment.BottomCenter)
                     .padding(horizontal = 16.dp, vertical = 10.dp),
             )
         }
+    }
+
+    val m = meta
+    if (showChapters && m != null) {
+        ChaptersSheet(
+            title = m.book.title,
+            chapters = m.chapters,
+            readPositions = m.readPositions,
+            currentPos = pos,
+            onJump = { p -> pos = p; showChapters = false },
+            onToggleRead = { p, read -> vm.setChapterRead(bookId, p, read) },
+            onDismiss = { showChapters = false },
+        )
     }
 }
 
@@ -131,15 +171,15 @@ private fun ChapterBody(
     data: ReaderState.Data,
     fontScale: Float,
     vm: ReaderViewModel,
+    scroll: ScrollState,
+    plain: String,
+    ranges: List<IntRange>,
 ) {
     val ctx = LocalContext.current
-    val scroll = rememberScrollState()
     val tts by TtsController.state.collectAsState()
     val activeHere = tts.active && tts.bookId == bookId && tts.position == pos
     val curIdx = if (activeHere) tts.sentenceIndex else -1
 
-    val plain = remember(data.chapter.content) { Sentences.plain(data.chapter.content) }
-    val ranges = remember(plain) { Sentences.ranges(plain) }
     val highlight = MaterialTheme.colorScheme.primary.copy(alpha = 0.22f)
     val annotated = remember(plain, curIdx, highlight) {
         buildAnnotatedString {
@@ -152,21 +192,26 @@ private fun ChapterBody(
     val layoutRef = rememberUpdatedState(layout)
     val rangesRef = rememberUpdatedState(ranges)
 
-    // Restore saved in-chapter scroll once content has laid out.
+    // Restore the saved in-chapter scroll once content has laid out. `savedFrac` is
+    // captured before the persist effect can overwrite it; `restored` gates writes
+    // so we don't clobber the saved value with 0 during the pre-layout window.
+    val savedFrac = remember(bookId, pos) { ReaderPrefs.getScroll(bookId, pos) }
+    var restored by remember(bookId, pos) { mutableStateOf(false) }
     LaunchedEffect(bookId, pos) {
         snapshotFlow { scroll.maxValue }.first { it > 0 }
-        val f = ReaderPrefs.getScroll(bookId, pos)
-        if (f > 0f) runCatching { scroll.scrollTo((f * scroll.maxValue).roundToInt()) }
+        runCatching { scroll.scrollTo((savedFrac * scroll.maxValue).roundToInt()) }
+        restored = true
     }
-    // Persist scroll fraction locally as the reader scrolls.
     LaunchedEffect(bookId, pos) {
         snapshotFlow { if (scroll.maxValue > 0) scroll.value.toFloat() / scroll.maxValue else 0f }
-            .collect { f -> ReaderPrefs.setScroll(bookId, pos, f) }
+            .collect { f -> if (restored) ReaderPrefs.setScroll(bookId, pos, f) }
     }
     val fracNow = rememberUpdatedState(
         if (scroll.maxValue > 0) scroll.value.toFloat() / scroll.maxValue else 0f
     )
-    DisposableEffect(bookId, pos) { onDispose { vm.saveScroll(bookId, pos, fracNow.value) } }
+    DisposableEffect(bookId, pos) {
+        onDispose { if (restored) vm.saveScroll(bookId, pos, fracNow.value) }
+    }
 
     // Keep the spoken sentence in view while narrating (proportional to its
     // position in the text — approximate but avoids fighting layout coordinates).

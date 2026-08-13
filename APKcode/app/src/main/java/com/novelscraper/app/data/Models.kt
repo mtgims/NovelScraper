@@ -137,6 +137,11 @@ data class ProgressUpdate(
     val last_position: Int? = null,
     val scroll: Float? = null,
     val mark_read: Int? = null,
+    val unmark_read: Int? = null,
+    val mark_positions: List<Int>? = null,
+    val unmark_positions: List<Int>? = null,
+    val mark_all: Boolean? = null,
+    val reset: Boolean? = null,
 )
 
 @Serializable

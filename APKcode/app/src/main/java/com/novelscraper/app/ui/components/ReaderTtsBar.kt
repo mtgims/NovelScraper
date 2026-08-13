@@ -33,6 +33,7 @@ import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Slider
 import androidx.compose.material3.Surface
+import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
@@ -57,9 +58,16 @@ private fun fmt(sec: Int): String {
     return (if (h > 0) "$h:" else "") + "$m:" + ss.toString().padStart(2, '0')
 }
 
-/** The reader's floating "Listen" pill — mirrors the web TTS player. */
+/** The reader's floating "Listen" pill — mirrors the web TTS player.
+ *  [startIndex] returns the sentence to begin narration from (the one on screen). */
 @Composable
-fun ReaderTtsBar(bookId: Int, position: Int, bookTitle: String, modifier: Modifier = Modifier) {
+fun ReaderTtsBar(
+    bookId: Int,
+    position: Int,
+    bookTitle: String,
+    startIndex: () -> Int = { 0 },
+    modifier: Modifier = Modifier,
+) {
     val ctx = LocalContext.current
     val s by TtsController.state.collectAsState()
     val activeHere = s.active && s.bookId == bookId && s.position == position
@@ -67,13 +75,13 @@ fun ReaderTtsBar(bookId: Int, position: Int, bookTitle: String, modifier: Modifi
 
     val notifPerm = rememberLauncherForActivityResult(
         ActivityResultContracts.RequestPermission()
-    ) { TtsController.play(ctx, bookId, position, bookTitle) }
+    ) { TtsController.play(ctx, bookId, position, bookTitle, startIndex()) }
 
     fun startListen() {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU &&
             ctx.checkSelfPermission(Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED
         ) notifPerm.launch(Manifest.permission.POST_NOTIFICATIONS)
-        else TtsController.play(ctx, bookId, position, bookTitle)
+        else TtsController.play(ctx, bookId, position, bookTitle, startIndex())
     }
 
     Box(modifier, contentAlignment = Alignment.Center) {
@@ -177,11 +185,17 @@ private fun SeekSlider(count: Int, index: Int, onSeek: (Int) -> Unit) {
     )
 }
 
+// This model (kokoro-int8-multi-lang-v1_1) ships 103 speaker embeddings.
+private const val KOKORO_SPEAKER_COUNT = 103
+
 @Composable
 private fun SettingsPanel() {
     val ctx = LocalContext.current
     val rate by ReaderPrefs.ttsRate.collectAsState()
     val voiceName by ReaderPrefs.ttsVoice.collectAsState()
+    val engine by ReaderPrefs.ttsEngine.collectAsState()
+    val autoNext by ReaderPrefs.ttsAutoNext.collectAsState()
+    val kokoroSpeaker by ReaderPrefs.kokoroSpeaker.collectAsState()
 
     Column(Modifier.fillMaxWidth().padding(horizontal = 6.dp, vertical = 4.dp)) {
         Text("Speed · ${"%.1f".format(rate)}×", style = MaterialTheme.typography.labelMedium,
@@ -193,9 +207,39 @@ private fun SettingsPanel() {
             valueRange = 0.5f..2.5f,
             modifier = Modifier.fillMaxWidth(),
         )
-        VoicePicker(current = voiceName) { name ->
-            ReaderPrefs.setTtsVoice(name)
-            TtsController.applySettings(ctx)
+
+        if (engine == ReaderPrefs.ENGINE_KOKORO) {
+            // Kokoro voices are speaker ids; names aren't published for this model,
+            // so step through them numerically and audition by ear.
+            Row(
+                Modifier.fillMaxWidth().padding(vertical = 4.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Text("Voice · #$kokoroSpeaker", style = MaterialTheme.typography.bodyMedium,
+                    modifier = Modifier.weight(1f))
+                IconButton(onClick = {
+                    ReaderPrefs.setKokoroSpeaker((kokoroSpeaker - 1).coerceAtLeast(0))
+                    TtsController.applySettings(ctx)
+                }) { Text("◀") }
+                IconButton(onClick = {
+                    ReaderPrefs.setKokoroSpeaker((kokoroSpeaker + 1).coerceAtMost(KOKORO_SPEAKER_COUNT - 1))
+                    TtsController.applySettings(ctx)
+                }) { Text("▶") }
+            }
+        } else {
+            VoicePicker(current = voiceName) { name ->
+                ReaderPrefs.setTtsVoice(name)
+                TtsController.applySettings(ctx)
+            }
+        }
+
+        Row(
+            Modifier.fillMaxWidth().padding(top = 2.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Text("Auto next chapter", style = MaterialTheme.typography.bodyMedium,
+                modifier = Modifier.weight(1f))
+            Switch(checked = autoNext, onCheckedChange = { ReaderPrefs.setTtsAutoNext(it) })
         }
     }
 }

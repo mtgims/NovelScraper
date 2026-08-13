@@ -6,6 +6,7 @@ import com.novelscraper.app.data.BookCollectionsUpdate
 import com.novelscraper.app.data.BookRead
 import com.novelscraper.app.data.ChapterListItem
 import com.novelscraper.app.data.CollectionRead
+import com.novelscraper.app.data.ProgressUpdate
 import com.novelscraper.app.data.ReadingProgressRead
 import com.novelscraper.app.net.Net
 import kotlinx.coroutines.async
@@ -85,6 +86,39 @@ class BookViewModel : ViewModel() {
             } catch (e: Exception) {
                 _state.value = BookState.Error("Couldn't load this book.")
             }
+        }
+    }
+
+    // --- reading progress edits ---------------------------------------
+    // All fold the returned ReadingProgressRead back into state so the TOC
+    // check marks + header progress update immediately.
+
+    fun setChapterRead(bookId: Int, position: Int, read: Boolean) = applyProgress(
+        bookId,
+        if (read) ProgressUpdate(mark_read = position) else ProgressUpdate(unmark_read = position),
+    )
+
+    fun setPositionsRead(bookId: Int, positions: List<Int>, read: Boolean) {
+        if (positions.isEmpty()) return
+        applyProgress(
+            bookId,
+            if (read) ProgressUpdate(mark_positions = positions)
+            else ProgressUpdate(unmark_positions = positions),
+        )
+    }
+
+    fun markAllRead(bookId: Int) = applyProgress(bookId, ProgressUpdate(mark_all = true))
+    fun resetProgress(bookId: Int) = applyProgress(bookId, ProgressUpdate(reset = true))
+
+    private fun applyProgress(bookId: Int, update: ProgressUpdate) {
+        viewModelScope.launch {
+            try {
+                val p = Net.api.putProgress(bookId, update)
+                val now = _state.value
+                if (now is BookState.Data && now.book.id == bookId) {
+                    _state.value = now.copy(progress = p)
+                }
+            } catch (_: Exception) { /* best-effort */ }
         }
     }
 

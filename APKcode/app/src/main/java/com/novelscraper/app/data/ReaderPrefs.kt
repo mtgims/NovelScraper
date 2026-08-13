@@ -40,6 +40,10 @@ object ReaderPrefs {
     private val _kokoroSpeaker = MutableStateFlow(0)
     val kokoroSpeaker: StateFlow<Int> = _kokoroSpeaker.asStateFlow()
 
+    // Roll narration into the next chapter automatically when one finishes.
+    private val _ttsAutoNext = MutableStateFlow(true)
+    val ttsAutoNext: StateFlow<Boolean> = _ttsAutoNext.asStateFlow()
+
     fun init(context: Context) {
         prefs = context.applicationContext.getSharedPreferences("reader", Context.MODE_PRIVATE)
         _fontScale.value = prefs.getFloat("font_scale", 1.0f)
@@ -47,6 +51,12 @@ object ReaderPrefs {
         _ttsVoice.value = prefs.getString("tts_voice", "") ?: ""
         _ttsEngine.value = prefs.getString("tts_engine", ENGINE_DEVICE) ?: ENGINE_DEVICE
         _kokoroSpeaker.value = prefs.getInt("kokoro_speaker", 0)
+        _ttsAutoNext.value = prefs.getBoolean("tts_auto_next", true)
+    }
+
+    fun setTtsAutoNext(on: Boolean) {
+        _ttsAutoNext.value = on
+        prefs.edit().putBoolean("tts_auto_next", on).apply()
     }
 
     fun setTtsEngine(engine: String) {
