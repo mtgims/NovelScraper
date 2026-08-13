@@ -32,6 +32,11 @@ object KokoroDownloader {
         val tmpTar = File(context.cacheDir, "kokoro.tar.bz2")
         val tmpDir = File(context.filesDir, "${KokoroEngine.MODEL_DIR_NAME}.tmp")
         try {
+            // cacheDir/filesDir can be absent on a fresh install; opening a stream
+            // into a missing dir fails with ENOENT.
+            context.cacheDir.mkdirs()
+            context.filesDir.mkdirs()
+            tmpTar.parentFile?.mkdirs()
             tmpDir.deleteRecursively()
 
             // 1. download the archive.
