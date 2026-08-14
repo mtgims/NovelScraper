@@ -6,5 +6,16 @@
 
 {$DOMAIN}, www.{$DOMAIN} {
 	encode zstd gzip
-	reverse_proxy frontend:3000
+
+	# The scrape-relay WebSocket must reach the backend directly: Next.js
+	# rewrites (how the frontend proxies /api/*) don't forward WebSocket
+	# upgrades. Caddy's reverse_proxy handles the upgrade natively.
+	@relay path /api/relay
+	handle @relay {
+		reverse_proxy backend:8000
+	}
+
+	handle {
+		reverse_proxy frontend:3000
+	}
 }
