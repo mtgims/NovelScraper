@@ -5,10 +5,13 @@ import androidx.lifecycle.viewModelScope
 import com.novelscraper.app.data.JobCreate
 import com.novelscraper.app.data.JobRead
 import com.novelscraper.app.net.Net
+import com.novelscraper.app.net.ScrapeRelay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withTimeoutOrNull
 import org.json.JSONObject
 import retrofit2.HttpException
 
@@ -27,6 +30,13 @@ class NewScrapeViewModel : ViewModel() {
         if (_ui.value is ScrapeUi.Submitting || url.isBlank()) return
         _ui.value = ScrapeUi.Submitting
         viewModelScope.launch {
+            // Give the relay a moment to connect so the scrape's fetches route
+            // through this phone's IP from the start (best-effort; falls back to a
+            // server-side fetch if it isn't up in time).
+            ScrapeRelay.start()
+            if (!ScrapeRelay.connected.value) {
+                withTimeoutOrNull(5000) { ScrapeRelay.connected.first { it } }
+            }
             _ui.value = try {
                 ScrapeUi.Done(Net.api.createJob(JobCreate(url.trim(), cpv, delay, concurrency)))
             } catch (e: HttpException) {

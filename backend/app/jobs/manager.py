@@ -128,6 +128,9 @@ class JobManager:
             cover_dir=str(self.settings.cover_dir),
             allow_private_hosts=self.settings.allow_private_hosts,
             chapters_per_volume=job.chapters_per_volume,
+            # Route fetches through this user's phone when it has a relay socket
+            # connected; falls back to a server-side fetch otherwise.
+            relay_user_id=job.user_id,
         )
         if job.delay is not None:
             kwargs["delay"] = job.delay

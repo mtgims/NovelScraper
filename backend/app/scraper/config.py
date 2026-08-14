@@ -70,6 +70,12 @@ class ScraperConfig:
     # Packaging
     chapters_per_volume: int = 100
 
+    # User-IP relay: when set to a user id AND that user's phone holds a relay
+    # WebSocket, the fetcher routes each HTTP hop through the phone (its IP) so
+    # Cloudflare datacenter-ASN blocks don't apply. Falls back to a server fetch
+    # when no relay is connected. None = always fetch server-side (old behaviour).
+    relay_user_id: Optional[int] = None
+
     def __post_init__(self) -> None:
         self.validate()
 

@@ -14,7 +14,7 @@ from contextlib import asynccontextmanager
 from fastapi import Depends, FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
-from .api import auth, books, collections, config, imports, jobs, sites, stats, tts
+from .api import auth, books, collections, config, imports, jobs, relay, sites, stats, tts
 from .api.deps import get_current_user
 from .db import engine, init_db
 from .jobs.manager import JobManager
@@ -74,6 +74,10 @@ app.include_router(config.router, prefix="/api/settings", tags=["settings"], dep
 app.include_router(sites.router, prefix="/api/sites", tags=["sites"], dependencies=authed)
 app.include_router(stats.router, prefix="/api/stats", tags=["stats"], dependencies=authed)
 app.include_router(tts.router, prefix="/api/tts", tags=["tts"], dependencies=authed)
+
+# The relay WebSocket authenticates itself from the session cookie (a router-level
+# HTTP dependency can't gate a WebSocket), so it's mounted without `authed`.
+app.add_api_websocket_route("/api/relay", relay.relay_ws)
 
 
 @app.get("/api/health")

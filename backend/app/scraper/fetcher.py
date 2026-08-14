@@ -22,6 +22,7 @@ from curl_cffi import CurlError
 from curl_cffi.requests import AsyncSession
 from curl_cffi.requests.errors import RequestsError
 
+from ..relay import RelayError, hub
 from .config import ScraperConfig
 from .errors import FetchError, RetryableFetchError
 from .pacing import (
@@ -76,6 +77,7 @@ class AsyncFetcher:
             budget_reserve=config.max_concurrency)
         self._robots: Optional[RobotsChecker] = None
         self._cache_dir = Path(config.cache_dir) if config.cache_dir else None
+        self._relay_uid = config.relay_user_id
 
     async def __aenter__(self) -> "AsyncFetcher":
         self._session = AsyncSession(
@@ -157,11 +159,11 @@ class AsyncFetcher:
         async with self._semaphore:
             await self._limiter.acquire()
             try:
-                resp = await self._session.get(url, allow_redirects=False)
+                resp = await self._do_get(url)
                 if resp.status_code != 200:
                     return None  # missing/redirected robots.txt -> fail open
                 return self._cap_and_decode(resp, False)
-            except (FetchError, *NETWORK_ERRORS):
+            except (FetchError, RetryableFetchError, *NETWORK_ERRORS):
                 return None
 
     def _cache_path(self, url: str) -> Optional[Path]:
@@ -169,6 +171,39 @@ class AsyncFetcher:
             return None
         digest = hashlib.sha256(url.encode("utf-8")).hexdigest()
         return self._cache_dir / f"{digest}.html"
+
+    # --- transport (server session, or the user's phone relay) -----------
+
+    def _relaying(self) -> bool:
+        return self._relay_uid is not None and hub.is_connected(self._relay_uid)
+
+    def _relay_headers(self) -> dict:
+        """Headers the phone should send with the relayed request. The phone adds
+        its own browser User-Agent; we pass language + any per-site cookies."""
+        h = {"Accept-Language": "en-US,en;q=0.9"}
+        if self._cookies:
+            h["Cookie"] = "; ".join(f"{k}={v}" for k, v in self._cookies.items())
+        return h
+
+    async def _do_get(self, url: str):
+        """One raw GET (no redirect following — the caller handles redirects). Via
+        the phone relay when connected, else the server's impersonating session."""
+        if self._relaying():
+            try:
+                return await hub.fetch(self._relay_uid, url, "GET", self._relay_headers(), None)
+            except RelayError as e:
+                # Transient (phone blip/timeout/disconnect) -> retry; on a real
+                # disconnect the next attempt sees no relay and fetches server-side.
+                raise RetryableFetchError(f"relay error: {e}", url=url)
+        return await self._session.get(url, allow_redirects=False)
+
+    async def _do_post(self, url: str, data):
+        if self._relaying():
+            try:
+                return await hub.fetch(self._relay_uid, url, "POST", self._relay_headers(), data)
+            except RelayError as e:
+                raise RetryableFetchError(f"relay error: {e}", url=url)
+        return await self._session.post(url, data=data, allow_redirects=False)
 
     async def _request(self, url: str, binary: bool = False, data=None):
         """One logical fetch, following redirects manually so every hop is
@@ -182,9 +217,9 @@ class AsyncFetcher:
         current = url
         for _ in range(MAX_REDIRECTS + 1):
             if data is not None:
-                resp = await self._session.post(current, data=data, allow_redirects=False)
+                resp = await self._do_post(current, data)
             else:
-                resp = await self._session.get(current, allow_redirects=False)
+                resp = await self._do_get(current)
             status = resp.status_code
             if status in REDIRECT_STATUS:
                 location = resp.headers.get("Location")
