@@ -9,11 +9,14 @@ import com.novelscraper.app.data.CollectionRead
 import com.novelscraper.app.data.ProgressUpdate
 import com.novelscraper.app.data.ReadingProgressRead
 import com.novelscraper.app.net.Net
+import com.novelscraper.app.net.ScrapeRelay
 import kotlinx.coroutines.async
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
+import org.json.JSONObject
+import retrofit2.HttpException
 
 sealed interface BookState {
     data object Loading : BookState
@@ -32,6 +35,47 @@ class BookViewModel : ViewModel() {
 
     private val _collections = MutableStateFlow<List<CollectionRead>>(emptyList())
     val collections: StateFlow<List<CollectionRead>> = _collections.asStateFlow()
+
+    // One-shot user message for delete/update actions (shown as a toast, then cleared).
+    private val _action = MutableStateFlow<String?>(null)
+    val action: StateFlow<String?> = _action.asStateFlow()
+    fun clearAction() { _action.value = null }
+
+    /** Delete this novel, then invoke [onDeleted] (navigate back) on success. */
+    fun deleteBook(bookId: Int, onDeleted: () -> Unit) {
+        viewModelScope.launch {
+            try {
+                Net.api.deleteBook(bookId)
+                onDeleted()
+            } catch (e: Exception) {
+                _action.value = "Couldn't delete this novel."
+            }
+        }
+    }
+
+    /** Kick off an incremental re-scrape that pulls in new chapters (continuing
+     *  the last volume). Routes through the phone relay for gated sites. */
+    fun checkForNewChapters(bookId: Int) {
+        viewModelScope.launch {
+            ScrapeRelay.start()  // best-effort: gated updates should use the phone IP
+            _action.value = try {
+                Net.api.updateBook(bookId)
+                "Checking for new chapters… they'll be added to the last volume."
+            } catch (e: HttpException) {
+                detailOf(e) ?: when (e.code()) {
+                    409 -> "An update is already running."
+                    400 -> "This novel has no source to update from (imported?)."
+                    else -> "Couldn't start the update (${e.code()})."
+                }
+            } catch (e: Exception) {
+                "Can't reach the server."
+            }
+        }
+    }
+
+    private fun detailOf(e: HttpException): String? = try {
+        e.response()?.errorBody()?.string()?.let { JSONObject(it).optString("detail").ifBlank { null } }
+    } catch (_: Exception) { null }
 
     private var loadedId: Int? = null
 

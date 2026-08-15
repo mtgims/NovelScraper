@@ -1,5 +1,6 @@
 package com.novelscraper.app.ui.screen
 
+import android.widget.Toast
 import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
@@ -23,12 +24,15 @@ import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.DoneAll
+import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.AssistChip
 import androidx.compose.material3.Button
 import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.DropdownMenu
+import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.FilterChip
 import androidx.compose.material3.FilterChipDefaults
@@ -82,6 +86,16 @@ fun BookScreen(
     LaunchedEffect(bookId) { vm.ensureLoaded(bookId); vm.refreshProgress(bookId) }
     val state by vm.state.collectAsState()
     val collections by vm.collections.collectAsState()
+    val ctx = LocalContext.current
+
+    var menuOpen by remember { mutableStateOf(false) }
+    var showDelete by remember { mutableStateOf(false) }
+
+    // Surface delete/update results as a toast.
+    val action by vm.action.collectAsState()
+    LaunchedEffect(action) {
+        action?.let { Toast.makeText(ctx, it, Toast.LENGTH_LONG).show(); vm.clearAction() }
+    }
 
     Scaffold(
         topBar = {
@@ -95,6 +109,21 @@ fun BookScreen(
                         Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back")
                     }
                 },
+                actions = {
+                    IconButton(onClick = { menuOpen = true }) {
+                        Icon(Icons.Filled.MoreVert, contentDescription = "More")
+                    }
+                    DropdownMenu(expanded = menuOpen, onDismissRequest = { menuOpen = false }) {
+                        DropdownMenuItem(
+                            text = { Text("Check for new chapters") },
+                            onClick = { menuOpen = false; vm.checkForNewChapters(bookId) },
+                        )
+                        DropdownMenuItem(
+                            text = { Text("Delete novel") },
+                            onClick = { menuOpen = false; showDelete = true },
+                        )
+                    }
+                },
             )
         },
     ) { inner ->
@@ -106,6 +135,22 @@ fun BookScreen(
                 is BookState.Data -> BookContent(s, collections, vm, bookId, onOpenReader)
             }
         }
+    }
+
+    if (showDelete) {
+        val title = (state as? BookState.Data)?.book?.title ?: "this novel"
+        AlertDialog(
+            onDismissRequest = { showDelete = false },
+            title = { Text("Delete novel?") },
+            text = { Text("Remove \"$title\" and all its chapters from your library? " +
+                "Your reading position is archived, so re-adding it later restores where you were.") },
+            confirmButton = {
+                TextButton(onClick = { showDelete = false; vm.deleteBook(bookId, onBack) }) {
+                    Text("Delete")
+                }
+            },
+            dismissButton = { TextButton(onClick = { showDelete = false }) { Text("Cancel") } },
+        )
     }
 }
 

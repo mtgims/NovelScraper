@@ -4,10 +4,12 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.novelscraper.app.data.StatsRead
 import com.novelscraper.app.net.Net
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 
 sealed interface StatsUi {
     data object Loading : StatsUi
@@ -29,6 +31,15 @@ class StatsViewModel : ViewModel() {
             } catch (e: Exception) {
                 StatsUi.Error("Couldn't load statistics.")
             }
+        }
+    }
+
+    /** Fetch the reading-progress export ("csv" | "json") as bytes; null on error. */
+    suspend fun export(format: String): ByteArray? = withContext(Dispatchers.IO) {
+        try {
+            Net.api.exportProgress(format).use { it.bytes() }
+        } catch (e: Exception) {
+            null
         }
     }
 }

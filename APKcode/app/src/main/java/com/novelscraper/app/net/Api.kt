@@ -18,6 +18,7 @@ import com.novelscraper.app.data.ReadingProgressRead
 import com.novelscraper.app.data.RegisterRequest
 import com.novelscraper.app.data.UserRead
 import okhttp3.MultipartBody
+import okhttp3.ResponseBody
 import retrofit2.http.Body
 import retrofit2.http.DELETE
 import retrofit2.http.GET
@@ -27,6 +28,8 @@ import retrofit2.http.POST
 import retrofit2.http.PUT
 import retrofit2.http.Part
 import retrofit2.http.Path
+import retrofit2.http.Query
+import retrofit2.http.Streaming
 
 /** Typed view of the NovelScraper REST API (backend app/api routers). */
 interface Api {
@@ -85,8 +88,21 @@ interface Api {
     @GET("api/stats")
     suspend fun stats(): StatsRead
 
+    // Reading-progress export (per-novel; format = "csv" | "json").
+    @Streaming
+    @GET("api/stats/export")
+    suspend fun exportProgress(@Query("format") format: String): ResponseBody
+
     @GET("api/books/{id}")
     suspend fun book(@Path("id") id: Int): BookRead
+
+    // Re-scrape from the book's source URL to pull in new chapters (incremental:
+    // continues the last volume). 400 if imported/no source; 409 if already running.
+    @POST("api/books/{id}/update")
+    suspend fun updateBook(@Path("id") id: Int): JobRead
+
+    @DELETE("api/books/{id}")
+    suspend fun deleteBook(@Path("id") id: Int)
 
     @GET("api/books/{id}/chapters")
     suspend fun chapters(@Path("id") id: Int): List<ChapterListItem>

@@ -1,5 +1,8 @@
 package com.novelscraper.app.ui.screen
 
+import android.widget.Toast
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -11,17 +14,25 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.collectAsState
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -30,30 +41,82 @@ import com.novelscraper.app.data.StatsRead
 import com.novelscraper.app.ui.StatsUi
 import com.novelscraper.app.ui.StatsViewModel
 import com.novelscraper.app.ui.theme.Mono
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
+import java.time.LocalDate
 
 @Composable
 fun StatsScreen() {
     val vm: StatsViewModel = viewModel()
     val ui by vm.ui.collectAsState()
+    val ctx = LocalContext.current
+    val scope = rememberCoroutineScope()
+    var chooser by remember { mutableStateOf(false) }
+
+    fun save(uri: android.net.Uri?, format: String) {
+        if (uri == null) return
+        scope.launch {
+            val bytes = vm.export(format)
+            if (bytes == null) {
+                Toast.makeText(ctx, "Export failed — is the server reachable?", Toast.LENGTH_LONG).show()
+                return@launch
+            }
+            val ok = withContext(Dispatchers.IO) {
+                runCatching { ctx.contentResolver.openOutputStream(uri)?.use { it.write(bytes) } }.isSuccess
+            }
+            Toast.makeText(ctx, if (ok) "Progress exported" else "Couldn't write the file",
+                Toast.LENGTH_LONG).show()
+        }
+    }
+    val csvLauncher = rememberLauncherForActivityResult(
+        ActivityResultContracts.CreateDocument("text/csv")) { save(it, "csv") }
+    val jsonLauncher = rememberLauncherForActivityResult(
+        ActivityResultContracts.CreateDocument("application/json")) { save(it, "json") }
+    val date = LocalDate.now().toString()
 
     Box(Modifier.fillMaxSize()) {
         when (val s = ui) {
             is StatsUi.Loading -> CircularProgressIndicator(Modifier.align(Alignment.Center))
             is StatsUi.Error -> Text(s.message, Modifier.align(Alignment.Center),
                 color = MaterialTheme.colorScheme.error)
-            is StatsUi.Data -> StatsContent(s.stats)
+            is StatsUi.Data -> StatsContent(s.stats, onExport = { chooser = true })
         }
+    }
+
+    if (chooser) {
+        AlertDialog(
+            onDismissRequest = { chooser = false },
+            title = { Text("Download reading progress") },
+            text = { Text("Save a file listing each novel and where you are. Pick a format.") },
+            confirmButton = {
+                TextButton(onClick = {
+                    chooser = false; csvLauncher.launch("novelscraper-progress-$date.csv")
+                }) { Text("CSV") }
+            },
+            dismissButton = {
+                TextButton(onClick = {
+                    chooser = false; jsonLauncher.launch("novelscraper-progress-$date.json")
+                }) { Text("JSON") }
+            },
+        )
     }
 }
 
 @Composable
-private fun StatsContent(s: StatsRead) {
+private fun StatsContent(s: StatsRead, onExport: () -> Unit) {
     LazyColumn(
         modifier = Modifier.fillMaxSize().statusBarsPadding(),
         contentPadding = PaddingValues(start = 20.dp, end = 20.dp, top = 20.dp, bottom = 110.dp),
         verticalArrangement = Arrangement.spacedBy(12.dp),
     ) {
-        item { Text("Statistics", style = MaterialTheme.typography.headlineMedium) }
+        item {
+            Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                Text("Statistics", style = MaterialTheme.typography.headlineMedium,
+                    modifier = Modifier.weight(1f))
+                OutlinedButton(onClick = onExport) { Text("Export") }
+            }
+        }
         item {
             Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
                 Tile("BOOKS", s.total_books.toString(), Modifier.weight(1f))
