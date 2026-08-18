@@ -74,6 +74,21 @@ object Net {
     fun imageUrl(bookId: Int, name: String): String =
         "${_baseUrl}api/books/$bookId/images/$name"
 
+    /** Resolve an <img src> from stored chapter HTML to a loadable URL (fetched
+     *  through the shared cookie-carrying client via Coil), or null if it can't
+     *  be shown. Mirrors the web reader: server-stored illustrations ("/api/…")
+     *  become absolute; already-absolute http(s)/data URLs are kept; anything
+     *  else (relative/broken) is dropped. */
+    fun contentImageUrl(src: String): String? {
+        val s = src.trim()
+        return when {
+            s.isEmpty() -> null
+            s.startsWith("/") -> _baseUrl.trimEnd('/') + s
+            s.startsWith("http://") || s.startsWith("https://") || s.startsWith("data:") -> s
+            else -> null
+        }
+    }
+
     private fun normalize(url: String): String {
         var u = url.trim()
         if (!u.startsWith("http://") && !u.startsWith("https://")) u = "https://$u"

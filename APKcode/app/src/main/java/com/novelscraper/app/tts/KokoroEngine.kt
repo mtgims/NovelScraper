@@ -171,7 +171,9 @@ object KokoroEngine {
     @Synchronized
     fun generate(text: String, speaker: Int, speed: Float): FloatArray {
         val engine = tts ?: return FloatArray(0)
-        val t = text.trim()
+        // Drop image placeholders — an illustration is its own "sentence" in the
+        // shared split, but there's nothing to speak; treat it as silence.
+        val t = text.replace(com.novelscraper.app.data.Sentences.OBJ, ' ').trim()
         if (t.isEmpty()) return FloatArray(0)
         val sid = speaker.coerceIn(0, (numSpeakers - 1).coerceAtLeast(0))
         return try {

@@ -32,6 +32,7 @@ import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
+import androidx.compose.runtime.mutableStateMapOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberUpdatedState
@@ -42,6 +43,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.SpanStyle
@@ -51,8 +53,11 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.viewmodel.compose.viewModel
+import coil.compose.AsyncImage
+import coil.request.ImageRequest
 import com.novelscraper.app.data.ReaderPrefs
 import com.novelscraper.app.data.Sentences
+import com.novelscraper.app.net.Net
 import com.novelscraper.app.tts.TtsController
 import com.novelscraper.app.ui.components.ChaptersSheet
 import com.novelscraper.app.ui.components.ReaderTtsBar
@@ -174,6 +179,52 @@ fun ReaderScreen(bookId: Int, position: Int, onBack: () -> Unit) {
     }
 }
 
+// A rendered chapter block: a run of text paragraphs, or an illustration.
+private sealed interface RBlock
+private class TextBlock(
+    val text: String,             // slice of `plain` covering this block's sentences
+    val firstIndex: Int,          // global sentence index of the first sentence here
+    val lastIndex: Int,           // global sentence index of the last
+    val locals: List<IntRange>,   // per-sentence ranges within `text` (firstIndex..lastIndex)
+) : RBlock {
+    fun localRangeOf(global: Int): IntRange? = locals.getOrNull(global - firstIndex)
+    fun globalIndexAt(off: Int): Int {
+        val i = locals.indexOfFirst { off >= it.first && off <= it.last }
+        return if (i >= 0) firstIndex + i else -1
+    }
+}
+private class ImageBlock(val url: String) : RBlock
+
+// Split the flattened chapter into text blocks + image blocks. Each image is its own
+// 1-char (OBJ) "sentence" in `ranges` (isolated by Sentences.plain), so the global
+// sentence indexing the reader shares with TtsService is preserved: text blocks keep
+// their exact global indices, images map in order to imageUrls (nulls dropped).
+private fun buildBlocks(plain: String, ranges: List<IntRange>, imageUrls: List<String?>): List<RBlock> {
+    fun isImage(r: IntRange) = r.first == r.last && r.first < plain.length && plain[r.first] == Sentences.OBJ
+    val out = ArrayList<RBlock>()
+    var imgIdx = 0
+    var i = 0
+    while (i < ranges.size) {
+        if (isImage(ranges[i])) {
+            imageUrls.getOrNull(imgIdx)?.let { out.add(ImageBlock(it)) }
+            imgIdx++
+            i++
+        } else {
+            val start = i
+            while (i < ranges.size && !isImage(ranges[i])) i++
+            val base = ranges[start].first
+            val end = ranges[i - 1].last + 1
+            out.add(TextBlock(
+                text = plain.substring(base, end),
+                firstIndex = start,
+                lastIndex = i - 1,
+                locals = (start until i).map { (ranges[it].first - base)..(ranges[it].last - base) },
+            ))
+        }
+    }
+    return out
+}
+
 @Composable
 private fun ChapterBody(
     bookId: Int,
@@ -191,19 +242,23 @@ private fun ChapterBody(
     val curIdx = if (activeHere) tts.sentenceIndex else -1
 
     val highlight = MaterialTheme.colorScheme.primary.copy(alpha = 0.22f)
-    val annotated = remember(plain, curIdx, highlight) {
-        buildAnnotatedString {
-            append(plain)
-            ranges.getOrNull(curIdx)?.let { addStyle(SpanStyle(background = highlight), it.first, it.last + 1) }
-        }
+
+    // Chapter illustrations. HtmlCompat leaves one OBJ char per <img> in `plain`
+    // (isolated on its own line), so each image is its own global "sentence" and the
+    // sentence indexing the reader shares with TtsService is preserved. We render the
+    // chapter as blocks — text paragraphs as Text, images as real composables. (Inline
+    // content can't lay out a full-width image without overlapping the surrounding
+    // text, so a block Column is used instead.)
+    val imageUrls = remember(data.chapter.content) {
+        Sentences.imageSrcs(data.chapter.content).map { Net.contentImageUrl(it) }
     }
+    val blocks = remember(plain, ranges, imageUrls) { buildBlocks(plain, ranges, imageUrls) }
 
-    var layout by remember { mutableStateOf<TextLayoutResult?>(null) }
-    val layoutRef = rememberUpdatedState(layout)
-    val rangesRef = rememberUpdatedState(ranges)
+    // Per-text-block text layout + absolute (root) Y, keyed by the block's first
+    // global sentence index — used to map taps and to centre the spoken sentence.
+    val layouts = remember(plain) { mutableStateMapOf<Int, TextLayoutResult>() }
+    val blockYs = remember(plain) { mutableStateMapOf<Int, Float>() }
 
-    // Absolute (root) positions used to centre the spoken sentence in the viewport.
-    var textRootY by remember { mutableStateOf(0f) }
     var viewportRootY by remember { mutableStateOf(0f) }
     var viewportH by remember { mutableStateOf(0) }
 
@@ -229,17 +284,21 @@ private fun ChapterBody(
     }
 
     // Keep the spoken sentence centred in the viewport (so the floating Listen pill
-    // never covers it). Uses the text layout's real line position + absolute root
+    // never covers it). Uses the spoken sentence's block layout + absolute root
     // coordinates, then scrolls by the delta needed to bring that line to centre.
     LaunchedEffect(curIdx) {
         if (curIdx < 0) return@LaunchedEffect
-        val r = ranges.getOrNull(curIdx) ?: return@LaunchedEffect
         if (scroll.maxValue <= 0) snapshotFlow { scroll.maxValue }.first { it > 0 }
-        val l = layoutRef.value ?: return@LaunchedEffect
         if (viewportH <= 0) return@LaunchedEffect
-        val line = l.getLineForOffset(r.first.coerceIn(0, (plain.length - 1).coerceAtLeast(0)))
+        val blk = blocks.firstOrNull {
+            it is TextBlock && curIdx >= it.firstIndex && curIdx <= it.lastIndex
+        } as? TextBlock ?: return@LaunchedEffect
+        val l = layouts[blk.firstIndex] ?: return@LaunchedEffect
+        val rootY = blockYs[blk.firstIndex] ?: return@LaunchedEffect
+        val local = blk.localRangeOf(curIdx) ?: return@LaunchedEffect
+        val line = l.getLineForOffset(local.first.coerceIn(0, (blk.text.length - 1).coerceAtLeast(0)))
         val lineCenter = (l.getLineTop(line) + l.getLineBottom(line)) / 2f
-        val sentenceAbsY = textRootY + lineCenter                 // on-screen Y of the line
+        val sentenceAbsY = rootY + lineCenter                     // on-screen Y of the line
         val desiredAbsY = viewportRootY + viewportH / 2f          // viewport centre
         val target = (scroll.value + (sentenceAbsY - desiredAbsY)).roundToInt()
             .coerceIn(0, scroll.maxValue)
@@ -266,23 +325,42 @@ private fun ChapterBody(
             fontWeight = FontWeight.Bold,
             modifier = measure.padding(bottom = 20.dp),
         )
-        Text(
-            annotated,
-            fontFamily = Serif,
-            fontSize = (19 * fontScale).sp,
-            lineHeight = (31 * fontScale).sp,
-            onTextLayout = { layout = it },
-            modifier = measure
-                .onGloballyPositioned { textRootY = it.localToRoot(Offset.Zero).y }
-                .pointerInput(bookId, pos) {
-                    detectTapGestures { offset ->
-                        val lr = layoutRef.value ?: return@detectTapGestures
-                        val off = lr.getOffsetForPosition(offset)
-                        val idx = rangesRef.value.indexOfFirst { off >= it.first && off <= it.last }
-                        if (idx >= 0) onSentenceTap(idx)
+        blocks.forEach { block ->
+            when (block) {
+                is TextBlock -> {
+                    val annotated = buildAnnotatedString {
+                        append(block.text)
+                        if (curIdx in block.firstIndex..block.lastIndex) {
+                            block.localRangeOf(curIdx)?.let {
+                                addStyle(SpanStyle(background = highlight), it.first, it.last + 1)
+                            }
+                        }
                     }
-                },
-        )
+                    Text(
+                        annotated,
+                        fontFamily = Serif,
+                        fontSize = (19 * fontScale).sp,
+                        lineHeight = (31 * fontScale).sp,
+                        onTextLayout = { layouts[block.firstIndex] = it },
+                        modifier = measure
+                            .onGloballyPositioned { blockYs[block.firstIndex] = it.localToRoot(Offset.Zero).y }
+                            .pointerInput(bookId, pos, block.firstIndex) {
+                                detectTapGestures { offset ->
+                                    val lr = layouts[block.firstIndex] ?: return@detectTapGestures
+                                    val gi = block.globalIndexAt(lr.getOffsetForPosition(offset))
+                                    if (gi >= 0) onSentenceTap(gi)
+                                }
+                            },
+                    )
+                }
+                is ImageBlock -> AsyncImage(
+                    model = ImageRequest.Builder(ctx).data(block.url).crossfade(true).build(),
+                    contentDescription = null,
+                    contentScale = ContentScale.FillWidth,
+                    modifier = measure.padding(vertical = 10.dp),
+                )
+            }
+        }
         Box(Modifier.padding(bottom = 110.dp)) // clear the floating Listen pill
     }
 }
