@@ -81,7 +81,17 @@ GPU_MODEL_URL = f"{_BASE}/kokoro-v1.0.onnx"
 GPU_MODEL_NAME = "kokoro-v1.0.onnx"
 
 DEFAULT_VOICE = "af_heart"
-MAX_CHUNK_CHARS = 600   # normal chunk size (a few sentences)
+# Normal chunk size (a few sentences). Kept under the Kokoro model's ~512-token
+# input cap: the on-device engine (kokoro-js) tokenizes each chunk with
+# truncation=on, so a chunk whose phonemes exceed the cap gets its TAIL silently
+# dropped — sentences the reader never hears ("skipped lines"). ~350 chars of
+# English prose stays comfortably under 512 phoneme tokens. (Server kokoro-onnx
+# shares the same cap, so this protects both engines.)
+MAX_CHUNK_CHARS = 350
+# Hard cap on a single sentence. A paragraph with no sentence-ending punctuation
+# collapses into ONE "sentence" that would become one oversized chunk and get
+# truncated; cap it so every flat sentence (and thus every chunk) stays synthesizable.
+MAX_SENTENCE_CHARS = 300
 FIRST_CHUNK_CHARS = 180  # tiny first chunk so audio starts within a second or two
 
 
@@ -299,11 +309,37 @@ def encode_mp3(wav_bytes: bytes) -> Optional[bytes]:
 _SENT_END = re.compile(r'(?<=[.!?"”’])\s+')
 
 
+def _split_long(s: str) -> List[str]:
+    """Break a too-long sentence on clause/word boundaries so no piece exceeds
+    MAX_SENTENCE_CHARS. Without this, a sentence over the model's ~512-token cap
+    is truncated at synth time and its tail is never spoken."""
+    if len(s) <= MAX_SENTENCE_CHARS:
+        return [s]
+    out: List[str] = []
+    rest = s
+    while len(rest) > MAX_SENTENCE_CHARS:
+        window = rest[:MAX_SENTENCE_CHARS]
+        # Prefer a clause boundary, else the last word break, else a hard cut.
+        cut = max(window.rfind(", "), window.rfind("; "), window.rfind(": "),
+                  window.rfind("— "), window.rfind(" "))
+        if cut <= 0:
+            cut = MAX_SENTENCE_CHARS
+        out.append(rest[:cut].strip())
+        rest = rest[cut:].strip()
+    if rest:
+        out.append(rest)
+    return [p for p in out if p]
+
+
 def _sentences(text: str) -> List[str]:
     t = re.sub(r"\s+", " ", text).strip()
     if not t:
         return []
-    return [s for s in (x.strip() for x in _SENT_END.split(t)) if s]
+    out: List[str] = []
+    for x in (p.strip() for p in _SENT_END.split(t)):
+        if x:
+            out.extend(_split_long(x))
+    return out
 
 
 def segment_blocks(html: str) -> List[dict]:
