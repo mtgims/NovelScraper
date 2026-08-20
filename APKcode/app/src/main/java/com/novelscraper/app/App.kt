@@ -6,6 +6,7 @@ import android.os.Bundle
 import coil.ImageLoader
 import coil.ImageLoaderFactory
 import com.novelscraper.app.data.ReaderPrefs
+import com.novelscraper.app.net.AutoUpdate
 import com.novelscraper.app.net.Net
 import com.novelscraper.app.net.ScrapeRelay
 import com.novelscraper.app.ui.theme.ThemeController
@@ -26,7 +27,12 @@ class App : Application(), ImageLoaderFactory {
     private object ForegroundRelay : ActivityLifecycleCallbacks {
         private var started = 0
         override fun onActivityStarted(activity: Activity) {
-            if (started++ == 0) ScrapeRelay.start()
+            if (started++ == 0) {
+                ScrapeRelay.start()
+                // Coming to the foreground: check whether any books are due for an
+                // auto-update (runs once the relay is up so gated sources work).
+                AutoUpdate.trigger()
+            }
         }
         override fun onActivityStopped(activity: Activity) {
             if (--started <= 0) { started = 0; ScrapeRelay.stop() }

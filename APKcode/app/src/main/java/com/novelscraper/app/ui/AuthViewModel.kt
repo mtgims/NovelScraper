@@ -5,6 +5,7 @@ import androidx.lifecycle.viewModelScope
 import com.novelscraper.app.data.LoginRequest
 import com.novelscraper.app.data.RegisterRequest
 import com.novelscraper.app.data.UserRead
+import com.novelscraper.app.net.AutoUpdate
 import com.novelscraper.app.net.Net
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -62,6 +63,7 @@ class AuthViewModel : ViewModel() {
             try {
                 val user = Net.api.login(LoginRequest(username.trim(), password))
                 _state.value = AuthState.SignedIn(user)
+                AutoUpdate.trigger()  // pull any books due for an auto-update
             } catch (e: HttpException) {
                 _error.value = detailOf(e) ?: "Sign-in failed (${e.code()})"
             } catch (e: Exception) {
@@ -93,6 +95,7 @@ class AuthViewModel : ViewModel() {
                     RegisterRequest(username.trim(), password, invite.trim().ifBlank { null }),
                 )
                 _state.value = AuthState.SignedIn(user)
+                AutoUpdate.trigger()  // pull any books due for an auto-update
             } catch (e: HttpException) {
                 _error.value = detailOf(e) ?: "Sign-up failed (${e.code()})"
             } catch (e: Exception) {

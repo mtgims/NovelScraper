@@ -28,6 +28,9 @@ data class UserRead(
 data class AuthConfig(val allow_open_signup: Boolean)
 
 @Serializable
+data class UpdateDueResult(val queued: Int)
+
+@Serializable
 data class VolumeRead(
     val id: Int,
     val number: Int,

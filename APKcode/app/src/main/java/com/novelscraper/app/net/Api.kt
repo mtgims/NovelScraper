@@ -16,6 +16,7 @@ import com.novelscraper.app.data.LoginRequest
 import com.novelscraper.app.data.ProgressUpdate
 import com.novelscraper.app.data.ReadingProgressRead
 import com.novelscraper.app.data.RegisterRequest
+import com.novelscraper.app.data.UpdateDueResult
 import com.novelscraper.app.data.UserRead
 import okhttp3.MultipartBody
 import okhttp3.ResponseBody
@@ -103,6 +104,12 @@ interface Api {
 
     @DELETE("api/books/{id}")
     suspend fun deleteBook(@Path("id") id: Int)
+
+    // Queue incremental updates for the caller's books that are due (older than the
+    // configured auto-update interval). Called on foreground/login with the relay up
+    // so Cloudflare-gated sources fetch via the phone's IP. Idempotent server-side.
+    @POST("api/books/update-due")
+    suspend fun updateDue(): UpdateDueResult
 
     @GET("api/books/{id}/chapters")
     suspend fun chapters(@Path("id") id: Int): List<ChapterListItem>
