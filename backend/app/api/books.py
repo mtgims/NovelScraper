@@ -15,7 +15,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query, Response
 from fastapi.responses import FileResponse, StreamingResponse
 from sqlmodel import Session, delete, select
 
-from ..db import get_session
+from ..db import engine, get_session
 from ..scraper.writers.epub import build_epub_bytes, epub_filename
 from ..models import (
     ArchivedProgress,
@@ -40,6 +40,8 @@ from ..tts import (
     tts,
 )
 from ..jobs.manager import DuplicateJobError, JobManager
+from ..store import get_auto_update_hours
+from ..updater import queue_due_updates
 from .deps import get_current_user, get_manager
 from ..schemas import (
     BookCollectionsUpdate,
@@ -52,6 +54,7 @@ from ..schemas import (
     JobRead,
     ProgressUpdate,
     ReadingProgressRead,
+    UpdateDueResult,
 )
 
 router = APIRouter()
@@ -171,6 +174,18 @@ async def update_book_chapters(book_id: int, user: User = Depends(get_current_us
                               incremental=True)
     except DuplicateJobError:
         raise HTTPException(status_code=409, detail="An update is already running")
+
+
+@router.post("/update-due", response_model=UpdateDueResult)
+async def update_due(user: User = Depends(get_current_user),
+                     manager: JobManager = Depends(get_manager)):
+    """Queue an incremental re-scrape for every one of the caller's books not
+    scraped within the configured auto-update interval. Called by the app when it
+    comes to the foreground (with the phone relay connected), so Cloudflare-gated
+    sources — which 403 from the server — get fetched through the phone's IP.
+    Respects the interval server-side, so calling it repeatedly is idempotent."""
+    n = queue_due_updates(manager, engine, get_auto_update_hours(), user_id=user.id)
+    return UpdateDueResult(queued=n)
 
 
 @router.get("/{book_id}/chapters", response_model=List[ChapterListItem])

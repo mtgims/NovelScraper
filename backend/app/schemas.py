@@ -171,6 +171,11 @@ class AppSettingsUpdate(BaseModel):
     allow_open_signup: Optional[bool] = None
 
 
+class UpdateDueResult(BaseModel):
+    # How many due books were queued for an incremental re-scrape.
+    queued: int
+
+
 class AuthConfig(BaseModel):
     """Public (pre-login) config the register page needs."""
     allow_open_signup: bool
