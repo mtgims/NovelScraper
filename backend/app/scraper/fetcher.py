@@ -166,16 +166,25 @@ class AsyncFetcher:
             except (FetchError, RetryableFetchError, *NETWORK_ERRORS):
                 return None
 
-    def _cache_path(self, url: str) -> Optional[Path]:
+    def _cache_path(self, url: str, render: bool = False) -> Optional[Path]:
         if not self._cache_dir:
             return None
-        digest = hashlib.sha256(url.encode("utf-8")).hexdigest()
+        # Rendered (post-JS) HTML is cached separately from the static fetch so the
+        # two never collide for the same URL.
+        key = f"render\x00{url}" if render else url
+        digest = hashlib.sha256(key.encode("utf-8")).hexdigest()
         return self._cache_dir / f"{digest}.html"
 
     # --- transport (server session, or the user's phone relay) -----------
 
     def _relaying(self) -> bool:
         return self._relay_uid is not None and hub.is_connected(self._relay_uid)
+
+    @property
+    def can_render(self) -> bool:
+        """Whether a WebView render fetch is possible (a phone relay is connected).
+        The server session can't run JavaScript, so render only works via relay."""
+        return self._relaying()
 
     def _relay_headers(self) -> dict:
         """Headers the phone should send with the relayed request. The phone adds
@@ -185,12 +194,15 @@ class AsyncFetcher:
             h["Cookie"] = "; ".join(f"{k}={v}" for k, v in self._cookies.items())
         return h
 
-    async def _do_get(self, url: str):
+    async def _do_get(self, url: str, render: bool = False):
         """One raw GET (no redirect following — the caller handles redirects). Via
-        the phone relay when connected, else the server's impersonating session."""
+        the phone relay when connected, else the server's impersonating session.
+        `render` asks the phone to render the page in a WebView (relay only; the
+        server session can't run JS)."""
         if self._relaying():
             try:
-                return await hub.fetch(self._relay_uid, url, "GET", self._relay_headers(), None)
+                return await hub.fetch(self._relay_uid, url, "GET",
+                                       self._relay_headers(), None, render=render)
             except RelayError as e:
                 # Transient (phone blip/timeout/disconnect) -> retry; on a real
                 # disconnect the next attempt sees no relay and fetches server-side.
@@ -205,13 +217,14 @@ class AsyncFetcher:
                 raise RetryableFetchError(f"relay error: {e}", url=url)
         return await self._session.post(url, data=data, allow_redirects=False)
 
-    async def _request(self, url: str, binary: bool = False, data=None):
+    async def _request(self, url: str, binary: bool = False, data=None, render: bool = False):
         """One logical fetch, following redirects manually so every hop is
         SSRF-validated. Raises RetryableFetchError (transient) or FetchError
         (fatal: bad status, oversize, disallowed target, too many redirects).
 
         When ``data`` is given the initial request is a POST; a redirect drops
         the body and continues as GET (standard POST->GET redirect semantics).
+        ``render`` routes GETs through the phone's WebView (relay only).
         """
         assert self._session is not None
         current = url
@@ -219,7 +232,7 @@ class AsyncFetcher:
             if data is not None:
                 resp = await self._do_post(current, data)
             else:
-                resp = await self._do_get(current)
+                resp = await self._do_get(current, render=render)
             status = resp.status_code
             if status in REDIRECT_STATUS:
                 location = resp.headers.get("Location")
@@ -263,7 +276,8 @@ class AsyncFetcher:
                              status=status)
         raise FetchError(f"Too many redirects starting at {url}", url=url)
 
-    async def _fetch_with_retry(self, url: str, binary: bool = False, data=None):
+    async def _fetch_with_retry(self, url: str, binary: bool = False, data=None,
+                                render: bool = False):
         assert self._session is not None
         # Validate once up front — a fatal validation error must not be retried.
         await self._validate_url(url)
@@ -275,7 +289,7 @@ class AsyncFetcher:
             async with self._semaphore:
                 await self._limiter.acquire()
                 try:
-                    return await self._request(url, binary=binary, data=data)
+                    return await self._request(url, binary=binary, data=data, render=render)
                 except RetryableFetchError as e:
                     last_exc, retry_after = e, e.retry_after
                 except NETWORK_ERRORS as e:
@@ -305,9 +319,10 @@ class AsyncFetcher:
 
     # --- public API ------------------------------------------------------
 
-    async def get_text(self, url: str, *, use_cache: bool = True) -> str:
-        """Fetch a URL as text, honoring cache, robots, retries and backoff."""
-        cache_path = self._cache_path(url) if use_cache else None
+    async def get_text(self, url: str, *, use_cache: bool = True, render: bool = False) -> str:
+        """Fetch a URL as text, honoring cache, robots, retries and backoff.
+        ``render`` fetches the post-JS DOM via the phone's WebView (relay only)."""
+        cache_path = self._cache_path(url, render) if use_cache else None
         if cache_path is not None and cache_path.exists():
             logger.debug("cache hit %s", url)
             return await asyncio.to_thread(cache_path.read_text, encoding="utf-8")
@@ -315,7 +330,7 @@ class AsyncFetcher:
         if self._robots is not None and not await self._robots.allowed(url):
             raise FetchError(f"Disallowed by robots.txt: {url}", url=url)
 
-        text = await self._fetch_with_retry(url)
+        text = await self._fetch_with_retry(url, render=render)
 
         if cache_path is not None:
             try:

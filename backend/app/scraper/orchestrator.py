@@ -18,7 +18,7 @@ from urllib.parse import urljoin, urlparse
 
 from .config import ScraperConfig
 from .enumerators import format_url, enumerate_chapters
-from .errors import ScraperError
+from .errors import ContentNotFoundError, ScraperError
 from .fetcher import AsyncFetcher
 from .metadata import extract_metadata
 from .models import Book, Chapter, ScrapeResult, VolumeResult
@@ -118,6 +118,27 @@ async def _load_metadata_json(fetcher: AsyncFetcher, profile: SiteProfile,
             await _save_cover(fetcher, book, urljoin(profile.base_url, str(cover)), cover_dir)
 
 
+# Below this many extracted characters, a generic page is treated as unrendered
+# (JS-only site) and re-fetched via the phone's WebView.
+GENERIC_RENDER_MIN = 500
+
+
+async def _extract_generic(fetcher: AsyncFetcher, url: str, body: str) -> str:
+    """Generic content extraction with a WebView-render fallback: if the static
+    HTML yields too little text and a relay/WebView is available, re-fetch the
+    rendered DOM and extract from that."""
+    try:
+        content = parse_chapter_content_generic(body)
+    except ContentNotFoundError:
+        content = ""
+    if len(content) < GENERIC_RENDER_MIN and getattr(fetcher, "can_render", False):
+        rendered = await fetcher.get_text(url, render=True)
+        content = parse_chapter_content_generic(rendered)  # raises if still empty
+    if not content:
+        raise ContentNotFoundError(f"generic extractor found no content at {url}")
+    return content
+
+
 async def _fetch_content(fetcher: AsyncFetcher, profile: SiteProfile,
                          chapter: Chapter, progress: ProgressCb) -> Chapter:
     try:
@@ -125,7 +146,7 @@ async def _fetch_content(fetcher: AsyncFetcher, profile: SiteProfile,
         if profile.json_content_path:
             chapter.content = parse_json_content(body, profile)
         elif profile.generic:
-            chapter.content = parse_chapter_content_generic(body)
+            chapter.content = await _extract_generic(fetcher, chapter.url, body)
         else:
             chapter.content = parse_chapter_content(body, profile)
     except ScraperError as e:

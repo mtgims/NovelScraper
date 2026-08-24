@@ -17,6 +17,7 @@ class App : Application(), ImageLoaderFactory {
         Net.init(this)
         ReaderPrefs.init(this)
         ThemeController.init(this)
+        ScrapeRelay.init(this)  // lets the relay create its offscreen render WebView
         // Keep a scrape-relay WebSocket open while the app is foregrounded, so
         // scrapes fetch through this phone's IP (bypassing the server's Cloudflare
         // block). Dropped when backgrounded — the server then fetches server-side.

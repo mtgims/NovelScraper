@@ -80,7 +80,7 @@ class RelayConnection:
         self._pending.clear()
 
     async def fetch(self, url: str, method: str, headers: dict,
-                    data: Optional[dict]) -> RelayResponse:
+                    data: Optional[dict], render: bool = False) -> RelayResponse:
         loop = asyncio.get_running_loop()
         self._counter += 1
         rid = self._counter
@@ -89,6 +89,10 @@ class RelayConnection:
         msg = {"id": rid, "url": url, "method": method, "headers": headers or {}}
         if data is not None:
             msg["data"] = data
+        if render:
+            # Ask the phone to render the page in a WebView (run JS, pass Cloudflare)
+            # and return the final DOM — for JS-only / hard sites.
+            msg["render"] = True
         try:
             async with self._send_lock:
                 await self._ws.send_json(msg)
@@ -125,11 +129,11 @@ class RelayHub:
         return user_id in self._conns
 
     async def fetch(self, user_id: int, url: str, method: str, headers: dict,
-                    data: Optional[dict]) -> RelayResponse:
+                    data: Optional[dict], render: bool = False) -> RelayResponse:
         conn = self._conns.get(user_id)
         if conn is None:
             raise RelayUnavailable("no relay connected")
-        return await conn.fetch(url, method, headers, data)
+        return await conn.fetch(url, method, headers, data, render=render)
 
 
 hub = RelayHub()

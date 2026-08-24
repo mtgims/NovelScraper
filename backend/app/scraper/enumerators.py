@@ -162,12 +162,27 @@ async def enumerate_sequential(fetcher: AsyncFetcher, profile: SiteProfile,
     return chapters
 
 
+async def _generic_get(fetcher: AsyncFetcher, url: str) -> str:
+    """Fetch a generic page, falling back to a WebView render when the static HTML
+    is unusable (no extractable content AND no next-link) — i.e. a JS-only site."""
+    html = await fetcher.get_text(url)  # cached; reused by the content pass
+    if getattr(fetcher, "can_render", False):
+        try:
+            thin = len(parse_chapter_content_generic(html)) < 500
+        except ScraperError:
+            thin = True
+        if thin and not find_next_link_generic(html, url):
+            html = await fetcher.get_text(url, render=True)  # cached separately
+    return html
+
+
 async def enumerate_generic(fetcher: AsyncFetcher, profile: SiteProfile,
                             book: Book, progress: ProgressCb = None) -> List[Chapter]:
     """Profile-less enumeration: start at the pasted URL (jump to chapter 1 if it's
-    a TOC/novel page), then follow heuristic 'next chapter' links. Inherently serial."""
+    a TOC/novel page), then follow heuristic 'next chapter' links. Inherently serial.
+    Falls back to WebView rendering (via the relay) for JS-only pages."""
     start = profile.start_url or profile.base_url
-    first_html = await fetcher.get_text(start)  # cached: reused by the content pass
+    first_html = await _generic_get(fetcher, start)
     # If the start page has little body text but a first-chapter link, it's a TOC.
     try:
         body_len = len(parse_chapter_content_generic(first_html))
@@ -186,7 +201,7 @@ async def enumerate_generic(fetcher: AsyncFetcher, profile: SiteProfile,
             logger.warning("generic next-link loop at %s; stopping enumeration", url)
             break
         seen.add(url)
-        html = await fetcher.get_text(url)  # cached: reused by the content pass
+        html = await _generic_get(fetcher, url)
         chapters.append(Chapter(
             number=str(len(chapters) + 1),
             title=parse_title_generic(html, url),
