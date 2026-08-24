@@ -18,7 +18,7 @@ import yaml
 
 from .errors import ProfileError, ScraperError
 
-VALID_STRATEGIES = {"paginated", "next_link", "json_api", "sequential"}
+VALID_STRATEGIES = {"paginated", "next_link", "json_api", "sequential", "generic"}
 
 
 class UnsupportedSourceError(ScraperError):
@@ -55,7 +55,9 @@ def resolve_book_url(
 
     candidates = [p for p in profiles.values() if owns(p)]
     if not candidates:
-        raise UnsupportedSourceError(f"Unsupported source: {host or url}")
+        # No hand-written profile for this host: fall back to the generic
+        # heuristic extractor so arbitrary translator URLs still work.
+        return build_generic_profile(url), _generic_slug(url)
     # Match against path + query so sites that carry the book id in a query string
     # (e.g. /novel?id=...) work; path-only regexes are unaffected since their
     # character classes stop at '?'.
@@ -152,6 +154,11 @@ class SiteProfile:
     # + cover come from the notice page instead of the real one). name -> value.
     cookies: Dict[str, str] = field(default_factory=dict)
 
+    # generic strategy: no per-site config — content + next-link found heuristically,
+    # enumeration walking forward from start_url (the exact pasted URL).
+    generic: bool = False
+    start_url: Optional[str] = None
+
     # content cleaning + safety
     strip_selectors: List[str] = field(default_factory=lambda: ["script", "style"])
     max_pages: int = 10000                 # hard cap on enumeration iterations
@@ -162,7 +169,7 @@ class SiteProfile:
     def validate(self) -> None:
         if not self.base_url:
             raise ProfileError(f"Profile '{self.name}': base_url is required")
-        if self.enumeration != "json_api" and not self.content_selector:
+        if self.enumeration not in ("json_api", "generic") and not self.content_selector:
             raise ProfileError(f"Profile '{self.name}': content_selector is required")
         if self.enumeration not in VALID_STRATEGIES:
             raise ProfileError(
@@ -204,6 +211,9 @@ class SiteProfile:
         if self.enumeration == "sequential" and not self.chapter_url_template:
             raise ProfileError(
                 f"Profile '{self.name}': sequential strategy requires chapter_url_template")
+        if self.enumeration == "generic" and not self.start_url:
+            raise ProfileError(
+                f"Profile '{self.name}': generic strategy requires start_url")
         if self.book_url_regex:
             try:
                 compiled = re.compile(self.book_url_regex)
@@ -235,6 +245,37 @@ class SiteProfile:
     def from_file(cls, path: Union[str, Path]) -> "SiteProfile":
         data = yaml.safe_load(Path(path).read_text(encoding="utf-8")) or {}
         return cls.from_dict(data)
+
+
+_GENERIC_STRIP = [
+    "script", "style", "nav", "header", "footer", "aside", "form",
+    ".ads", ".advertisement", ".share", ".social", ".comments", "#comments",
+    ".navigation", ".breadcrumb", ".related", ".nav-links", ".author-note-portlet",
+]
+
+
+def _generic_slug(url: str) -> str:
+    """Stable slug for a generic (profile-less) source, derived from host+path so
+    an incremental update from the stored source_url re-matches the same book."""
+    p = urlparse(url)
+    base = f"{_bare_host(p.hostname or '')}{p.path}".lower()
+    slug = re.sub(r"[^a-z0-9]+", "-", base).strip("-")
+    return slug[:120] or "novel"
+
+
+def build_generic_profile(url: str) -> "SiteProfile":
+    """A no-config profile for an unknown host: heuristic content extraction and
+    next-link enumeration walking forward from the pasted URL."""
+    p = urlparse(url)
+    return SiteProfile(
+        name="generic",
+        base_url=f"{p.scheme}://{p.netloc}",
+        enumeration="generic",
+        generic=True,
+        start_url=url,
+        strip_selectors=list(_GENERIC_STRIP),
+        max_pages=5000,
+    )
 
 
 def load_profiles(directory: Union[str, Path]) -> Dict[str, SiteProfile]:

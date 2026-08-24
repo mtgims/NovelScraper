@@ -113,8 +113,12 @@ with TestClient(app) as client:
     check("sites", any(s["name"] == "mock" for s in client.get("/api/sites").json()))
 
     # URL resolution errors
-    check("unsupported-422",
-          client.post("/api/jobs", json={"url": "http://example.com/book/x"}).status_code == 422)
+    # An unknown host now starts a best-effort GENERIC scrape (202) rather than
+    # 422 — the profile-less fallback lets arbitrary translator URLs be scraped.
+    check("unknown-host-generic",
+          client.post("/api/jobs", json={"url": "http://example.com/book/x"}).status_code == 202)
+    # A KNOWN host with an unextractable book id still 422s (its profile's regex
+    # rejects the URL before any generic fallback).
     check("nobook-422",
           client.post("/api/jobs", json={"url": f"{BASE}/notabook"}).status_code == 422)
     check("missing-job", client.get("/api/jobs/deadbeef").status_code == 404)

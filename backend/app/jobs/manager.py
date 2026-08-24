@@ -18,7 +18,8 @@ from sqlalchemy import func
 from sqlmodel import Session, select
 
 from ..models import ArchivedProgress, Book, Chapter, Job, JobStatus, ReadingProgress, Volume
-from ..scraper import ScraperConfig, SiteProfile, resolve_book_url, scrape_book
+from ..scraper import (ScraperConfig, SiteProfile, build_generic_profile,
+                       resolve_book_url, scrape_book)
 from ..scraper.models import Chapter as ScrapedChapter
 from ..scraper.models import VolumeResult as ScrapedVolume
 from ..scraper.parser import count_words
@@ -146,7 +147,11 @@ class JobManager:
                     return
                 self._update(job_id, status=JobStatus.running.value,
                              phase="enumerating", started_at=_utcnow())
-                profile = self.profiles[job.site]
+                # Generic (profile-less) jobs rebuild their synthesized profile from
+                # the pasted URL; everything else looks up its YAML profile by name.
+                profile = (build_generic_profile(job.source_url)
+                           if job.site == "generic"
+                           else self.profiles[job.site])
                 config = self._build_config(job)
 
                 live = {"total": 0, "fetched": 0, "skipped": 0,

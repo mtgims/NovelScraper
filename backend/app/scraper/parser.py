@@ -10,7 +10,7 @@ import json
 import re
 from html import escape
 from typing import Any, List, Optional
-from urllib.parse import urljoin
+from urllib.parse import urljoin, urlparse
 
 from bs4 import BeautifulSoup
 
@@ -173,6 +173,144 @@ def find_link(html: str, selector: str, base_url: str) -> Optional[str]:
 
 def find_next_link(html: str, profile: SiteProfile, current_url: str) -> Optional[str]:
     return find_link(html, profile.next_link_selector, current_url)
+
+
+# --- generic (profile-less) extraction ---------------------------------------
+# Survey of NovelUpdates' linked translator sites: these ~selectors cover ~all
+# extractable chapter bodies (WordPress/Madara/novelfull-clone families).
+GENERIC_CONTENT_SELECTORS = (
+    ".reading-content .text-left", ".reading-content", "#chapter-content",
+    "#chr-content", ".chr-c", ".chapter-content", ".entry-content",
+    ".chapter__content", ".cha-content", ".text-left", ".txt",
+    ".article-content", ".post-body", ".novel-content", ".prose",
+    ".chapter-inner", ".reader-content", ".chapter-body",
+)
+_MIN_CONTENT_CHARS = 400
+_GENERIC_JUNK = (
+    "nav", "header", "footer", "aside", "form", ".ads", ".advertisement",
+    ".share", ".social", ".comments", "#comments", ".related", ".nav-links",
+    ".author-note-portlet", ".c-ads", ".code-block", ".adsbygoogle",
+)
+
+
+def _clean_generic(node):
+    """Strip nav/junk + dangerous markup from a candidate content node, in place."""
+    for sel in _GENERIC_JUNK:
+        for junk in node.select(sel):
+            junk.decompose()
+    sanitize(node)
+    return node
+
+
+def _readability_extract(soup):
+    """Largest-text-block heuristic: pick the block with the most text, weighted
+    by paragraph density and penalised for link density."""
+    best, best_score = None, 0.0
+    for el in soup.find_all(["article", "div", "section", "main"]):
+        text = el.get_text(" ", strip=True)
+        n = len(text)
+        if n < _MIN_CONTENT_CHARS or n > 400_000:
+            continue
+        p_chars = sum(len(p.get_text(" ", strip=True)) for p in el.find_all("p"))
+        link_chars = sum(len(a.get_text(" ", strip=True)) for a in el.find_all("a"))
+        density = p_chars / n
+        link_ratio = link_chars / n
+        score = n * (0.25 + density) * (1 - min(link_ratio, 0.9))
+        if score > best_score:
+            best, best_score = el, score
+    return best
+
+
+def parse_chapter_content_generic(html: str) -> str:
+    """Extract a chapter body from an unknown site: try the known containers,
+    then a readability fallback. Raises ContentNotFoundError if nothing substantial."""
+    soup = _soup(html)
+    best_node, best_len = None, 0
+    for sel in GENERIC_CONTENT_SELECTORS:
+        nodes = soup.select(sel)
+        if not nodes:
+            continue
+        total = sum(len(n.get_text(" ", strip=True)) for n in nodes)
+        if total > best_len:
+            if len(nodes) == 1:
+                node = nodes[0]
+            else:
+                node = soup.new_tag("div")
+                for n in nodes:
+                    node.append(n.extract())
+            best_node, best_len = node, total
+    if best_node is None or best_len < _MIN_CONTENT_CHARS:
+        best_node = _readability_extract(_soup(html))  # fresh soup; extract() mutated the first
+        if best_node is None:
+            raise ContentNotFoundError("generic extractor found no chapter content")
+    _clean_generic(best_node)
+    return best_node.decode()
+
+
+_CHAP_TITLE_SELECTORS = (".chr-title", ".chapter-title", ".chapter__title",
+                         ".entry-title", ".titles h1", "h1.chapter", "h2.chapter")
+_CHAPTERISH = re.compile(r"chapter|ch\.?\s*\d|episode|\bpart\b|prologue|epilogue", re.I)
+
+
+def parse_title_generic(html: str, url: str = "") -> str:
+    """Chapter title for a profile-less site: prefer a chapter-title element or a
+    chapter-looking heading; else derive from the URL slug; else the page <h1>."""
+    soup = _soup(html)
+    for sel in _CHAP_TITLE_SELECTORS:
+        node = soup.select_one(sel)
+        if node and node.get_text(strip=True):
+            return node.get_text(" ", strip=True)[:200]
+    for tag in soup.find_all(["h1", "h2", "h3"]):
+        text = tag.get_text(" ", strip=True)
+        if text and _CHAPTERISH.search(text):
+            return text[:200]
+    if url:
+        seg = urlparse(url).path.rstrip("/").rsplit("/", 1)[-1]
+        seg = re.sub(r"\.(x?html?|php|aspx?)$", "", seg, flags=re.I)
+        seg = re.sub(r"[-_]+", " ", seg).strip()
+        if seg:
+            return seg[:200].title()
+    h1 = soup.select_one("h1")
+    return h1.get_text(" ", strip=True)[:200] if h1 else ""
+
+
+_NEXT_TEXT_RE = re.compile(r"^\s*(next(\s+chapter|\s+ch)?|›|»|→|>>|next\s*[›»→])\s*$", re.I)
+_PREV_HINT_RE = re.compile(r"prev|previous|back|index|toc|content|novel|home", re.I)
+_FIRST_TEXT_RE = re.compile(r"(start reading|read now|first chapter|chapter\s*1\b|prologue|begin reading)", re.I)
+
+
+def find_next_link_generic(html: str, current_url: str) -> Optional[str]:
+    """Heuristic 'next chapter' link: rel=next, then a 'next' text/class anchor."""
+    soup = _soup(html)
+    node = soup.select_one('a[rel~="next"]')
+    if node and node.get("href"):
+        href = urljoin(current_url, node["href"])
+        if href != current_url:
+            return href
+    for a in soup.find_all("a", href=True):
+        href = a["href"]
+        if not href or href.startswith("#"):
+            continue
+        txt = a.get_text(" ", strip=True)
+        cls = " ".join(a.get("class") or []) + " " + (a.get("id") or "")
+        if _NEXT_TEXT_RE.match(txt) or (re.search(r"\bnext\b", cls, re.I) and not _PREV_HINT_RE.search(cls)):
+            resolved = urljoin(current_url, href)
+            if resolved != current_url:
+                return resolved
+    return None
+
+
+def find_first_chapter_generic(html: str, base_url: str) -> Optional[str]:
+    """When the pasted URL is a TOC/novel page: the 'start reading'/chapter-1 link."""
+    soup = _soup(html)
+    for a in soup.find_all("a", href=True):
+        href = a["href"]
+        if href.startswith("#"):
+            continue
+        txt = a.get_text(" ", strip=True)
+        if _FIRST_TEXT_RE.search(txt) or re.search(r"chapter[-_/]?1\b|/prologue\b", href, re.I):
+            return urljoin(base_url, href)
+    return None
 
 
 def parse_title(html: str, profile: SiteProfile) -> str:

@@ -17,7 +17,9 @@ from typing import Callable, List, Optional
 from .errors import ScraperError
 from .fetcher import AsyncFetcher
 from .models import Book, Chapter
-from .parser import dig, find_link, find_next_link, parse_chapter_list, parse_title
+from .parser import (dig, find_link, find_next_link, find_next_link_generic,
+                     find_first_chapter_generic, parse_chapter_content_generic,
+                     parse_chapter_list, parse_title, parse_title_generic)
 from .site_profile import SiteProfile
 
 logger = logging.getLogger(__name__)
@@ -160,11 +162,51 @@ async def enumerate_sequential(fetcher: AsyncFetcher, profile: SiteProfile,
     return chapters
 
 
+async def enumerate_generic(fetcher: AsyncFetcher, profile: SiteProfile,
+                            book: Book, progress: ProgressCb = None) -> List[Chapter]:
+    """Profile-less enumeration: start at the pasted URL (jump to chapter 1 if it's
+    a TOC/novel page), then follow heuristic 'next chapter' links. Inherently serial."""
+    start = profile.start_url or profile.base_url
+    first_html = await fetcher.get_text(start)  # cached: reused by the content pass
+    # If the start page has little body text but a first-chapter link, it's a TOC.
+    try:
+        body_len = len(parse_chapter_content_generic(first_html))
+    except ScraperError:
+        body_len = 0
+    if body_len < 400:
+        first = find_first_chapter_generic(first_html, start)
+        if first and first != start:
+            start = first
+
+    chapters: List[Chapter] = []
+    url = start
+    seen: set[str] = set()
+    for _ in range(profile.max_pages):
+        if url in seen:
+            logger.warning("generic next-link loop at %s; stopping enumeration", url)
+            break
+        seen.add(url)
+        html = await fetcher.get_text(url)  # cached: reused by the content pass
+        chapters.append(Chapter(
+            number=str(len(chapters) + 1),
+            title=parse_title_generic(html, url),
+            url=url,
+        ))
+        if progress:
+            progress("enumerating", {"found": len(chapters)})
+        nxt = find_next_link_generic(html, url)
+        if not nxt or nxt in seen:
+            break
+        url = nxt
+    return chapters
+
+
 _STRATEGIES = {
     "paginated": enumerate_paginated,
     "next_link": enumerate_next_link,
     "json_api": enumerate_json_api,
     "sequential": enumerate_sequential,
+    "generic": enumerate_generic,
 }
 
 

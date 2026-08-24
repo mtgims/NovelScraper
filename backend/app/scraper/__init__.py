@@ -17,6 +17,7 @@ from .orchestrator import scrape_book
 from .site_profile import (
     SiteProfile,
     UnsupportedSourceError,
+    build_generic_profile,
     load_profiles,
     resolve_book_url,
 )
@@ -26,6 +27,7 @@ __all__ = [
     "SiteProfile",
     "load_profiles",
     "resolve_book_url",
+    "build_generic_profile",
     "UnsupportedSourceError",
     "scrape_book",
     "Book",

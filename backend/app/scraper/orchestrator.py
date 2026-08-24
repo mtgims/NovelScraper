@@ -22,7 +22,7 @@ from .errors import ScraperError
 from .fetcher import AsyncFetcher
 from .metadata import extract_metadata
 from .models import Book, Chapter, ScrapeResult, VolumeResult
-from .parser import dig, parse_chapter_content, parse_json_content
+from .parser import dig, parse_chapter_content, parse_chapter_content_generic, parse_json_content
 from .site_profile import SiteProfile
 
 logger = logging.getLogger(__name__)
@@ -124,6 +124,8 @@ async def _fetch_content(fetcher: AsyncFetcher, profile: SiteProfile,
         body = await fetcher.get_text(chapter.url)
         if profile.json_content_path:
             chapter.content = parse_json_content(body, profile)
+        elif profile.generic:
+            chapter.content = parse_chapter_content_generic(body)
         else:
             chapter.content = parse_chapter_content(body, profile)
     except ScraperError as e:
