@@ -32,6 +32,7 @@ import com.novelscraper.app.ui.screen.BookScreen
 import com.novelscraper.app.ui.screen.LibraryScreen
 import com.novelscraper.app.ui.screen.LoginScreen
 import com.novelscraper.app.ui.screen.NewScrapeScreen
+import com.novelscraper.app.ui.screen.NuBrowserScreen
 import com.novelscraper.app.ui.screen.ProgressScreen
 import com.novelscraper.app.ui.screen.ReaderScreen
 import com.novelscraper.app.ui.screen.RegisterScreen
@@ -149,6 +150,19 @@ private fun AuthedApp(username: String, onLogout: () -> Unit) {
                         nav.navigate("library") {
                             launchSingleTop = true
                             popUpTo("library") { inclusive = true }
+                        }
+                    },
+                    onAddFromNu = { nav.navigate("nu") },
+                )
+            }
+            composable("nu") {
+                NuBrowserScreen(
+                    onBack = { nav.popBackStack() },
+                    onScraped = {
+                        nav.navigate("jobs") {
+                            launchSingleTop = true
+                            popUpTo("library") { saveState = true }
+                            restoreState = true
                         }
                     },
                 )

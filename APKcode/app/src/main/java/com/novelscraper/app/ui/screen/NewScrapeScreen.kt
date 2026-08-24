@@ -35,7 +35,7 @@ import com.novelscraper.app.ui.NewScrapeViewModel
 import com.novelscraper.app.ui.ScrapeUi
 
 @Composable
-fun NewScrapeScreen(onScraped: () -> Unit, onImported: () -> Unit) {
+fun NewScrapeScreen(onScraped: () -> Unit, onImported: () -> Unit, onAddFromNu: () -> Unit = {}) {
     val vm: NewScrapeViewModel = viewModel()
     val ui by vm.ui.collectAsState()
     val importVm: ImportViewModel = viewModel()
@@ -121,6 +121,20 @@ fun NewScrapeScreen(onScraped: () -> Unit, onImported: () -> Unit) {
             if (submitting) CircularProgressIndicator(Modifier.padding(end = 8.dp), strokeWidth = 2.dp)
             Text("Scrape")
         }
+
+        OutlinedButton(
+            onClick = onAddFromNu,
+            enabled = !submitting,
+            modifier = Modifier.fillMaxWidth().padding(top = 10.dp),
+        ) {
+            Text("Add from NovelUpdates")
+        }
+        Text(
+            "Browse NovelUpdates, pick a translation group, and scrape its site.",
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            modifier = Modifier.padding(top = 4.dp),
+        )
 
         HorizontalDivider(Modifier.padding(vertical = 24.dp))
 
