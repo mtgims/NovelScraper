@@ -65,6 +65,9 @@ class Job(SQLModel, table=True):
     delay: Optional[float] = None
     concurrency: Optional[int] = None
     incremental: bool = False     # update mode: fetch only new chapters, append
+    # Metadata overrides carried from the request (e.g. NovelUpdates title/author).
+    title: Optional[str] = None
+    author: Optional[str] = None
 
     # progress / outcome
     total_chapters: int = 0

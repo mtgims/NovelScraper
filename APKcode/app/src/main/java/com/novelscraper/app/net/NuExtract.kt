@@ -17,6 +17,15 @@ data class NuGroup(
     val extnu: String,
 )
 
+/** A series read off NovelUpdates: its metadata (title/author, for the scrape) plus
+ *  the translation groups to choose from. */
+@Serializable
+data class NuSeries(
+    val title: String = "",
+    val author: String = "",
+    val groups: List<NuGroup> = emptyList(),
+)
+
 object NuExtract {
     fun isSeriesUrl(url: String?): Boolean =
         url != null && Regex("novelupdates\\.com/series/[^/]+", RegexOption.IGNORE_CASE).containsMatchIn(url)
@@ -24,8 +33,9 @@ object NuExtract {
     fun isNovelUpdatesHost(url: String?): Boolean =
         url != null && Regex("://[^/]*novelupdates\\.com", RegexOption.IGNORE_CASE).containsMatchIn(url)
 
-    /** JS over the series page's release table (#myTable): per translation group,
-     *  keep the HIGHEST-numbered (latest) chapter and its /extnu/ link. */
+    /** JS over the series page: the novel's title (.seriestitlenu) + author(s)
+     *  (#showauthors), and per translation group the HIGHEST-numbered (latest)
+     *  chapter with its /extnu/ link. */
     val EXTRACT_JS = """
         (function(){
           var rows = document.querySelectorAll('#myTable tr');
@@ -42,23 +52,33 @@ object NuExtract {
             if(!map[name]) map[name] = {name:name, latestLabel:label, latestNum:num, extnu:href};
             else if(num > map[name].latestNum){ map[name].latestLabel=label; map[name].latestNum=num; map[name].extnu=href; }
           });
-          return JSON.stringify(Object.keys(map).map(function(k){return map[k];}));
+          var t = document.querySelector('.seriestitlenu');
+          var title = t ? (t.textContent||'').trim() : '';
+          var au = [].slice.call(document.querySelectorAll('#showauthors a'))
+                     .map(function(a){return (a.textContent||'').trim();})
+                     .filter(function(x){return x;});
+          return JSON.stringify({
+            title: title,
+            author: au.join(', '),
+            groups: Object.keys(map).map(function(k){return map[k];})
+          });
         })()
     """.trimIndent()
 
     private val json = Json { ignoreUnknownKeys = true }
 
-    /** Parse the (double-encoded) evaluateJavascript result, sorted by how far the
-     *  group has translated (latest chapter desc). Empty on any parse issue. */
-    fun parse(evalResult: String?): List<NuGroup> {
-        if (evalResult == null || evalResult == "null") return emptyList()
+    /** Parse the (double-encoded) evaluateJavascript result into a series with its
+     *  groups sorted by how far each has translated (latest chapter desc). */
+    fun parse(evalResult: String?): NuSeries {
+        if (evalResult == null || evalResult == "null") return NuSeries()
         return try {
             val inner = json.parseToJsonElement(evalResult).jsonPrimitive.content
-            json.decodeFromString<List<NuGroup>>(inner)
+            val s = json.decodeFromString<NuSeries>(inner)
+            s.copy(groups = s.groups
                 .filter { it.name.isNotBlank() && it.extnu.isNotBlank() }
-                .sortedByDescending { it.latestNum }
+                .sortedByDescending { it.latestNum })
         } catch (e: Exception) {
-            emptyList()
+            NuSeries()
         }
     }
 

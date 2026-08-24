@@ -180,7 +180,9 @@ async def scrape_book(book_slug: str, profile: SiteProfile, config: ScraperConfi
                       progress: ProgressCb = None,
                       on_volume: VolumeCb = None,
                       source_url: Optional[str] = None,
-                      start_position: int = 0) -> ScrapeResult:
+                      start_position: int = 0,
+                      title_override: Optional[str] = None,
+                      author_override: Optional[str] = None) -> ScrapeResult:
     """Scrape a book. For an incremental update, pass ``start_position`` (the
     highest chapter position already saved): enumeration still runs to discover
     the full list, but only chapters past ``start_position`` are fetched and
@@ -194,6 +196,13 @@ async def scrape_book(book_slug: str, profile: SiteProfile, config: ScraperConfi
     async with AsyncFetcher(config, cookies=profile.cookies) as fetcher:
         if source_url:
             await _load_metadata(fetcher, profile, book, source_url, config.cover_dir)
+        # Caller-supplied overrides (e.g. title/author from NovelUpdates) win over
+        # the site's own metadata, which for a chapter-page start often lacks the
+        # author (hence "Unknown Author").
+        if title_override:
+            book.title = title_override
+        if author_override:
+            book.author = author_override
         logger.info("enumerating chapters for '%s'", book_slug)
         chapters = await enumerate_chapters(fetcher, profile, book, progress)
         if not chapters:

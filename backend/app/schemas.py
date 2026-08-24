@@ -78,6 +78,10 @@ class JobCreate(BaseModel):
     chapters_per_volume: Optional[int] = Field(default=None, ge=1, le=10000)
     delay: Optional[float] = Field(default=None, ge=0, le=60)
     concurrency: Optional[int] = Field(default=None, ge=1, le=50)
+    # Optional metadata overrides (e.g. title/author read from NovelUpdates), used
+    # when the source page itself lacks them.
+    title: Optional[str] = Field(default=None, max_length=500)
+    author: Optional[str] = Field(default=None, max_length=300)
 
 
 class JobRead(BaseModel):

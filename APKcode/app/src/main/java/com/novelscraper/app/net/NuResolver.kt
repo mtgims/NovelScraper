@@ -33,19 +33,20 @@ object NuResolver {
 
     fun init(context: Context) { appContext = context.applicationContext }
 
-    /** Groups on the series page, or empty if the page couldn't be read logged-in. */
-    suspend fun extractGroups(seriesUrl: String): List<NuGroup> = mutex.withLock {
-        val ctx = appContext ?: return emptyList()
+    /** The series (title/author + groups), or empty groups if the page couldn't be
+     *  read logged-in. */
+    suspend fun extractSeries(seriesUrl: String): NuSeries = mutex.withLock {
+        val ctx = appContext ?: return NuSeries()
         withContext(Dispatchers.Main) {
             val wv = ensureWebView(ctx)
             wv.stopLoading(); wv.loadUrl(seriesUrl)
             val deadline = SystemClock.elapsedRealtime() + TIMEOUT_MS
             while (SystemClock.elapsedRealtime() < deadline) {
                 delay(500)
-                val gs = NuExtract.parse(evalJs(wv, NuExtract.EXTRACT_JS))
-                if (gs.isNotEmpty()) return@withContext gs
+                val s = NuExtract.parse(evalJs(wv, NuExtract.EXTRACT_JS))
+                if (s.groups.isNotEmpty()) return@withContext s
             }
-            emptyList()
+            NuSeries()
         }
     }
 

@@ -169,10 +169,10 @@ fun NewScrapeScreen(
         }
     }
 
-    (ui as? ScrapeUi.ChooseNu)?.let { s ->
+    (ui as? ScrapeUi.ChooseNu)?.let { state ->
         AlertDialog(
             onDismissRequest = { vm.reset() },
-            title = { Text("Choose a translation") },
+            title = { Text(state.series.title.ifBlank { "Choose a translation" }) },
             text = {
                 Column(Modifier.verticalScroll(rememberScrollState())) {
                     Text(
@@ -181,9 +181,9 @@ fun NewScrapeScreen(
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                         modifier = Modifier.padding(bottom = 8.dp),
                     )
-                    s.groups.forEach { g ->
+                    state.series.groups.forEach { g ->
                         val upto = if (g.latestLabel.isNotBlank()) "  ·  up to ${g.latestLabel}" else ""
-                        TextButton(onClick = { vm.pickNuGroup(g) }, modifier = Modifier.fillMaxWidth()) {
+                        TextButton(onClick = { vm.pickNuGroup(state.series, g) }, modifier = Modifier.fillMaxWidth()) {
                             Text("${g.name}$upto", modifier = Modifier.fillMaxWidth())
                         }
                     }

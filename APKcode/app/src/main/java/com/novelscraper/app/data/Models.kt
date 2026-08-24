@@ -76,6 +76,8 @@ data class JobCreate(
     val chapters_per_volume: Int? = null,
     val delay: Float? = null,
     val concurrency: Int? = null,
+    val title: String? = null,
+    val author: String? = null,
 )
 
 @Serializable

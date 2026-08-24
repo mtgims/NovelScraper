@@ -48,7 +48,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.viewinterop.AndroidView
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.novelscraper.app.net.NuExtract
-import com.novelscraper.app.net.NuGroup
+import com.novelscraper.app.net.NuSeries
 import com.novelscraper.app.ui.NewScrapeViewModel
 import com.novelscraper.app.ui.ScrapeUi
 
@@ -65,7 +65,8 @@ fun NuBrowserScreen(onBack: () -> Unit, onScraped: () -> Unit, startUrl: String?
     val start = startUrl?.takeIf { it.isNotBlank() } ?: NU_HOME
     var currentUrl by remember { mutableStateOf(start) }
     var address by remember { mutableStateOf(start) }
-    var groups by remember { mutableStateOf<List<NuGroup>?>(null) }  // non-null -> chooser open
+    var series by remember { mutableStateOf<NuSeries?>(null) }       // non-null -> chooser open
+    var pendingMeta by remember { mutableStateOf<NuSeries?>(null) }  // series whose group is resolving
     var busy by remember { mutableStateOf<String?>(null) }           // overlay message when set
     var resolving by remember { mutableStateOf(false) }
     var error by remember { mutableStateOf<String?>(null) }
@@ -88,8 +89,12 @@ fun NuBrowserScreen(onBack: () -> Unit, onScraped: () -> Unit, startUrl: String?
                         resolving = false
                         busy = "Starting scrape…"
                         // Rewind to chapter 1 so the whole novel is scraped, not just
-                        // the recent chapter NU linked to.
-                        scrapeVm.scrape(NuExtract.toChapterOne(url), null, null, null)
+                        // the recent chapter NU linked to; carry NU's title/author.
+                        scrapeVm.scrape(
+                            NuExtract.toChapterOne(url), null, null, null,
+                            pendingMeta?.title?.ifBlank { null },
+                            pendingMeta?.author?.ifBlank { null },
+                        )
                     }
                 }
             }
@@ -160,13 +165,13 @@ fun NuBrowserScreen(onBack: () -> Unit, onScraped: () -> Unit, startUrl: String?
                     error = null
                     busy = "Reading translations…"
                     webView.evaluateJavascript(NuExtract.EXTRACT_JS) { result ->
-                        val gs = NuExtract.parse(result)
+                        val s = NuExtract.parse(result)
                         busy = null
-                        if (gs.isEmpty()) {
+                        if (s.groups.isEmpty()) {
                             error = "No translation groups found. Make sure you're logged into " +
                                 "NovelUpdates and on a series page."
                         } else {
-                            groups = gs
+                            series = s
                         }
                     }
                 },
@@ -178,10 +183,10 @@ fun NuBrowserScreen(onBack: () -> Unit, onScraped: () -> Unit, startUrl: String?
         }
     }
 
-    groups?.let { gs ->
+    series?.let { s ->
         AlertDialog(
-            onDismissRequest = { groups = null },
-            title = { Text("Choose a translation") },
+            onDismissRequest = { series = null },
+            title = { Text(s.title.ifBlank { "Choose a translation" }) },
             text = {
                 Column(Modifier.verticalScroll(rememberScrollState())) {
                     Text(
@@ -190,11 +195,12 @@ fun NuBrowserScreen(onBack: () -> Unit, onScraped: () -> Unit, startUrl: String?
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                         modifier = Modifier.padding(bottom = 8.dp),
                     )
-                    gs.forEach { g ->
+                    s.groups.forEach { g ->
                         val upto = if (g.latestLabel.isNotBlank()) "  ·  up to ${g.latestLabel}" else ""
                         TextButton(
                             onClick = {
-                                groups = null
+                                pendingMeta = s
+                                series = null
                                 resolving = true
                                 busy = "Opening ${g.name}…"
                                 webView.loadUrl(g.extnu)
@@ -206,7 +212,7 @@ fun NuBrowserScreen(onBack: () -> Unit, onScraped: () -> Unit, startUrl: String?
                     }
                 }
             },
-            confirmButton = { TextButton(onClick = { groups = null }) { Text("Cancel") } },
+            confirmButton = { TextButton(onClick = { series = null }) { Text("Cancel") } },
         )
     }
 }

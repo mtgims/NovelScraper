@@ -85,6 +85,8 @@ class JobManager:
                 delay=data.delay,
                 concurrency=data.concurrency,
                 incremental=incremental,
+                title=data.title,
+                author=data.author,
             )
             s.add(job)
             s.commit()
@@ -203,7 +205,9 @@ class JobManager:
                 result = await scrape_book(job.book_slug, profile, config,
                                            on_progress, on_volume,
                                            source_url=job.source_url,
-                                           start_position=start_position)
+                                           start_position=start_position,
+                                           title_override=job.title,
+                                           author_override=job.author)
                 # Record the check time even when an update found no new chapters.
                 if state["book_id"] is not None:
                     self._touch_book(state["book_id"])
