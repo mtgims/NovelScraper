@@ -84,6 +84,16 @@ def main() -> int:
     bp = build_generic_profile("https://x.com/a/b?c=d")
     check("build-shape", bp.base_url == "https://x.com" and bp.start_url == "https://x.com/a/b?c=d")
 
+    # 9) _incr_url: sequential-URL fallback for JS-router readers (e.g. novtales)
+    from app.scraper.enumerators import _incr_url
+    check("incr-dash", _incr_url("https://novtales.com/chapter/foo-ability-58") ==
+          "https://novtales.com/chapter/foo-ability-59")
+    check("incr-html", _incr_url("https://s.com/read/chapter-1.html") == "https://s.com/read/chapter-2.html")
+    check("incr-query", _incr_url("https://s.com/c/9?x=1") == "https://s.com/c/10?x=1")
+    check("incr-none", _incr_url("https://s.com/novel/foo-bar") is None)  # no trailing number
+    # must not bump an id buried mid-path with a long non-numeric tail
+    check("incr-no-midpath", _incr_url("https://s.com/novel-123/table-of-contents") is None)
+
     print(f"\nSUMMARY: {_p}/{_p + _f} passed")
     return 1 if _f else 0
 

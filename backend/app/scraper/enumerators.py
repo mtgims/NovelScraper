@@ -12,7 +12,9 @@ from __future__ import annotations
 
 import json
 import logging
+import re
 from typing import Callable, List, Optional
+from urllib.parse import urlsplit, urlunsplit
 
 from .errors import ScraperError
 from .fetcher import AsyncFetcher
@@ -176,11 +178,28 @@ async def _generic_get(fetcher: AsyncFetcher, url: str) -> str:
     return html
 
 
+_TRAILING_NUM = re.compile(r"(\d+)(\D{0,6})$")
+
+
+def _incr_url(url: str) -> Optional[str]:
+    """Increment a trailing chapter number in the URL path (…/chapter-58 -> -59),
+    for JS-navigation readers that expose no 'next' anchor. None if the path has no
+    trailing number near its end (avoids bumping an unrelated id mid-path)."""
+    parts = urlsplit(url)
+    m = _TRAILING_NUM.search(parts.path)
+    if not m:
+        return None
+    nxt = str(int(m.group(1)) + 1)
+    new_path = parts.path[:m.start(1)] + nxt + m.group(2)
+    return urlunsplit((parts.scheme, parts.netloc, new_path, parts.query, parts.fragment))
+
+
 async def enumerate_generic(fetcher: AsyncFetcher, profile: SiteProfile,
                             book: Book, progress: ProgressCb = None) -> List[Chapter]:
     """Profile-less enumeration: start at the pasted URL (jump to chapter 1 if it's
-    a TOC/novel page), then follow heuristic 'next chapter' links. Inherently serial.
-    Falls back to WebView rendering (via the relay) for JS-only pages."""
+    a TOC/novel page), then follow 'next chapter' links; when a page has no next
+    anchor (JS-router readers), fall back to incrementing a trailing chapter number
+    in the URL. Falls back to WebView rendering (via the relay) for JS-only pages."""
     start = profile.start_url or profile.base_url
     first_html = await _generic_get(fetcher, start)
     # If the start page has little body text but a first-chapter link, it's a TOC.
@@ -202,6 +221,14 @@ async def enumerate_generic(fetcher: AsyncFetcher, profile: SiteProfile,
             break
         seen.add(url)
         html = await _generic_get(fetcher, url)
+        try:
+            has_content = len(parse_chapter_content_generic(html)) >= 400
+        except ScraperError:
+            has_content = False
+        # A content-less page after the first means we've run past the last chapter
+        # (typical end condition for the sequential-URL fallback).
+        if not has_content and chapters:
+            break
         chapters.append(Chapter(
             number=str(len(chapters) + 1),
             title=parse_title_generic(html, url),
@@ -209,7 +236,7 @@ async def enumerate_generic(fetcher: AsyncFetcher, profile: SiteProfile,
         ))
         if progress:
             progress("enumerating", {"found": len(chapters)})
-        nxt = find_next_link_generic(html, url)
+        nxt = find_next_link_generic(html, url) or _incr_url(url)
         if not nxt or nxt in seen:
             break
         url = nxt
