@@ -1,5 +1,6 @@
 package com.novelscraper.app
 
+import android.net.Uri
 import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
@@ -152,11 +153,19 @@ private fun AuthedApp(username: String, onLogout: () -> Unit) {
                             popUpTo("library") { inclusive = true }
                         }
                     },
-                    onAddFromNu = { nav.navigate("nu") },
+                    onAddFromNu = { url ->
+                        nav.navigate(if (url != null) "nu?url=${Uri.encode(url)}" else "nu")
+                    },
                 )
             }
-            composable("nu") {
+            composable(
+                "nu?url={url}",
+                arguments = listOf(navArgument("url") {
+                    type = NavType.StringType; nullable = true; defaultValue = null
+                }),
+            ) { e ->
                 NuBrowserScreen(
+                    startUrl = e.arguments?.getString("url"),
                     onBack = { nav.popBackStack() },
                     onScraped = {
                         nav.navigate("jobs") {

@@ -57,13 +57,14 @@ private const val NU_HOME = "https://www.novelupdates.com/"
 @OptIn(ExperimentalMaterial3Api::class)
 @SuppressLint("SetJavaScriptEnabled")
 @Composable
-fun NuBrowserScreen(onBack: () -> Unit, onScraped: () -> Unit) {
+fun NuBrowserScreen(onBack: () -> Unit, onScraped: () -> Unit, startUrl: String? = null) {
     val ctx = LocalContext.current
     val scrapeVm: NewScrapeViewModel = viewModel()
     val scrapeUi by scrapeVm.ui.collectAsState()
 
-    var currentUrl by remember { mutableStateOf(NU_HOME) }
-    var address by remember { mutableStateOf(NU_HOME) }
+    val start = startUrl?.takeIf { it.isNotBlank() } ?: NU_HOME
+    var currentUrl by remember { mutableStateOf(start) }
+    var address by remember { mutableStateOf(start) }
     var groups by remember { mutableStateOf<List<NuGroup>?>(null) }  // non-null -> chooser open
     var busy by remember { mutableStateOf<String?>(null) }           // overlay message when set
     var resolving by remember { mutableStateOf(false) }
@@ -92,7 +93,7 @@ fun NuBrowserScreen(onBack: () -> Unit, onScraped: () -> Unit) {
                     }
                 }
             }
-            loadUrl(NU_HOME)
+            loadUrl(start)
         }
     }
     DisposableEffect(Unit) { onDispose { webView.destroy() } }

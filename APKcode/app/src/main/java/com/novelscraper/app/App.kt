@@ -8,6 +8,7 @@ import coil.ImageLoaderFactory
 import com.novelscraper.app.data.ReaderPrefs
 import com.novelscraper.app.net.AutoUpdate
 import com.novelscraper.app.net.Net
+import com.novelscraper.app.net.NuResolver
 import com.novelscraper.app.net.ScrapeRelay
 import com.novelscraper.app.ui.theme.ThemeController
 
@@ -18,6 +19,7 @@ class App : Application(), ImageLoaderFactory {
         ReaderPrefs.init(this)
         ThemeController.init(this)
         ScrapeRelay.init(this)  // lets the relay create its offscreen render WebView
+        NuResolver.init(this)   // offscreen NovelUpdates reader (no visible browser when logged in)
         // Keep a scrape-relay WebSocket open while the app is foregrounded, so
         // scrapes fetch through this phone's IP (bypassing the server's Cloudflare
         // block). Dropped when backgrounded — the server then fetches server-side.

@@ -10,6 +10,7 @@ import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.HorizontalDivider
@@ -35,7 +36,11 @@ import com.novelscraper.app.ui.NewScrapeViewModel
 import com.novelscraper.app.ui.ScrapeUi
 
 @Composable
-fun NewScrapeScreen(onScraped: () -> Unit, onImported: () -> Unit, onAddFromNu: () -> Unit = {}) {
+fun NewScrapeScreen(
+    onScraped: () -> Unit,
+    onImported: () -> Unit,
+    onAddFromNu: (String?) -> Unit = {},
+) {
     val vm: NewScrapeViewModel = viewModel()
     val ui by vm.ui.collectAsState()
     val importVm: ImportViewModel = viewModel()
@@ -55,7 +60,11 @@ fun NewScrapeScreen(onScraped: () -> Unit, onImported: () -> Unit, onAddFromNu: 
     var conc by remember { mutableStateOf("") }
 
     LaunchedEffect(ui) {
-        if (ui is ScrapeUi.Done) { vm.reset(); onScraped() }
+        when (val s = ui) {
+            is ScrapeUi.Done -> { vm.reset(); onScraped() }
+            is ScrapeUi.NeedsNuLogin -> { vm.reset(); onAddFromNu(s.url) }  // fall back to the visible browser
+            else -> {}
+        }
     }
 
     val submitting = ui is ScrapeUi.Submitting
@@ -123,14 +132,14 @@ fun NewScrapeScreen(onScraped: () -> Unit, onImported: () -> Unit, onAddFromNu: 
         }
 
         OutlinedButton(
-            onClick = onAddFromNu,
+            onClick = { onAddFromNu(null) },
             enabled = !submitting,
             modifier = Modifier.fillMaxWidth().padding(top = 10.dp),
         ) {
-            Text("Add from NovelUpdates")
+            Text("Browse NovelUpdates")
         }
         Text(
-            "Browse NovelUpdates, pick a translation group, and scrape its site.",
+            "Or just paste a NovelUpdates link above — you'll pick the translation group.",
             style = MaterialTheme.typography.bodySmall,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
             modifier = Modifier.padding(top = 4.dp),
@@ -158,5 +167,29 @@ fun NewScrapeScreen(onScraped: () -> Unit, onImported: () -> Unit, onAddFromNu: 
             if (importing) CircularProgressIndicator(Modifier.padding(end = 8.dp), strokeWidth = 2.dp)
             Text(if (importing) "Importing…" else "Choose EPUB files")
         }
+    }
+
+    (ui as? ScrapeUi.ChooseNu)?.let { s ->
+        AlertDialog(
+            onDismissRequest = { vm.reset() },
+            title = { Text("Choose a translation") },
+            text = {
+                Column(Modifier.verticalScroll(rememberScrollState())) {
+                    Text(
+                        "Pick a group — it scrapes that site from chapter 1:",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        modifier = Modifier.padding(bottom = 8.dp),
+                    )
+                    s.groups.forEach { g ->
+                        val upto = if (g.latestLabel.isNotBlank()) "  ·  up to ${g.latestLabel}" else ""
+                        TextButton(onClick = { vm.pickNuGroup(g) }, modifier = Modifier.fillMaxWidth()) {
+                            Text("${g.name}$upto", modifier = Modifier.fillMaxWidth())
+                        }
+                    }
+                }
+            },
+            confirmButton = { TextButton(onClick = { vm.reset() }) { Text("Cancel") } },
+        )
     }
 }
