@@ -86,7 +86,9 @@ fun NuBrowserScreen(onBack: () -> Unit, onScraped: () -> Unit) {
                     if (resolving && url != "about:blank" && !NuExtract.isNovelUpdatesHost(url)) {
                         resolving = false
                         busy = "Starting scrape…"
-                        scrapeVm.scrape(url, null, null, null)
+                        // Rewind to chapter 1 so the whole novel is scraped, not just
+                        // the recent chapter NU linked to.
+                        scrapeVm.scrape(NuExtract.toChapterOne(url), null, null, null)
                     }
                 }
             }
@@ -182,22 +184,23 @@ fun NuBrowserScreen(onBack: () -> Unit, onScraped: () -> Unit) {
             text = {
                 Column(Modifier.verticalScroll(rememberScrollState())) {
                     Text(
-                        "Pick which group's version to scrape (chapter counts are approximate):",
+                        "Pick a group — it scrapes that site from chapter 1:",
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                         modifier = Modifier.padding(bottom = 8.dp),
                     )
                     gs.forEach { g ->
+                        val upto = if (g.latestLabel.isNotBlank()) "  ·  up to ${g.latestLabel}" else ""
                         TextButton(
                             onClick = {
                                 groups = null
                                 resolving = true
                                 busy = "Opening ${g.name}…"
-                                webView.loadUrl(g.firstExtnu)
+                                webView.loadUrl(g.extnu)
                             },
                             modifier = Modifier.fillMaxWidth(),
                         ) {
-                            Text("${g.name}  ·  ${g.count} ch", modifier = Modifier.fillMaxWidth())
+                            Text("${g.name}$upto", modifier = Modifier.fillMaxWidth())
                         }
                     }
                 }
