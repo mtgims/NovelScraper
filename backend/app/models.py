@@ -11,7 +11,7 @@ from datetime import datetime, timezone
 from enum import Enum
 from typing import List, Optional
 
-from sqlalchemy import JSON, Column, LargeBinary
+from sqlalchemy import JSON, Column, Index, LargeBinary
 from sqlalchemy.types import TypeDecorator
 from sqlmodel import Field, SQLModel
 
@@ -154,6 +154,12 @@ class Volume(SQLModel, table=True):
 
 
 class Chapter(SQLModel, table=True):
+    # Every read path looks a chapter up by (book, position): the reader fetch,
+    # its has_next probe, and the volume export. With only the book_id index
+    # SQLite had to walk every row of the book (2334 for the largest in the
+    # fixture library) checking position; this makes it one seek.
+    __table_args__ = (Index("ix_chapter_book_id_position", "book_id", "position"),)
+
     id: Optional[int] = Field(default=None, primary_key=True)
     book_id: int = Field(foreign_key="book.id", index=True)
     position: int                 # 1-based global reading order within the book

@@ -88,7 +88,32 @@ with Session(engine) as s:
           len(ap) == 1 and ap[0].user_id == admin.id
           and ap[0].site == "mock" and ap[0].last_position == 5)
 
-# Idempotent: running again is a no-op (no error, no duplicate admin).
+# --- index migration: create_all() only builds indexes when it creates the
+# table, and ADD COLUMN never brings one, so an upgraded DB was missing every
+# index declared after its tables first existed (measured: all three user_id
+# indexes were absent on the real dev DB).
+def indexes_on(table):
+    return {r[1] for r in sqlite3.connect(DB).execute(
+        f"SELECT type, name FROM sqlite_master WHERE type='index' AND tbl_name='{table}'")}
+
+check("job-user_id-index-created", "ix_job_user_id" in indexes_on("job"))
+check("job-status-index-created", "ix_job_status" in indexes_on("job"))
+check("chapter-composite-index-created",
+      "ix_chapter_book_id_position" in indexes_on("chapter"))
+check("book-user_id-index-created", "ix_book_user_id" in indexes_on("book"))
+check("collection-user_id-index-created",
+      "ix_collection_user_id" in indexes_on("collection"))
+# The composite index must actually be chosen for the reader's lookup.
+plan = " ".join(str(r[-1]) for r in sqlite3.connect(DB).execute(
+    "EXPLAIN QUERY PLAN SELECT id FROM chapter WHERE book_id = 1 AND position = 2"))
+check("chapter-lookup-uses-composite-index", "ix_chapter_book_id_position" in plan)
+
+# --- WAL: readers must not be blocked by the scrape worker's writes ---
+journal = sqlite3.connect(DB).execute("PRAGMA journal_mode").fetchone()[0]
+check("journal-mode-is-wal", journal.lower() == "wal")
+
+# Idempotent: running again is a no-op (no error, no duplicate admin,
+# no attempt to recreate an existing index).
 init_db()
 with Session(engine) as s:
     check("idempotent", len(s.exec(select(User)).all()) == 1)
