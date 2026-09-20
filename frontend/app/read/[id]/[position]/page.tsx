@@ -631,7 +631,7 @@ export default function ReaderPage() {
         autoStart={autoStartTts}
         mediaTitle={chapter.title || `Chapter ${chapter.number || position}`}
         mediaSubtitle={book?.title}
-        mediaArtwork={book?.has_cover ? coverUrl(bookId) : undefined}
+        mediaArtwork={book?.has_cover ? coverUrl(bookId, 800) : undefined}
       />
 
       {/* Overscroll-to-next hint (mobile): fills as you pull past the end. */}

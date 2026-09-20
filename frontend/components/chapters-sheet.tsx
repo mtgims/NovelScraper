@@ -222,7 +222,7 @@ export function ChaptersSheet({
               {hasCover ? (
                 // eslint-disable-next-line @next/next/no-img-element
                 <img
-                  src={coverUrl(bookId)}
+                  src={coverUrl(bookId, 200)}
                   alt=""
                   draggable={false}
                   className="h-full w-full object-cover"

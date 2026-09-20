@@ -254,8 +254,9 @@ export default function BookDetailPage() {
             {book.has_cover ? (
               // eslint-disable-next-line @next/next/no-img-element
               <img
-                src={coverUrl(book.id)}
+                src={coverUrl(book.id, 800)}
                 alt={`Cover of ${book.title}`}
+                decoding="async"
                 className="h-full w-full object-cover"
               />
             ) : (
@@ -426,8 +427,9 @@ export default function BookDetailPage() {
           {book.has_cover ? (
             // eslint-disable-next-line @next/next/no-img-element
             <img
-              src={coverUrl(book.id)}
+              src={coverUrl(book.id, 800)}
               alt={`Cover of ${book.title}`}
+              decoding="async"
               className="h-full w-full object-cover"
             />
           ) : (

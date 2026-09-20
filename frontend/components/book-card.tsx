@@ -34,9 +34,10 @@ export function BookCardView({
         {book.has_cover ? (
           // eslint-disable-next-line @next/next/no-img-element
           <img
-            src={coverUrl(book.id)}
+            src={coverUrl(book.id, 400)}
             alt={`Cover of ${book.title}`}
             draggable={false}
+            decoding="async"
             className="h-full w-full object-cover"
           />
         ) : (
