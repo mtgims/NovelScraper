@@ -449,11 +449,12 @@ def delete_book(book_id: int, user: User = Depends(get_current_user),
                 os.remove(vol.path)
         except OSError:
             pass  # best-effort file cleanup
-        session.delete(vol)
-    for chapter in session.exec(
-        select(Chapter).where(Chapter.book_id == book_id)
-    ).all():
-        session.delete(chapter)
+    # Bulk DELETEs, not ORM row-by-row. Loading Chapter entities to delete them
+    # pulled every chapter's gzipped HTML into memory and decompressed it (2334
+    # rows for the largest fixture novel) purely to throw it away, then issued
+    # one DELETE each. Volumes have no cascade behaviour to preserve either.
+    session.exec(delete(Volume).where(Volume.book_id == book_id))
+    session.exec(delete(Chapter).where(Chapter.book_id == book_id))
     if book.cover_path and os.path.exists(book.cover_path):
         try:
             os.remove(book.cover_path)
