@@ -2,6 +2,7 @@ package com.novelscraper.app.net
 
 import android.content.Context
 import android.content.SharedPreferences
+import com.novelscraper.app.BuildConfig
 import com.novelscraper.app.data.ChapterRead
 import kotlinx.serialization.json.Json
 import okhttp3.MediaType.Companion.toMediaType
@@ -55,12 +56,17 @@ object Net {
     }
 
     private fun rebuild() {
-        client = OkHttpClient.Builder()
-            .cookieJar(cookieJar)
-            .addInterceptor(HttpLoggingInterceptor().apply {
+        val builder = OkHttpClient.Builder().cookieJar(cookieJar)
+        // Request logging is a debug aid, not something to run in release: it
+        // formats and writes a logcat line for every request and response —
+        // including every cover and chapter image Coil pulls through this same
+        // client — and puts the user's library activity in the device log.
+        if (BuildConfig.DEBUG) {
+            builder.addInterceptor(HttpLoggingInterceptor().apply {
                 level = HttpLoggingInterceptor.Level.BASIC
             })
-            .build()
+        }
+        client = builder.build()
         _api = Retrofit.Builder()
             .baseUrl(_baseUrl)
             .client(client)

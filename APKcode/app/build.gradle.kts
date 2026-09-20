@@ -66,6 +66,10 @@ android {
     }
     buildFeatures {
         compose = true
+        // BuildConfig.DEBUG gates the OkHttp logging interceptor (net/Net.kt).
+        // It is a compile-time constant, so in release the whole branch — and
+        // with it the interceptor class — is eliminated.
+        buildConfig = true
     }
 }
 
