@@ -1,6 +1,6 @@
 "use client";
 
-import { AnimatePresence, animate, motion, useMotionValue, useTransform } from "framer-motion";
+import { AnimatePresence, animate, m, useMotionValue, useTransform } from "framer-motion";
 import { ArrowDownUp, Check, ChevronDown, Circle, X } from "lucide-react";
 import Link from "next/link";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
@@ -195,13 +195,13 @@ export function ChaptersSheet({
 
   return createPortal(
     <div className="fixed inset-0 z-[80] flex items-end md:hidden">
-      <motion.div
+      <m.div
         className="absolute inset-0 bg-black/50 backdrop-blur-[1px]"
         style={{ opacity: backdropOpacity }}
         onClick={close}
       />
 
-      <motion.div
+      <m.div
         ref={sheetRef}
         data-testid="chapters-sheet"
         style={{ y }}
@@ -285,7 +285,7 @@ export function ChaptersSheet({
                 </button>
                 <AnimatePresence initial={false}>
                   {isOpen && (
-                    <motion.div
+                    <m.div
                       initial={{ height: 0, opacity: 0 }}
                       animate={{ height: "auto", opacity: 1 }}
                       exit={{ height: 0, opacity: 0 }}
@@ -340,14 +340,14 @@ export function ChaptersSheet({
                           );
                         })}
                       </div>
-                    </motion.div>
+                    </m.div>
                   )}
                 </AnimatePresence>
               </div>
             );
           })}
         </div>
-      </motion.div>
+      </m.div>
     </div>,
     document.body
   );

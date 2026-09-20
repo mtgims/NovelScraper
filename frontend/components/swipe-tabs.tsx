@@ -1,6 +1,6 @@
 "use client";
 
-import { animate, motion, useMotionValue, useTransform } from "framer-motion";
+import { animate, m, useMotionValue, useTransform } from "framer-motion";
 import { useEffect, useRef, useState, type ReactNode } from "react";
 
 import { cn } from "@/lib/utils";
@@ -68,14 +68,14 @@ export function SwipeTabs({ tabs, className }: { tabs: Tab[]; className?: string
             {t.label}
           </button>
         ))}
-        <motion.div
+        <m.div
           style={{ x: indicatorX, width: `${100 / n}%` }}
           className="absolute bottom-0 left-0 h-0.5 rounded-full bg-accent"
         />
       </div>
 
       <div ref={viewportRef} className="overflow-hidden">
-        <motion.div
+        <m.div
           className="flex items-start"
           style={{ x, touchAction: "pan-y" }}
           drag="x"
@@ -97,7 +97,7 @@ export function SwipeTabs({ tabs, className }: { tabs: Tab[]; className?: string
               {t.content}
             </div>
           ))}
-        </motion.div>
+        </m.div>
       </div>
     </div>
   );

@@ -1,6 +1,6 @@
 "use client";
 
-import { AnimatePresence, motion } from "framer-motion";
+import { AnimatePresence, m } from "framer-motion";
 import {
   ChevronUp,
   Cpu,
@@ -812,13 +812,13 @@ export const TtsPlayer = forwardRef<TtsPlayerHandle, Props>(function TtsPlayer(
           <Headphones size={16} className="text-accent" /> Listen
         </button>
       ) : (
-        <motion.div
+        <m.div
           className="pointer-events-auto w-full max-w-md cursor-pointer overflow-hidden rounded-2xl border border-border bg-card/95 px-3 py-2 shadow-xl backdrop-blur"
           onClick={() => setShowSettings((s) => !s)}
         >
           <AnimatePresence initial={false}>
             {showSettings && (
-              <motion.div
+              <m.div
                 key="settings"
                 initial={{ height: 0, opacity: 0 }}
                 animate={{ height: "auto", opacity: 1 }}
@@ -980,7 +980,7 @@ export const TtsPlayer = forwardRef<TtsPlayerHandle, Props>(function TtsPlayer(
                 </span>
               </label>
                 </div>
-              </motion.div>
+              </m.div>
             )}
           </AnimatePresence>
 
@@ -1067,7 +1067,7 @@ export const TtsPlayer = forwardRef<TtsPlayerHandle, Props>(function TtsPlayer(
                 }}
               />
             </div>
-          </motion.div>
+          </m.div>
       )}
     </div>
   );
