@@ -1,6 +1,14 @@
 package com.novelscraper.app.ui.screen
 
+import android.app.Activity
+import android.content.Context
+import android.content.ContextWrapper
 import androidx.activity.compose.BackHandler
+import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.slideInVertically
+import androidx.compose.animation.slideOutVertically
 import androidx.compose.foundation.ScrollState
 import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.layout.Arrangement
@@ -9,6 +17,7 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.verticalScroll
@@ -22,7 +31,7 @@ import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.Scaffold
+import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
@@ -46,12 +55,16 @@ import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.text.SpanStyle
 import androidx.compose.ui.text.TextLayoutResult
 import androidx.compose.ui.text.buildAnnotatedString
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.core.view.WindowCompat
+import androidx.core.view.WindowInsetsCompat
+import androidx.core.view.WindowInsetsControllerCompat
 import androidx.lifecycle.viewmodel.compose.viewModel
 import coil.compose.AsyncImage
 import coil.request.ImageRequest
@@ -66,6 +79,15 @@ import com.novelscraper.app.ui.ReaderState
 import com.novelscraper.app.ui.ReaderViewModel
 import kotlinx.coroutines.flow.first
 import kotlin.math.roundToInt
+
+private fun findActivity(context: Context): Activity? {
+    var c: Context? = context
+    while (c is ContextWrapper) {
+        if (c is Activity) return c
+        c = c.baseContext
+    }
+    return null
+}
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -93,6 +115,36 @@ fun ReaderScreen(bookId: Int, position: Int, onBack: () -> Unit) {
 
     var showChapters by remember { mutableStateOf(false) }
 
+    // Immersive reading: the toolbars — and the Android status/nav bars — are hidden
+    // so only the text shows. A single tap toggles them; scrolling hides them; they
+    // start visible when a chapter opens (reset per chapter via the `pos` key). The
+    // chapter content is always full-screen and the bars float on top, so toggling
+    // them never changes the scroll geometry (keeping the scroll/TTS-centring math
+    // stable).
+    var chromeVisible by remember(pos) { mutableStateOf(true) }
+    val toggleChrome = { chromeVisible = !chromeVisible }
+
+    // Drive the Android system bars from `chromeVisible` (edge-to-edge is on). A swipe
+    // still reveals them transiently while hidden. Always restore them on exit so the
+    // rest of the app isn't left full-screen.
+    val view = LocalView.current
+    LaunchedEffect(chromeVisible) {
+        val window = findActivity(view.context)?.window ?: return@LaunchedEffect
+        val controller = WindowCompat.getInsetsController(window, view)
+        controller.systemBarsBehavior =
+            WindowInsetsControllerCompat.BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE
+        if (chromeVisible) controller.show(WindowInsetsCompat.Type.systemBars())
+        else controller.hide(WindowInsetsCompat.Type.systemBars())
+    }
+    DisposableEffect(view) {
+        onDispose {
+            findActivity(view.context)?.window?.let { w ->
+                WindowCompat.getInsetsController(w, view)
+                    .show(WindowInsetsCompat.Type.systemBars())
+            }
+        }
+    }
+
     // Scroll + sentence model hoisted here so the Listen pill can start narration
     // from the sentence currently on screen. Fresh scroll state per chapter.
     val scroll = remember(bookId, pos) { ScrollState(0) }
@@ -107,8 +159,33 @@ fun ReaderScreen(bookId: Int, position: Int, onBack: () -> Unit) {
         return if (i >= 0) i else 0
     }
 
-    Scaffold(
-        topBar = {
+    val tts by TtsController.state.collectAsState()
+    val ttsActiveHere = tts.active && tts.bookId == bookId && tts.position == pos
+
+    Box(Modifier.fillMaxSize()) {
+        // Full-screen chapter content — its geometry is independent of the bars.
+        val s = state
+        when {
+            s is ReaderState.Error ->
+                Text(s.message, Modifier.align(Alignment.Center).padding(24.dp),
+                    color = MaterialTheme.colorScheme.error)
+            data == null ->
+                CircularProgressIndicator(Modifier.align(Alignment.Center))
+            else ->
+                ChapterBody(
+                    bookId, pos, data, fontScale, vm, scroll, plain, ranges,
+                    onToggleChrome = toggleChrome,
+                    onScrolled = { chromeVisible = false },
+                )
+        }
+
+        // Top toolbar (title, back, chapters, font size) — slides down over the text.
+        AnimatedVisibility(
+            visible = chromeVisible,
+            modifier = Modifier.align(Alignment.TopCenter),
+            enter = slideInVertically { -it } + fadeIn(),
+            exit = slideOutVertically { -it } + fadeOut(),
+        ) {
             TopAppBar(
                 title = { Text(data?.chapter?.title ?: "Loading…", maxLines = 1) },
                 navigationIcon = {
@@ -124,43 +201,48 @@ fun ReaderScreen(bookId: Int, position: Int, onBack: () -> Unit) {
                     TextButton(onClick = { ReaderPrefs.increaseFont() }) { Text("A+") }
                 },
             )
-        },
-        bottomBar = {
-            Row(
-                Modifier.fillMaxWidth().padding(horizontal = 8.dp, vertical = 4.dp),
-                horizontalArrangement = Arrangement.SpaceBetween,
-                verticalAlignment = Alignment.CenterVertically,
-            ) {
-                TextButton(enabled = data?.chapter?.has_prev == true, onClick = { pos -= 1 }) {
-                    Icon(Icons.Filled.ChevronLeft, contentDescription = null)
-                    Text("Prev")
-                }
-                Text("Chapter $pos", style = MaterialTheme.typography.labelMedium)
-                TextButton(enabled = data?.chapter?.has_next == true, onClick = { pos += 1 }) {
-                    Text("Next")
-                    Icon(Icons.Filled.ChevronRight, contentDescription = null)
+        }
+
+        // Bottom prev/next bar — slides up over the text.
+        AnimatedVisibility(
+            visible = chromeVisible,
+            modifier = Modifier.align(Alignment.BottomCenter),
+            enter = slideInVertically { it } + fadeIn(),
+            exit = slideOutVertically { it } + fadeOut(),
+        ) {
+            Surface(tonalElevation = 3.dp, shadowElevation = 8.dp) {
+                Row(
+                    Modifier.fillMaxWidth().navigationBarsPadding()
+                        .padding(horizontal = 8.dp, vertical = 4.dp),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    TextButton(enabled = data?.chapter?.has_prev == true, onClick = { pos -= 1 }) {
+                        Icon(Icons.Filled.ChevronLeft, contentDescription = null)
+                        Text("Prev")
+                    }
+                    Text("Chapter $pos", style = MaterialTheme.typography.labelMedium)
+                    TextButton(enabled = data?.chapter?.has_next == true, onClick = { pos += 1 }) {
+                        Text("Next")
+                        Icon(Icons.Filled.ChevronRight, contentDescription = null)
+                    }
                 }
             }
-        },
-    ) { inner ->
-        Box(Modifier.fillMaxSize().padding(inner)) {
-            val s = state
-            when {
-                s is ReaderState.Error ->
-                    Text(s.message, Modifier.align(Alignment.Center).padding(24.dp),
-                        color = MaterialTheme.colorScheme.error)
-                data == null ->
-                    CircularProgressIndicator(Modifier.align(Alignment.Center))
-                else ->
-                    ChapterBody(bookId, pos, data, fontScale, vm, scroll, plain, ranges)
-            }
+        }
+
+        // The TTS control ("Listen" pill → player). It belongs to the chrome, but
+        // stays visible while narration is active so playback stays controllable even
+        // when the bars are hidden. Sits just above the prev/next bar when shown.
+        if (chromeVisible || ttsActiveHere) {
             ReaderTtsBar(
                 bookId = bookId,
                 position = pos,
                 bookTitle = meta?.book?.title ?: "",
                 startIndex = { currentStartIndex() },
                 modifier = Modifier.align(Alignment.BottomCenter)
-                    .padding(horizontal = 16.dp, vertical = 10.dp),
+                    .navigationBarsPadding()
+                    .padding(horizontal = 16.dp)
+                    .padding(bottom = if (chromeVisible) 60.dp else 12.dp),
             )
         }
     }
@@ -235,6 +317,8 @@ private fun ChapterBody(
     scroll: ScrollState,
     plain: String,
     ranges: List<IntRange>,
+    onToggleChrome: () -> Unit,
+    onScrolled: () -> Unit,
 ) {
     val ctx = LocalContext.current
     val tts by TtsController.state.collectAsState()
@@ -276,6 +360,13 @@ private fun ChapterBody(
         snapshotFlow { if (scroll.maxValue > 0) scroll.value.toFloat() / scroll.maxValue else 0f }
             .collect { f -> if (restored) ReaderPrefs.setScroll(bookId, pos, f) }
     }
+    // Hide the bars once the reader actually starts scrolling (after the initial
+    // restore, so opening a chapter doesn't immediately hide them). TTS auto-centring
+    // also scrolls, which keeps the view immersive while narrating.
+    LaunchedEffect(bookId, pos) {
+        snapshotFlow { scroll.isScrollInProgress }
+            .collect { inProgress -> if (inProgress && restored) onScrolled() }
+    }
     val fracNow = rememberUpdatedState(
         if (scroll.maxValue > 0) scroll.value.toFloat() / scroll.maxValue else 0f
     )
@@ -315,6 +406,9 @@ private fun ChapterBody(
         Modifier.fillMaxSize()
             .onGloballyPositioned { viewportRootY = it.localToRoot(Offset.Zero).y; viewportH = it.size.height }
             .verticalScroll(scroll)
+            // A tap on empty space (margins, gaps, title, images) toggles the bars;
+            // taps on a text paragraph are handled by the paragraph's own detector.
+            .pointerInput(Unit) { detectTapGestures { onToggleChrome() } }
             .padding(horizontal = 22.dp, vertical = 16.dp),
         horizontalAlignment = Alignment.CenterHorizontally,
     ) {
@@ -345,11 +439,16 @@ private fun ChapterBody(
                         modifier = measure
                             .onGloballyPositioned { blockYs[block.firstIndex] = it.localToRoot(Offset.Zero).y }
                             .pointerInput(bookId, pos, block.firstIndex) {
-                                detectTapGestures { offset ->
-                                    val lr = layouts[block.firstIndex] ?: return@detectTapGestures
-                                    val gi = block.globalIndexAt(lr.getOffsetForPosition(offset))
-                                    if (gi >= 0) onSentenceTap(gi)
-                                }
+                                // Single tap toggles the bars; long-press on a sentence
+                                // starts (or seeks) narration from it.
+                                detectTapGestures(
+                                    onTap = { onToggleChrome() },
+                                    onLongPress = { offset ->
+                                        val lr = layouts[block.firstIndex] ?: return@detectTapGestures
+                                        val gi = block.globalIndexAt(lr.getOffsetForPosition(offset))
+                                        if (gi >= 0) onSentenceTap(gi)
+                                    },
+                                )
                             },
                     )
                 }
