@@ -4,7 +4,7 @@ import { useQueryClient } from "@tanstack/react-query";
 import { Check, ChevronLeft, ChevronRight, LocateFixed, Minus, Plus } from "lucide-react";
 import Link from "next/link";
 import { useParams, useRouter } from "next/navigation";
-import { useCallback, useEffect, useRef, useState, type CSSProperties } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, type CSSProperties } from "react";
 
 import { Button } from "@/components/ui/button";
 import { Select } from "@/components/ui/select";
@@ -115,7 +115,14 @@ export default function ReaderPage() {
   const [showType, setShowType] = useState(false);
   const typeRef = useRef<HTMLDivElement>(null);
   useDismiss(showType, () => setShowType(false), { refs: [typeRef] });
-  const [chapterPct, setChapterPct] = useState(0);
+  // The chapter progress bar is written straight to the DOM from the scroll
+  // handler rather than held in state: as state it re-rendered this whole
+  // component (and the TTS player) on every animation frame of every scroll.
+  const progressBarRef = useRef<HTMLDivElement>(null);
+  const setChapterPct = useCallback((frac: number) => {
+    const el = progressBarRef.current;
+    if (el) el.style.width = `${frac * 100}%`;
+  }, []);
   // Set when we land on a chapter via TTS auto-advance, so narration resumes.
   const [autoStartTts, setAutoStartTts] = useState(false);
   // 0..1 progress of the "pull past the end for the next chapter" gesture.
@@ -181,11 +188,16 @@ export default function ReaderPage() {
     localStorage.setItem(LEADING_KEY, String(l));
   }, []);
   // Shared typography for the chapter body (plain render + read-along view).
-  const contentStyle: CSSProperties = {
-    fontSize: `${1.1875 * scale}rem`,
-    fontFamily: READER_FONTS[font]?.stack,
-    lineHeight: leading,
-  };
+  // Memoized: a new object each render would change the `style` prop's identity
+  // on every scroll frame, re-applying inline styles to the whole chapter body.
+  const contentStyle: CSSProperties = useMemo(
+    () => ({
+      fontSize: `${1.1875 * scale}rem`,
+      fontFamily: READER_FONTS[font]?.stack,
+      lineHeight: leading,
+    }),
+    [scale, font, leading]
+  );
 
   // Keep the currently-narrated sentence in view — but only while following.
   useEffect(() => {
@@ -377,7 +389,7 @@ export default function ReaderPage() {
       window.removeEventListener("scroll", onScroll);
       if (raf) cancelAnimationFrame(raf);
     };
-  }, [bookId, position, markRead]);
+  }, [bookId, position, markRead, setChapterPct]);
 
   const go = useCallback(
     (delta: number) => {
@@ -467,6 +479,21 @@ export default function ReaderPage() {
     };
   }, [chapter?.has_next, go]);
 
+  // The chapter-jump list. Rebuilding it inline during render allocated one
+  // object per chapter on EVERY render — and the scroll handler re-renders this
+  // component on every animation frame, so scrolling a 2334-chapter novel was
+  // allocating 2334 objects ~60x a second.
+  const chapterOptions = useMemo(
+    () =>
+      chapterList && chapterList.length > 0
+        ? chapterList.map((c) => ({
+            value: String(c.position),
+            label: `${c.position}. ${c.title || `Chapter ${c.number || c.position}`}`,
+          }))
+        : [{ value: String(position), label: `Ch. ${chapter?.number || position}` }],
+    [chapterList, position, chapter?.number]
+  );
+
   if (isLoading) return <p className="text-muted-foreground">Loading…</p>;
   if (isError || !chapter)
     return <p className="text-destructive">Chapter not found.</p>;
@@ -476,8 +503,9 @@ export default function ReaderPage() {
       {/* Chapter reading progress (how far through this chapter). */}
       <div className="fixed left-0 top-0 z-40 h-1 w-full bg-transparent">
         <div
+          ref={progressBarRef}
           className="h-full bg-accent transition-[width] duration-150 ease-out"
-          style={{ width: `${chapterPct * 100}%` }}
+          style={{ width: 0 }}
         />
       </div>
 
@@ -507,14 +535,7 @@ export default function ReaderPage() {
                 router.push(`/read/${bookId}/${p}`);
               }
             }}
-            options={
-              chapterList && chapterList.length > 0
-                ? chapterList.map((c) => ({
-                    value: String(c.position),
-                    label: `${c.position}. ${c.title || `Chapter ${c.number || c.position}`}`,
-                  }))
-                : [{ value: String(position), label: `Ch. ${chapter.number || position}` }]
-            }
+            options={chapterOptions}
           />
           <Button variant="ghost" size="icon" aria-label="Next chapter"
             disabled={!chapter.has_next} onClick={() => go(1)}>
@@ -631,7 +652,7 @@ export default function ReaderPage() {
         autoStart={autoStartTts}
         mediaTitle={chapter.title || `Chapter ${chapter.number || position}`}
         mediaSubtitle={book?.title}
-        mediaArtwork={book?.has_cover ? coverUrl(bookId) : undefined}
+        mediaArtwork={book?.has_cover ? coverUrl(bookId, 800) : undefined}
       />
 
       {/* Overscroll-to-next hint (mobile): fills as you pull past the end. */}

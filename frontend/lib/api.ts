@@ -187,8 +187,16 @@ export function downloadAllUrl(bookId: number): string {
   return `${API_BASE}/api/books/${bookId}/download-all`;
 }
 
-export function coverUrl(bookId: number): string {
-  return `${API_BASE}/api/books/${bookId}/cover`;
+// Widths the backend will render a cover at (app/services/images.py
+// THUMB_WIDTHS). Asking for anything else silently serves the original, which
+// can be >1MB — so callers pick from here.
+export type CoverWidth = 200 | 400 | 800;
+
+/** URL for a book's cover. Pass the width it will be *drawn* at (x2 for DPR) to
+ *  get a WebP rendition instead of the source image; omit it for the original. */
+export function coverUrl(bookId: number, width?: CoverWidth): string {
+  const q = width ? `?w=${width}` : "";
+  return `${API_BASE}/api/books/${bookId}/cover${q}`;
 }
 
 export function audioChunkUrl(

@@ -15,6 +15,12 @@ beautifulsoup4>=4.12
 ebooklib>=0.18
 PyYAML>=6.0
 
+# covers are stored at the source site's resolution (observed: 1.4MB JPEGs) and
+# drawn ~200px wide in the library grid. Pillow renders the width-capped WebP
+# thumbnails the grid asks for; without it the API serves the original instead
+# (app/services/images.py degrades rather than failing).
+Pillow>=10.0
+
 # api layer
 fastapi>=0.115
 uvicorn[standard]>=0.30

@@ -5,7 +5,7 @@ from __future__ import annotations
 import logging
 import os
 
-from sqlalchemy import inspect, text
+from sqlalchemy import event, inspect, text
 from sqlmodel import Session, SQLModel, create_engine, select
 
 from .settings import settings
@@ -19,6 +19,36 @@ engine = create_engine(
     f"sqlite:///{settings.db_path}",
     connect_args={"check_same_thread": False, "timeout": 30},
 )
+
+
+@event.listens_for(engine, "connect")
+def _sqlite_pragmas(dbapi_connection, _connection_record) -> None:
+    """Per-connection SQLite tuning.
+
+    The default rollback journal serialises readers against the single writer,
+    which matters here because a scrape writes chapters continuously while the
+    reader is fetching them. WAL lets readers proceed during a write.
+
+    ``synchronous=NORMAL`` is the standard pairing with WAL: still crash-safe
+    against a process crash, and only risks the most recent transaction if the
+    *machine* loses power. Everything in this DB is re-derivable (re-scrape /
+    re-import), so that trade is worth the fsync per write it removes — and
+    every authenticated request used to perform one.
+
+    ``journal_mode`` is a persistent property of the database file, so setting
+    it on each connect is idempotent; the others are per-connection.
+    """
+    cursor = dbapi_connection.cursor()
+    try:
+        cursor.execute("PRAGMA journal_mode=WAL")
+        cursor.execute("PRAGMA synchronous=NORMAL")
+        # 8 MiB page cache (default is 2 MiB). The hot working set is the
+        # chapter index for the book being read.
+        cursor.execute("PRAGMA cache_size=-8000")
+        # Keep temp b-trees (ORDER BY on a 2000-row chapter list) off disk.
+        cursor.execute("PRAGMA temp_store=MEMORY")
+    finally:
+        cursor.close()
 
 
 def _migrate_add_columns() -> None:
@@ -58,6 +88,40 @@ def _migrate_add_columns() -> None:
                         ),
                         {"val": default.arg},
                     )
+
+
+def _ensure_indexes() -> None:
+    """Create any index a model declares that the database is missing.
+
+    ``create_all()`` only builds indexes when it *creates* the table, and
+    ``_migrate_add_columns`` adds columns via ALTER — which never brings an
+    index with it. So every index declared after a table first existed is
+    silently absent on an upgraded database. Measured on the dev DB: the
+    ``user_id`` indexes on book/job/collection, all three declared
+    ``index=True`` when multi-user landed, did not exist — every per-user list
+    query was a full table scan.
+
+    ``CREATE INDEX`` is additive and re-runnable (it neither rewrites the table
+    nor touches rows), so unlike a rename or a drop it is safe to do at startup
+    alongside the ADD COLUMN migration.
+    """
+    inspector = inspect(engine)
+    existing_tables = set(inspector.get_table_names())
+    for table_name, table in SQLModel.metadata.tables.items():
+        if table_name not in existing_tables:
+            continue  # create_all() just built it, indexes included
+        have = {ix["name"] for ix in inspector.get_indexes(table_name)}
+        for index in table.indexes:
+            if index.name in have:
+                continue
+            columns = ", ".join(f'"{c.name}"' for c in index.columns)
+            unique = "UNIQUE " if index.unique else ""
+            with engine.begin() as conn:
+                conn.execute(text(
+                    f'CREATE {unique}INDEX IF NOT EXISTS "{index.name}" '
+                    f'ON "{table_name}" ({columns})'
+                ))
+            logger.info("db migration: created index %s on %s", index.name, table_name)
 
 
 def _backfill_book_source_urls() -> None:
@@ -228,6 +292,7 @@ def init_db() -> None:
     SQLModel.metadata.create_all(engine)
     _migrate_archived_progress()   # before _migrate_add_columns (PK rebuild)
     _migrate_add_columns()
+    _ensure_indexes()              # after the columns they index exist
     _backfill_book_source_urls()
     _bootstrap_admin_and_backfill()
     _compress_chapter_content()

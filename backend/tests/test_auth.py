@@ -159,6 +159,52 @@ with TestClient(app) as c:
     check("delete-missing-404",
           c.delete("/api/auth/users/999999", cookies=as_(admin_tok)).status_code == 404)
 
+    # --- the expiry slide is throttled: a read request must not write ---
+    # (it used to UPDATE usersession on EVERY authenticated request, which also
+    # expired the ORM User and forced a second SELECT to re-load it)
+    from app.db import engine as _engine
+    from app.models import UserSession as _US
+    from app.auth import _SLIDE_AFTER as _SA, _ttl as _ttl_fn
+    from sqlmodel import Session as _S, select as _sel
+    import datetime as _dt
+
+    def _expiry(tok):
+        from app.security import hash_token as _ht
+        with _S(_engine) as s:
+            row = s.get(_US, _ht(tok))
+            return row.expires_at if row else None
+
+    before_exp = _expiry(admin_tok)
+    c.get("/api/auth/me", cookies=as_(admin_tok))
+    check("fresh-session-not-rewritten", _expiry(admin_tok) == before_exp)
+    # ...but the cookie is still re-issued on every response, so an active
+    # reader never hits the cookie's absolute max-age.
+    sc2 = c.get("/api/auth/me", cookies=as_(admin_tok)).headers.get("set-cookie", "")
+    check("cookie-still-slid-every-request", "max-age=" in sc2.lower())
+
+    # Age the row past the threshold; the next request must slide it.
+    with _S(_engine) as s:
+        from app.security import hash_token as _ht2
+        row = s.get(_US, _ht2(admin_tok))
+        row.expires_at = _dt.datetime.utcnow() + _ttl_fn() * (1 - _SA) - _dt.timedelta(hours=1)
+        aged = row.expires_at
+        s.add(row); s.commit()
+    c.get("/api/auth/me", cookies=as_(admin_tok))
+    check("aged-session-is-slid", _expiry(admin_tok) > aged)
+
+    # An expired session is still rejected (and reaped).
+    with _S(_engine) as s:
+        from app.security import hash_token as _ht3
+        row = s.get(_US, _ht3(admin_tok))
+        row.expires_at = _dt.datetime.utcnow() - _dt.timedelta(seconds=1)
+        s.add(row); s.commit()
+    check("expired-session-401",
+          c.get("/api/auth/me", cookies=as_(admin_tok)).status_code == 401)
+    check("expired-session-reaped", _expiry(admin_tok) is None)
+
+    # Re-login so the logout check below still exercises a live session.
+    _, admin_tok = login(c, "admin", "admin-pw-123")
+
     # --- logout revokes the session ---
     c.cookies.set(COOKIE_NAME, admin_tok)
     check("logout-204", c.post("/api/auth/logout").status_code == 204)

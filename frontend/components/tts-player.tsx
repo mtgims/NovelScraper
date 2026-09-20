@@ -1,6 +1,6 @@
 "use client";
 
-import { AnimatePresence, motion } from "framer-motion";
+import { AnimatePresence, m } from "framer-motion";
 import {
   ChevronUp,
   Cpu,
@@ -24,6 +24,7 @@ import {
 
 import { api, audioChunkUrl } from "@/lib/api";
 import {
+  BROWSER_VOICES,
   browserTtsUsable,
   browserVoices,
   onModelProgress,
@@ -129,7 +130,10 @@ export const TtsPlayer = forwardRef<TtsPlayerHandle, Props>(function TtsPlayer(
 
   const [browserSupported, setBrowserSupported] = useState(false);
   const [engine, setEngine] = useState<Engine | null>(null);
-  const [browserVoiceList, setBrowserVoiceList] = useState<string[]>([]);
+  // Seed with the full static list so the on-device picker shows every voice
+  // (grouped by language) immediately — before the slow model load resolves and
+  // even when the server engine is unavailable. Refined once the model reports in.
+  const [browserVoiceList, setBrowserVoiceList] = useState<string[]>(BROWSER_VOICES);
   // Native OS TTS (Web Speech API) — a screen-on engine using the device's own
   // installed voices; no PC/GPU. See lib/os-tts.ts for the trade-offs.
   const [osSupported, setOsSupported] = useState(false);
@@ -808,13 +812,13 @@ export const TtsPlayer = forwardRef<TtsPlayerHandle, Props>(function TtsPlayer(
           <Headphones size={16} className="text-accent" /> Listen
         </button>
       ) : (
-        <motion.div
+        <m.div
           className="pointer-events-auto w-full max-w-md cursor-pointer overflow-hidden rounded-2xl border border-border bg-card/95 px-3 py-2 shadow-xl backdrop-blur"
           onClick={() => setShowSettings((s) => !s)}
         >
           <AnimatePresence initial={false}>
             {showSettings && (
-              <motion.div
+              <m.div
                 key="settings"
                 initial={{ height: 0, opacity: 0 }}
                 animate={{ height: "auto", opacity: 1 }}
@@ -976,7 +980,7 @@ export const TtsPlayer = forwardRef<TtsPlayerHandle, Props>(function TtsPlayer(
                 </span>
               </label>
                 </div>
-              </motion.div>
+              </m.div>
             )}
           </AnimatePresence>
 
@@ -1063,7 +1067,7 @@ export const TtsPlayer = forwardRef<TtsPlayerHandle, Props>(function TtsPlayer(
                 }}
               />
             </div>
-          </motion.div>
+          </m.div>
       )}
     </div>
   );

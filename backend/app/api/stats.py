@@ -11,7 +11,13 @@ from sqlmodel import Session, select
 from ..db import get_session
 from ..models import Book, Chapter, ReadingProgress, User
 from ..schemas import BookStat, StatsRead
-from ..services.reading import WORDS_PER_MINUTE, chapter_word_map, ensure_word_counts
+from ..services.reading import (
+    WORDS_PER_MINUTE,
+    books_needing_word_counts,
+    chapter_word_maps,
+    ensure_word_counts,
+    progress_totals,
+)
 from .deps import get_current_user
 
 router = APIRouter()
@@ -35,18 +41,24 @@ def get_stats(user: User = Depends(get_current_user),
     books_started = books_finished = 0
     per_book: list[BookStat] = []
 
+    # Backfill only the books that actually need it (one grouped query finds
+    # them), then fetch every book's word map in one go. This used to be two
+    # queries per book — 24 statements for a 9-book library, and growing.
+    for stale_id in books_needing_word_counts(session, book_ids):
+        ensure_word_counts(session, stale_id)
+    word_maps = chapter_word_maps(session, book_ids)
+
     for book in books:
-        ensure_word_counts(session, book.id)
-        words = chapter_word_map(session, book.id)
-        tc = len(words)
+        words = word_maps.get(book.id, {})
         prog = progress.get(book.id)
-        read = [p for p in (prog.read_positions if prog else []) if p in words]
-        rc = len(read)
+        tc, tw, _read, rc, wr = progress_totals(
+            words, prog.read_positions if prog else ()
+        )
 
         total_chapters += tc
         chapters_read += rc
-        total_words += sum(words.values())
-        words_read += sum(words[p] for p in read)
+        total_words += tw
+        words_read += wr
         if rc > 0 or (prog and prog.last_position > 1):
             books_started += 1
         if tc > 0 and rc >= tc:

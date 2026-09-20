@@ -9,9 +9,10 @@ import shutil
 import tempfile
 import zipfile
 from datetime import datetime, timezone
+from pathlib import Path
 from typing import List, Optional
 
-from fastapi import APIRouter, Depends, HTTPException, Query, Response
+from fastapi import APIRouter, Depends, HTTPException, Query, Request, Response
 from fastapi.responses import FileResponse, StreamingResponse
 from sqlmodel import Session, delete, select
 
@@ -27,6 +28,7 @@ from ..models import (
     User,
     Volume,
 )
+from ..services.images import THUMB_WIDTHS, ensure_thumb, image_response
 from ..services.library import book_read, books_read, has_cover
 from ..services.reading import ensure_word_counts, progress_payload
 from ..settings import settings
@@ -344,12 +346,27 @@ def audio_chunk(book_id: int, position: int, chunk: int,
 
 
 @router.get("/{book_id}/cover")
-def book_cover(book_id: int, user: User = Depends(get_current_user),
+def book_cover(book_id: int, request: Request,
+               w: Optional[int] = Query(None, description="Render width in px"),
+               user: User = Depends(get_current_user),
                session: Session = Depends(get_session)):
+    """Serve a book's cover.
+
+    Covers are stored at whatever resolution the source published (some are
+    >1 MB) while the library grid draws them ~200 px wide, so callers pass ``w``
+    to get a width-capped WebP rendition instead. Unknown widths, a source
+    already narrower than ``w``, or a build without Pillow all fall back to the
+    original file. Either way the response carries validators and answers a
+    conditional request with 304."""
     book = _owned_book(session, book_id, user)
     if not has_cover(book):
         raise HTTPException(status_code=404, detail="No cover")
-    return FileResponse(book.cover_path)
+    cover = Path(book.cover_path)
+    if w in THUMB_WIDTHS:
+        thumb = ensure_thumb(cover, settings.cover_dir / "thumbs", w)
+        if thumb is not None:
+            return image_response(request, thumb, media_type="image/webp")
+    return image_response(request, cover)
 
 
 # Illustration filenames are "{16-hex-hash}{ext}" — constrain to that shape so a
@@ -358,7 +375,8 @@ _IMAGE_NAME_RE = re.compile(r"^[A-Za-z0-9]{1,64}\.(jpg|jpeg|png|webp|gif|svg)$")
 
 
 @router.get("/{book_id}/images/{name}")
-def book_image(book_id: int, name: str, user: User = Depends(get_current_user),
+def book_image(book_id: int, name: str, request: Request,
+               user: User = Depends(get_current_user),
                session: Session = Depends(get_session)):
     """Serve an imported EPUB's stored illustration."""
     _owned_book(session, book_id, user)
@@ -367,7 +385,9 @@ def book_image(book_id: int, name: str, user: User = Depends(get_current_user),
     path = settings.image_dir / str(book_id) / name
     if not path.is_file():
         raise HTTPException(status_code=404, detail="No image")
-    return FileResponse(path)
+    # Not resized: these are chapter content, and a reader can legitimately want
+    # the full-resolution illustration. Caching/304 only.
+    return image_response(request, path)
 
 
 @router.get("/{book_id}/download-all")
@@ -444,11 +464,12 @@ def delete_book(book_id: int, user: User = Depends(get_current_user),
                 os.remove(vol.path)
         except OSError:
             pass  # best-effort file cleanup
-        session.delete(vol)
-    for chapter in session.exec(
-        select(Chapter).where(Chapter.book_id == book_id)
-    ).all():
-        session.delete(chapter)
+    # Bulk DELETEs, not ORM row-by-row. Loading Chapter entities to delete them
+    # pulled every chapter's gzipped HTML into memory and decompressed it (2334
+    # rows for the largest fixture novel) purely to throw it away, then issued
+    # one DELETE each. Volumes have no cascade behaviour to preserve either.
+    session.exec(delete(Volume).where(Volume.book_id == book_id))
+    session.exec(delete(Chapter).where(Chapter.book_id == book_id))
     if book.cover_path and os.path.exists(book.cover_path):
         try:
             os.remove(book.cover_path)

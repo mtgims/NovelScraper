@@ -2,8 +2,10 @@
 
 A login creates a `UserSession` and returns an opaque random token delivered as
 an httpOnly cookie. Only the token's SHA-256 is stored (`token_hash`), so a DB
-leak can't be replayed as a cookie. Each authenticated request slides the
-session's expiry. Logout / account-disable revoke immediately.
+leak can't be replayed as a cookie. Using a session slides its expiry — the
+cookie on every response, the stored row only once it has aged past
+`_SLIDE_AFTER` of its TTL, so a read request stays a read. Logout /
+account-disable revoke immediately.
 
 Session/invite time math uses naive-UTC (`_now`) because SQLite round-trips
 datetimes without tzinfo — comparing a stored (naive) expiry against an aware
@@ -82,9 +84,22 @@ def create_session(session: Session, user: User) -> str:
     return token
 
 
+# Only persist a slid expiry once the session has used up this fraction of its
+# TTL. Writing on *every* request cost a row update (and, before WAL, an fsync)
+# on every read — a chapter fetch, a progress save, an audio manifest — and the
+# commit also expired the User object, forcing a second SELECT to re-load it.
+# At 30 days TTL this writes at most once a day per session, while an actively
+# used session still never expires: the remaining lifetime after a skipped
+# write is never less than (1 - _SLIDE_AFTER) * TTL = 27 days.
+_SLIDE_AFTER = 0.1
+
+
 def resolve_session(session: Session, raw_token: str) -> User | None:
     """Return the user for a valid, unexpired token, sliding the expiry. Expired
-    tokens are deleted; disabled/missing users return None."""
+    tokens are deleted; disabled/missing users return None.
+
+    The slide is throttled (see ``_SLIDE_AFTER``) so an authenticated read is a
+    pure read."""
     if not raw_token:
         return None
     row = session.get(UserSession, hash_token(raw_token))
@@ -98,9 +113,11 @@ def resolve_session(session: Session, raw_token: str) -> User | None:
     user = session.get(User, row.user_id)
     if user is None or user.disabled:
         return None
-    row.expires_at = now + _ttl()
-    session.add(row)
-    session.commit()
+    ttl = _ttl()
+    if row.expires_at - now < ttl * (1 - _SLIDE_AFTER):
+        row.expires_at = now + ttl
+        session.add(row)
+        session.commit()
     return user
 
 
