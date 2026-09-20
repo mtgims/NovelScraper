@@ -25,11 +25,11 @@ node_modules/
 # file:stubs/onnxruntime-node; without it a fresh `npm ci` can't resolve the
 # dependency and the build fails.
 
-# deploy secrets — the real .env holds the admin password (.env.example is tracked)
+# deploy secrets: .env holds the domain and the admin password
 .env
 
-# local agent worktrees/scratch (never commit)
-.claude/worktrees/
+# local tooling scratch: editor/assistant config and worktrees. Never commit.
+.claude/
 
 # The built Android app, dropped here by every release build (see the
 # copyApkToRoot task in APKcode/app/build.gradle.kts). A ~33MB binary that is
@@ -37,3 +37,8 @@ node_modules/
 # root so it is always in one predictable place to send to a phone.
 /novelscraper.apk
 /novelscraper-*.apk
+
+# Session handoff notes. Holds the server address, its SSH public key and
+# operational detail that has no business in a shared repo — and `git add -A`
+# would happily take it.
+/CHAT-HANDOFF.md

@@ -8,7 +8,7 @@ Type=simple
 WorkingDirectory=%h/NovelScraper/backend
 # Auth config (admin bootstrap credentials + options). Optional file (the leading
 # '-' means "skip if absent"); keep it out of git since it holds a password. See
-# deploy/README.md "Accounts & login".
+# the README's account setup.
 EnvironmentFile=-%h/.config/novelscraper/novelscraper.env
 # Bound to localhost only — the frontend proxies to it, so it never needs to be
 # exposed on the network.

@@ -1,0 +1,166 @@
+# Changelog
+
+What changed and when, newest first. Dates are when the work landed.
+
+The Android app has its own version numbers on top of this, see
+[`APKcode/CHANGELOG.md`](APKcode/CHANGELOG.md), which maps each `versionCode` to
+what's in that APK, so you can tell what's on your phone.
+
+---
+
+## 2026-09-20
+
+**Performance pass across the whole app**, measured before and after rather than
+guessed at. Nothing about the UI or behaviour changed.
+
+- Covers are served as width-capped WebP instead of whatever the source site
+  published, and the server now honours conditional requests: it had been
+  sending an `ETag` and then ignoring it, so every client re-downloaded every
+  cover forever. Library page LCP 15.3 s → 4.1 s on mobile; covers below the
+  first row load lazily, which on a 60-book shelf cut transfer 2 446 → 980 kB.
+- SQLite switched to WAL, so reading a chapter no longer waits behind a scrape
+  writing one. Three indexes the models declared had never actually been
+  created: every per-user query was a full table scan. Chapter lookups now use
+  a covering index: 4.60 ms → 2.42 ms.
+- Authenticated reads no longer write to the database. Session expiry was being
+  persisted on every single request, which also forced a redundant re-read.
+- `/api/stats` lost its N+1: at 60 books it was 124 SQL statements, now 6.
+- Deleting a 2 334-chapter novel: 321 ms → 17 ms, and 74 MB → 0.09 MB of memory.
+  It had been loading every chapter's compressed text just to discard it.
+- The reader stopped re-rendering itself on every scroll frame. Scroll layout
+  work down 97%, scripting down 85%.
+- framer-motion is loaded lazily, taking 27 kB off the reader's first load.
+- Android: per-ABI APKs (phones were downloading the emulator's 34 MB of native
+  libs) and R8 enabled. APK 80.4 MB → 33.6 MB, cold start 236 → 211 ms, memory
+  46 → 36 MB. Release builds no longer log every request to logcat.
+
+Also: the repo got a README, the docs were tidied, and the deploy moved from
+rsync to a git clone on the server.
+
+**Reader immersive mode**, toolbars and the Android system bars hide while
+reading. Tap to bring them back, scroll to hide them.
+
+## 2026-08-24
+
+**NovelUpdates as a source.** An in-app browser to pick a translation group,
+then scrape that group from chapter 1. NU sits behind a Cloudflare challenge
+that only reveals chapter links to a logged-in session, so it needs a real
+WebView. Paste an NU link into the normal URL field and it works too.
+
+**Generic extraction for unknown sites**: a profile-less fallback, a
+sequential-URL strategy for JS-router readers, and a WebView render fallback
+that extracts from the post-JS DOM when static HTML is useless.
+
+## 2026-08-20
+
+Auto-update was never actually running; fixed, with a per-user "what's due"
+endpoint. The Android app triggers it when it comes to the foreground, so
+Cloudflare-gated sources update through the phone.
+
+## 2026-08-18
+
+In-chapter illustrations in the Android reader. Fixed TTS skipping lines by
+capping chunk size under Kokoro's token limit.
+
+## 2026-08-15
+
+Delete novels, check for new chapters, and export reading progress from the
+Android app.
+
+## 2026-08-14
+
+**Scrape through your phone's IP.** Cloudflare blocks the server's datacentre
+address range for several sources but not a residential one, so the raw fetch is
+relayed over a WebSocket to the phone. Caddy routes the relay straight to the
+backend, since Next.js rewrites don't forward WebSocket upgrades.
+
+## 2026-08-13
+
+**On-device neural narration on Android** via sherpa-onnx, Kokoro first, then
+Piper as a faster second engine with named US and UK voices. Getting it to sound
+right took most of the day: the wrong model (English and Chinese only), voices
+listed as "Voice #n", an audio path some phones route through a bandlimited
+voice channel, and a "speedup" that on-device timing proved was slower than what
+it replaced.
+
+Sentence highlighting and tap-a-sentence-to-start in the Android reader, plus
+the "Listen" pill matching the web player.
+
+**Web TTS** moved to a Web Worker so synthesis stops freezing the UI, with a
+CPU fallback for browsers whose WebGPU can't run the model.
+
+## 2026-08-12
+
+**The Android app**, built in a day: native Kotlin and Compose, not a WebView
+wrapper. Login, library grid with collections and drag-to-reorder, book detail,
+reader, EPUB import, the scrape/progress/stats screens, background and
+lock-screen narration, and the editorial theme from the web app.
+
+## 2026-08-11
+
+Six new sources, novelcool, ranobes, novelhall, novelbuddy, wuxia.click,
+openquill, plus a new `sequential` enumeration strategy, and a fix for
+freewebnovel only ever finding the first 40 chapters. Dropped lightnovelworld,
+which shut down.
+
+## 2026-08-10
+
+**One-command Docker deploy** to a GPU-free VPS at a custom domain, with
+automatic HTTPS.
+
+Reader typography controls (font, size, line spacing) that work on mobile. A
+third TTS engine using the device's own OS voices, which phones now default to.
+The book page reworked for mobile with swipe tabs and a finger-following bottom
+sheet.
+
+## 2026-08-09
+
+TTS voice picker grouped by language and gender; fixed the highlight running
+away and losing its place when you changed voice or speed mid-playback.
+
+## 2026-08-01
+
+Fixed incremental updates filing every new chapter as its own volume.
+
+## 2026-07-11 → 07-13
+
+**Multi-user accounts.** Sessions as opaque tokens in an httpOnly cookie,
+scrypt password hashing with no external crypto dependency, invite-based
+registration, and an admin page. Every query scoped to its owner, with a
+cross-user isolation test to keep it that way: a missing scope there is a data
+leak, not a bug.
+
+Fixed a VRAM leak that filled a 12 GB card, and made the session cookie slide so
+an active reader never expires mid-chapter.
+
+## 2026-07-04 → 07-05
+
+Installable as a PWA. Lock-screen media controls and background audio on mobile,
+narration that auto-advances between chapters, and a pull-for-next gesture.
+
+A maintainability pass over both halves: the backend grew a service layer so
+routers stopped importing each other's private helpers, and the frontend's
+duplicated interaction logic was deduplicated. The conventions that came out of
+it are in `CONTRIBUTING.md`.
+
+Several rounds of on-device TTS work establishing what actually runs on a phone
+GPU: the answer being "less than you'd hope".
+
+## 2026-07-02 → 07-03
+
+Library collections, ratings, bulk chapter marking, drag-and-drop reordering,
+and progress that survives deleting and re-scraping a novel.
+
+EPUB import, on-demand EPUB export, and embedded illustrations so a downloaded
+book is complete offline. Chapter text stored compressed.
+
+In-chapter scroll restore, rewritten on localStorage after the server-side
+version proved unreliable: it now waits for images and fonts to settle before
+restoring, because they change the page height for a while after first paint.
+
+Rate-limit handling that paces off the server's advertised budget rather than
+backing off blindly.
+
+## 2026-07-01
+
+Initial commit: the scraper, a FastAPI backend and a Next.js reader.

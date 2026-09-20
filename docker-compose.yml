@@ -1,6 +1,5 @@
 # NovelScraper — one-command deploy: backend + frontend + Caddy (automatic HTTPS).
 # Only Caddy is published (80/443); backend/frontend talk over the internal network.
-# See deploy/HOSTING.md for the full Hetzner + Cloudflare runbook.
 services:
   backend:
     build: ./backend

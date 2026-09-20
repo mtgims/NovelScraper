@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Push the working tree to the server for a Docker redeploy — with the right
-# excludes so it never ships the Android app, Claude worktrees, build caches, or
+# excludes so it never ships the Android app, scratch worktrees, build caches, or
 # your data/secrets. THIS is the deploy command.
 #
 # Usage:
