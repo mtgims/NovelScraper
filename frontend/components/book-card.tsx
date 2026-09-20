@@ -20,13 +20,21 @@ import {
 import type { Book, Collection } from "@/lib/types";
 import { cn } from "@/lib/utils";
 
+// How many cards to load eagerly. The rest are lazy: on a 2-column phone only
+// about four are above the fold, and the library's LCP element is one of them,
+// so lazy-loading from here down costs nothing visible while saving the bytes.
+const EAGER_COVERS = 6;
+
 /** Purely visual card — reused by the sortable item and the drag overlay. */
 export function BookCardView({
   book,
   className,
+  eager = true,
 }: {
   book: Book;
   className?: string;
+  /** Load the cover immediately (above the fold / drag preview) vs lazily. */
+  eager?: boolean;
 }) {
   return (
     <Card interactive className={cn("h-full overflow-hidden", className)}>
@@ -38,6 +46,8 @@ export function BookCardView({
             alt={`Cover of ${book.title}`}
             draggable={false}
             decoding="async"
+            loading={eager ? "eager" : "lazy"}
+            fetchPriority={eager ? "high" : "low"}
             className="h-full w-full object-cover"
           />
         ) : (
@@ -77,9 +87,12 @@ export function BookCardView({
 export function BookCard({
   book,
   collections,
+  index = 0,
 }: {
   book: Book;
   collections: Collection[];
+  /** Position in the grid — decides whether the cover loads eagerly. */
+  index?: number;
 }) {
   const {
     attributes,
@@ -185,6 +198,7 @@ export function BookCard({
       <Link href={`/book/${book.id}`} draggable={false} className="block min-w-0">
         <BookCardView
           book={book}
+          eager={index < EAGER_COVERS}
           className="transition-colors group-hover:[&_h2]:text-accent"
         />
       </Link>

@@ -223,8 +223,13 @@ export default function LibraryPage() {
                   slideDir === "left" ? "animate-slide-in-left" : "animate-slide-in-right"
                 )}
               >
-                {visible.map((book) => (
-                  <BookCard key={book.id} book={book} collections={collections ?? []} />
+                {visible.map((book, i) => (
+                  <BookCard
+                    key={book.id}
+                    book={book}
+                    index={i}
+                    collections={collections ?? []}
+                  />
                 ))}
               </div>
             </div>
