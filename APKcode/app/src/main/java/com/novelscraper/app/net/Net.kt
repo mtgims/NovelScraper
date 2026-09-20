@@ -76,7 +76,22 @@ object Net {
     }
 
     // --- URL helpers for image loads (Coil) that must carry the cookie ---
-    fun coverUrl(bookId: Int): String = "${_baseUrl}api/books/$bookId/cover"
+
+    /** Widths the server will render a cover at (backend THUMB_WIDTHS). Asking
+     *  for anything else serves the source image, which can be over a megabyte. */
+    const val COVER_WIDTH = 800
+
+    /** URL for a book's cover, capped at [COVER_WIDTH] px wide.
+     *
+     *  Covers are stored at whatever resolution the source site published — the
+     *  test library has a 1.4MB and an 805KB JPEG — while the grid draws them a
+     *  few hundred px wide and the book screen not much more. 800px covers the
+     *  largest render on a high-density phone with no visible softening, and is
+     *  ~80% fewer bytes over the user's mobile data. An older server that
+     *  doesn't know `w` ignores it and serves the original, so this degrades
+     *  rather than breaking. */
+    fun coverUrl(bookId: Int): String =
+        "${_baseUrl}api/books/$bookId/cover?w=$COVER_WIDTH"
     fun imageUrl(bookId: Int, name: String): String =
         "${_baseUrl}api/books/$bookId/images/$name"
 
