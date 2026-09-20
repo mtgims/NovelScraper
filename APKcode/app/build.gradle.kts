@@ -13,8 +13,11 @@ android {
         applicationId = "com.novelscraper.app"
         minSdk = 26
         targetSdk = 34
-        versionCode = 1
-        versionName = "0.1.0"
+        // Bump BOTH for every release you sideload: versionCode must increase
+        // for Android to accept the install over a previous one, versionName is
+        // what people see. See CHANGELOG.md.
+        versionCode = 45
+        versionName = "0.26.2"
     }
 
     // Only the ABIs we target — the phone (arm64) and the emulator (x86_64) —
