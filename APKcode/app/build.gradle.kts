@@ -15,9 +15,22 @@ android {
         targetSdk = 34
         versionCode = 1
         versionName = "0.1.0"
-        // Ship only the ABIs we target: the phone (arm64) + the emulator (x86_64).
-        // Keeps the APK smaller despite the sherpa-onnx native libs.
-        ndk { abiFilters += listOf("arm64-v8a", "x86_64") }
+    }
+
+    // Only the ABIs we target — the phone (arm64) and the emulator (x86_64) —
+    // packaged as SEPARATE APKs rather than one fat binary. The sherpa-onnx +
+    // ONNX Runtime native libs are ~30MB per ABI, so a combined APK made every
+    // phone download the 33.9MB x86_64 slice it can never run: 42% of the whole
+    // download. Splitting gives the phone an arm64-only APK and still produces
+    // an x86_64 one, so release builds stay testable on the emulator.
+    // (Replaces defaultConfig.ndk.abiFilters — AGP refuses to combine the two.)
+    splits {
+        abi {
+            isEnable = true
+            reset()
+            include("arm64-v8a", "x86_64")
+            isUniversalApk = false
+        }
     }
 
     buildTypes {
