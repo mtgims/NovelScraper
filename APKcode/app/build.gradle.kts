@@ -36,9 +36,18 @@ android {
     buildTypes {
         release {
             // Not debuggable -> ART/Compose run optimized (debug builds are far
-            // jankier). Minify left off to avoid keep-rule risk; signed with the
-            // debug key so the release APK sideloads without extra key setup.
-            isMinifyEnabled = false
+            // jankier). Signed with the debug key so the release APK sideloads
+            // without extra key setup.
+            //
+            // R8 + resource shrinking: the unminified build carried 44.6MiB of
+            // dex across three files for ~50 Kotlin sources, nearly all of it
+            // unreachable Compose/AndroidX/sherpa API surface. The keep rules
+            // in proguard-rules.pro cover the four things R8 cannot see —
+            // sherpa-onnx's JNI classes, kotlinx-serialization's generated
+            // serializers, Retrofit's reflective proxy, and @JavascriptInterface
+            // members on the offscreen WebViews.
+            isMinifyEnabled = true
+            isShrinkResources = true
             isDebuggable = false
             signingConfig = signingConfigs.getByName("debug")
             proguardFiles(
