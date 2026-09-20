@@ -15,9 +15,12 @@ to install it over the previous one. Both fields live in
 
 ```bash
 cd APKcode && mise exec -- ./gradlew :app:assembleRelease
-# app/build/outputs/apk/release/app-arm64-v8a-release.apk   <- the phone
-# app/build/outputs/apk/release/app-x86_64-release.apk      <- the emulator
 ```
+
+The phone build is copied to **`novelscraper.apk` in the project root** on every
+release build, overwriting the previous one — that is the file to install or
+send. The emulator's x86_64 build stays at
+`APKcode/app/build/outputs/apk/release/app-x86_64-release.apk`.
 
 Since 0.25.0 the release is minified by R8. **Archive
 `app/build/outputs/mapping/release/mapping.txt` with every APK you ship** — a

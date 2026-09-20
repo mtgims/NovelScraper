@@ -76,6 +76,40 @@ android {
     }
 }
 
+// Every release build drops the phone APK at the PROJECT ROOT as
+// novelscraper.apk. The Gradle output path
+// (app/build/outputs/apk/release/app-<abi>-release.apk) is fine for tooling but
+// hopeless for "send me the build" — and since the ABI split it holds two
+// files, only one of which belongs on a phone. This puts the arm64 one in a
+// single predictable place, overwriting the previous build.
+//
+// A single-file copy rather than a Copy task: the destination directory is the
+// repo root, which CONTAINS app/build/, so declaring it as a task output makes
+// Gradle infer a phantom dependency on the APK-listing task and fail the build.
+// Declaring one exact output file avoids that.
+//
+// The emulator's x86_64 APK is deliberately left behind in the Gradle output
+// dir — the only thing that wants it is `adb install` on a dev machine.
+val copyApkToRoot by tasks.registering {
+    description = "Copy the arm64 release APK to <repo root>/novelscraper.apk"
+    group = "build"
+    // Resolved here, inside the configuration block, so doLast closes over
+    // plain locals. Script-level vals would drag the whole script object into
+    // the closure, which the configuration cache cannot serialize.
+    val src = layout.buildDirectory.file("outputs/apk/release/app-arm64-v8a-release.apk")
+    val dst = rootProject.layout.projectDirectory.dir("..").file("novelscraper.apk").asFile
+    inputs.file(src)
+    outputs.file(dst)
+    doLast {
+        src.get().asFile.copyTo(dst, overwrite = true)
+        logger.lifecycle("APK -> ${dst.absolutePath}")
+    }
+}
+
+tasks.matching { it.name == "assembleRelease" }.configureEach {
+    finalizedBy(copyApkToRoot)
+}
+
 dependencies {
     val composeBom = platform("androidx.compose:compose-bom:2024.10.01")
     implementation(composeBom)
