@@ -99,14 +99,19 @@ def indexes_on(table):
 check("job-user_id-index-created", "ix_job_user_id" in indexes_on("job"))
 check("job-status-index-created", "ix_job_status" in indexes_on("job"))
 check("chapter-composite-index-created",
-      "ix_chapter_book_id_position" in indexes_on("chapter"))
+      "ix_chapter_book_id_position_word_count" in indexes_on("chapter"))
 check("book-user_id-index-created", "ix_book_user_id" in indexes_on("book"))
 check("collection-user_id-index-created",
       "ix_collection_user_id" in indexes_on("collection"))
 # The composite index must actually be chosen for the reader's lookup.
 plan = " ".join(str(r[-1]) for r in sqlite3.connect(DB).execute(
     "EXPLAIN QUERY PLAN SELECT id FROM chapter WHERE book_id = 1 AND position = 2"))
-check("chapter-lookup-uses-composite-index", "ix_chapter_book_id_position" in plan)
+check("chapter-lookup-uses-composite-index",
+      "ix_chapter_book_id_position_word_count" in plan)
+# ...and the word map must be answered from the index alone (no row reads).
+wplan = " ".join(str(r[-1]) for r in sqlite3.connect(DB).execute(
+    "EXPLAIN QUERY PLAN SELECT position, word_count FROM chapter WHERE book_id = 1"))
+check("word-map-uses-covering-index", "COVERING INDEX" in wplan.upper())
 
 # --- WAL: readers must not be blocked by the scrape worker's writes ---
 journal = sqlite3.connect(DB).execute("PRAGMA journal_mode").fetchone()[0]

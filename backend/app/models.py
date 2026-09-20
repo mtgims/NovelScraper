@@ -154,11 +154,17 @@ class Volume(SQLModel, table=True):
 
 
 class Chapter(SQLModel, table=True):
-    # Every read path looks a chapter up by (book, position): the reader fetch,
-    # its has_next probe, and the volume export. With only the book_id index
-    # SQLite had to walk every row of the book (2334 for the largest in the
-    # fixture library) checking position; this makes it one seek.
-    __table_args__ = (Index("ix_chapter_book_id_position", "book_id", "position"),)
+    # One index serving every hot read path for a book's chapters:
+    #   (book_id, position)             reader fetch, has_next probe, volume export
+    #   (book_id, position, word_count) the progress/stats word map
+    # All four are then COVERING — answered from the index without touching a
+    # row, which matters because the row holds the gzipped chapter HTML. With
+    # only the book_id index SQLite walked every row of the book (2334 for the
+    # largest fixture novel) to read position/word_count out of it.
+    __table_args__ = (
+        Index("ix_chapter_book_id_position_word_count",
+              "book_id", "position", "word_count"),
+    )
 
     id: Optional[int] = Field(default=None, primary_key=True)
     book_id: int = Field(foreign_key="book.id", index=True)
