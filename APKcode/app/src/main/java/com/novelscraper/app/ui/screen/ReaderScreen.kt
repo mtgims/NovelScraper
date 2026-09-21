@@ -5,6 +5,8 @@ import android.content.Context
 import android.content.ContextWrapper
 import androidx.activity.compose.BackHandler
 import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.shrinkVertically
+import androidx.compose.animation.expandVertically
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.animation.slideInVertically
@@ -203,47 +205,64 @@ fun ReaderScreen(bookId: Int, position: Int, onBack: () -> Unit) {
             )
         }
 
-        // Bottom prev/next bar — slides up over the text.
+        // Bottom cluster: the Listen pill sitting on top of the prev/next bar. They
+        // rise from the bottom edge together and leave together, as one piece.
+        //
+        // The pill is also allowed to stay on its own while narration is running
+        // and the bars are hidden, so playback stays controllable. In that state
+        // the bar folds away beneath it and the pill settles down to the edge.
+        //
+        // `barShown` is frozen while the cluster is hidden or leaving. Otherwise,
+        // hiding everything would also fold the bar away mid-exit and the pill
+        // would drop faster than the bar, instead of the two sliding out as one.
+        val clusterVisible = chromeVisible || ttsActiveHere
+        val barShownState = remember { mutableStateOf(chromeVisible) }
+        if (clusterVisible) barShownState.value = chromeVisible
+        val barShown = barShownState.value
+
         AnimatedVisibility(
-            visible = chromeVisible,
+            visible = clusterVisible,
             modifier = Modifier.align(Alignment.BottomCenter),
             enter = slideInVertically { it } + fadeIn(),
             exit = slideOutVertically { it } + fadeOut(),
         ) {
-            Surface(tonalElevation = 3.dp, shadowElevation = 8.dp) {
-                Row(
-                    Modifier.fillMaxWidth().navigationBarsPadding()
-                        .padding(horizontal = 8.dp, vertical = 4.dp),
-                    horizontalArrangement = Arrangement.SpaceBetween,
-                    verticalAlignment = Alignment.CenterVertically,
+            Column(Modifier.fillMaxWidth(), horizontalAlignment = Alignment.CenterHorizontally) {
+                ReaderTtsBar(
+                    bookId = bookId,
+                    position = pos,
+                    bookTitle = meta?.book?.title ?: "",
+                    startIndex = { currentStartIndex() },
+                    modifier = Modifier
+                        .padding(horizontal = 16.dp)
+                        .padding(bottom = 12.dp)
+                        // Alone, the pill sits over the (hidden) navigation bar area.
+                        .then(if (barShown) Modifier else Modifier.navigationBarsPadding()),
+                )
+                AnimatedVisibility(
+                    visible = barShown,
+                    enter = expandVertically(expandFrom = Alignment.Top) + fadeIn(),
+                    exit = shrinkVertically(shrinkTowards = Alignment.Top) + fadeOut(),
                 ) {
-                    TextButton(enabled = data?.chapter?.has_prev == true, onClick = { pos -= 1 }) {
-                        Icon(Icons.Filled.ChevronLeft, contentDescription = null)
-                        Text("Prev")
-                    }
-                    Text("Chapter $pos", style = MaterialTheme.typography.labelMedium)
-                    TextButton(enabled = data?.chapter?.has_next == true, onClick = { pos += 1 }) {
-                        Text("Next")
-                        Icon(Icons.Filled.ChevronRight, contentDescription = null)
+                    Surface(tonalElevation = 3.dp, shadowElevation = 8.dp) {
+                        Row(
+                            Modifier.fillMaxWidth().navigationBarsPadding()
+                                .padding(horizontal = 8.dp, vertical = 4.dp),
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                            verticalAlignment = Alignment.CenterVertically,
+                        ) {
+                            TextButton(enabled = data?.chapter?.has_prev == true, onClick = { pos -= 1 }) {
+                                Icon(Icons.Filled.ChevronLeft, contentDescription = null)
+                                Text("Prev")
+                            }
+                            Text("Chapter $pos", style = MaterialTheme.typography.labelMedium)
+                            TextButton(enabled = data?.chapter?.has_next == true, onClick = { pos += 1 }) {
+                                Text("Next")
+                                Icon(Icons.Filled.ChevronRight, contentDescription = null)
+                            }
+                        }
                     }
                 }
             }
-        }
-
-        // The TTS control ("Listen" pill → player). It belongs to the chrome, but
-        // stays visible while narration is active so playback stays controllable even
-        // when the bars are hidden. Sits just above the prev/next bar when shown.
-        if (chromeVisible || ttsActiveHere) {
-            ReaderTtsBar(
-                bookId = bookId,
-                position = pos,
-                bookTitle = meta?.book?.title ?: "",
-                startIndex = { currentStartIndex() },
-                modifier = Modifier.align(Alignment.BottomCenter)
-                    .navigationBarsPadding()
-                    .padding(horizontal = 16.dp)
-                    .padding(bottom = if (chromeVisible) 60.dp else 12.dp),
-            )
         }
     }
 

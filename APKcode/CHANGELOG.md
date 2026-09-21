@@ -28,6 +28,13 @@ crash report is unreadable without the matching one.
 
 ---
 
+## 0.28.1, 2026-09-21 · `versionCode 48`
+The Listen pill now rises from the bottom of the screen together with the
+Prev / Next bar, and leaves with it, instead of popping in on its own above a
+bar that slid. While narration is playing and the bars are hidden, the player
+stays on its own and settles down to the edge; bringing the bars back slides
+the Prev / Next bar in underneath it.
+
 ## 0.28.0, 2026-09-21 · `versionCode 47`
 Ratings. Tap a star under the author on the book screen to rate it 1 to 5;
 tap the current rating again to clear it, same as on the web. The rating is

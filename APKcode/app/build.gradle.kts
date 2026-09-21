@@ -16,8 +16,8 @@ android {
         // Bump BOTH for every release you sideload: versionCode must increase
         // for Android to accept the install over a previous one, versionName is
         // what people see. See CHANGELOG.md.
-        versionCode = 47
-        versionName = "0.28.0"
+        versionCode = 48
+        versionName = "0.28.1"
     }
 
     // Only the ABIs we target — the phone (arm64) and the emulator (x86_64) —
