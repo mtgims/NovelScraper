@@ -19,7 +19,7 @@ rsync -avz --delete \
   --exclude '.git' \
   --exclude '.env' \
   --exclude '.claude' \
-  --exclude 'APKcode' \
+  --exclude '/app/' \
   --exclude 'WebCode' \
   --exclude '*.apk' \
   --exclude 'CHAT-HANDOFF.md' \

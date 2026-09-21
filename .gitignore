@@ -32,7 +32,7 @@ node_modules/
 .claude/
 
 # The built Android app, dropped here by every release build (see the
-# copyApkToRoot task in APKcode/app/build.gradle.kts). A ~33MB binary that is
+# copyApkToRoot task in app/composeApp/build.gradle.kts). A ~33MB binary that is
 # reproducible from source, so it stays out of git — but it lives at the repo
 # root so it is always in one predictable place to send to a phone.
 /novelscraper.apk

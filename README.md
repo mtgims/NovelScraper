@@ -92,14 +92,15 @@ irreplaceable thing here. Everything else rebuilds.
 
 ## The Android app
 
-Native Kotlin and Compose, in `APKcode/`. Not a WebView wrapper: it has its own
-reader and its own on-device TTS.
+Native Kotlin and Compose Multiplatform, in `app/`. Not a WebView wrapper: it has
+its own reader and its own on-device TTS. The screens, networking and reader live
+in shared JVM code so the same app can run on Linux and Windows too.
 
 ```bash
-cd APKcode && mise exec -- ./gradlew :app:assembleRelease
+cd app && mise exec -- ./gradlew :composeApp:assembleRelease
 ```
 
-The phone build lands at `novelscraper.apk` in the repo root. `APKcode/CHANGELOG.md`
+The phone build lands at `novelscraper.apk` in the repo root. `app/CHANGELOG.md`
 tracks every version.
 
 ## A thing you'll hit: Cloudflare
@@ -121,7 +122,7 @@ backend/     FastAPI + SQLModel over SQLite. The scraper lives in app/scraper/,
              are YAML in site_profiles/.
 frontend/    Next.js 15, App Router. Proxies /api/* to the backend, so there's
              one origin and no CORS.
-APKcode/     The Android app.
+app/         The Android app (Kotlin Multiplatform; desktop targets share it).
 deploy/      Compose, Caddy, the push script and the hosting runbook.
 docs/        Performance audit, an engineering risk brief, older handoff notes.
 ```

@@ -3,13 +3,17 @@
 What changed and when, newest first. Dates are when the work landed.
 
 The Android app has its own version numbers on top of this, see
-[`APKcode/CHANGELOG.md`](APKcode/CHANGELOG.md), which maps each `versionCode` to
+[`app/CHANGELOG.md`](app/CHANGELOG.md), which maps each `versionCode` to
 what's in that APK, so you can tell what's on your phone.
 
 ---
 
 ## 2026-09-21
 
+- **Android app restructured for desktop (0.28.2).** No visible change. The
+  project moved from `APKcode/` to `app/` and is now Kotlin Multiplatform:
+  screens, networking and the reader are shared JVM code, so the coming Linux
+  app runs the same code. Installing over 0.28.1 keeps your login and settings.
 - **Android reader:** the Listen pill slides up from the bottom with the
   Prev / Next bar as one piece, instead of popping in above it.
 - **Android: ratings.** Rate a book 1 to 5 stars from its page; the rating
