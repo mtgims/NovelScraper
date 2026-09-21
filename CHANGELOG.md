@@ -10,6 +10,10 @@ what's in that APK, so you can tell what's on your phone.
 
 ## 2026-09-21
 
+- **Fix: exporting reading progress** (Stats → Export) failed with a server
+  error since the 2026-09-20 stats refactor, which dropped an import the export
+  still used. It now uses the same batched query as the stats page, and has a
+  test.
 - **Android app restructured for desktop (0.28.2).** No visible change. The
   project moved from `APKcode/` to `app/` and is now Kotlin Multiplatform:
   screens, networking and the reader are shared JVM code, so the coming Linux

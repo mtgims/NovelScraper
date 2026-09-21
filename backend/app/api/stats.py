@@ -121,10 +121,13 @@ def export_progress(format: str = Query("json"),
         ).all()
     }
 
+    for stale_id in books_needing_word_counts(session, book_ids):
+        ensure_word_counts(session, stale_id)
+    word_maps = chapter_word_maps(session, book_ids)
+
     rows: list[dict] = []
     for book in books:
-        ensure_word_counts(session, book.id)
-        words = chapter_word_map(session, book.id)
+        words = word_maps.get(book.id, {})
         tc = len(words)
         prog = progress.get(book.id)
         rc = len([p for p in (prog.read_positions if prog else []) if p in words])
