@@ -4,6 +4,7 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.novelscraper.app.data.BookCollectionsUpdate
 import com.novelscraper.app.data.BookRead
+import com.novelscraper.app.data.BookUpdate
 import com.novelscraper.app.data.ChapterListItem
 import com.novelscraper.app.data.CollectionRead
 import com.novelscraper.app.data.ProgressUpdate
@@ -163,6 +164,29 @@ class BookViewModel : ViewModel() {
                     _state.value = now.copy(progress = p)
                 }
             } catch (_: Exception) { /* best-effort */ }
+        }
+    }
+
+    /** Set the book's 1-5 star rating, or clear it with 0. Shown immediately, then
+     *  saved; if the save fails the previous rating comes back. */
+    fun setRating(rating: Int) {
+        val cur = _state.value as? BookState.Data ?: return
+        val previous = cur.book.rating
+        _state.value = cur.copy(book = cur.book.copy(rating = rating.takeIf { it > 0 }))
+        viewModelScope.launch {
+            try {
+                val updated = Net.api.editBook(cur.book.id, BookUpdate(rating = rating))
+                val now = _state.value
+                if (now is BookState.Data && now.book.id == updated.id) {
+                    _state.value = now.copy(book = updated)
+                }
+            } catch (e: Exception) {
+                val now = _state.value
+                if (now is BookState.Data && now.book.id == cur.book.id) {
+                    _state.value = now.copy(book = now.book.copy(rating = previous))
+                }
+                _action.value = "Couldn't save the rating."
+            }
         }
     }
 

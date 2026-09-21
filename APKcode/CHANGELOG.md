@@ -28,6 +28,11 @@ crash report is unreadable without the matching one.
 
 ---
 
+## 0.28.0, 2026-09-21 · `versionCode 47`
+Ratings. Tap a star under the author on the book screen to rate it 1 to 5;
+tap the current rating again to clear it, same as on the web. The rating is
+saved to the server and shows as small stars on the library card.
+
 ## 0.27.0, 2026-09-21 · `versionCode 46`
 Download volumes from the book screen: ⋮ → Download lists every volume, each
 saved as an EPUB, plus all of them as one zip when there's more than one. Files

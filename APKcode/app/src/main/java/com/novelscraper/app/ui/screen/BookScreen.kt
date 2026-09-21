@@ -13,6 +13,7 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
@@ -72,6 +73,7 @@ import com.novelscraper.app.net.Net
 import com.novelscraper.app.ui.BookState
 import com.novelscraper.app.ui.BookViewModel
 import com.novelscraper.app.ui.components.ChapterRow
+import com.novelscraper.app.ui.components.StarRating
 import com.novelscraper.app.ui.components.VolumeHeaderRow
 import com.novelscraper.app.ui.components.groupVolumes
 import com.novelscraper.app.ui.theme.Kicker
@@ -218,6 +220,7 @@ private fun BookContent(
                 BookHeader(
                     data.book, data.progress, hasProgress, resumePos, collections,
                     onToggleCollection = vm::toggleCollection,
+                    onRate = vm::setRating,
                     onOpenReader = onOpenReader,
                     onMarkAll = { vm.markAllRead(bookId) },
                     onReset = { showReset = true },
@@ -358,6 +361,7 @@ private fun BookHeader(
     resumePos: Int,
     collections: List<CollectionRead>,
     onToggleCollection: (Int) -> Unit,
+    onRate: (Int) -> Unit,
     onOpenReader: (Int) -> Unit,
     onMarkAll: () -> Unit,
     onReset: () -> Unit,
@@ -387,6 +391,8 @@ private fun BookHeader(
                     fontWeight = FontWeight.Bold, maxLines = 3, overflow = TextOverflow.Ellipsis)
                 Text(book.author, style = MaterialTheme.typography.bodyMedium,
                     color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.padding(top = 4.dp))
+                StarRating(book.rating, size = 34.dp, onRate = onRate,
+                    modifier = Modifier.padding(top = 6.dp).offset(x = (-4).dp))
                 if (progress != null && progress.total_chapters > 0) {
                     Text("${progress.read_count} / ${progress.total_chapters} · ${progress.percent_read.toInt()}%",
                         style = MaterialTheme.typography.labelMedium.copy(fontFamily = Kicker.fontFamily),

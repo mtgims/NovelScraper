@@ -10,6 +10,8 @@ what's in that APK, so you can tell what's on your phone.
 
 ## 2026-09-21
 
+- **Android: ratings.** Rate a book 1 to 5 stars from its page; the rating
+  shows on the library card and matches the web.
 - **Android: download volumes.** ⋮ → Download on a book saves any volume as an
   EPUB, or every volume as one zip, into Downloads.
 

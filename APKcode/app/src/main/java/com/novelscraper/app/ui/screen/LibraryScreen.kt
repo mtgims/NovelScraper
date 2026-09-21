@@ -4,6 +4,7 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.aspectRatio
@@ -40,6 +41,7 @@ import coil.compose.AsyncImage
 import coil.request.ImageRequest
 import com.novelscraper.app.data.BookRead
 import com.novelscraper.app.net.Net
+import com.novelscraper.app.ui.components.StarRating
 import com.novelscraper.app.ui.LibraryPhase
 import com.novelscraper.app.ui.LibraryViewModel
 import com.novelscraper.app.ui.components.CollectionTabs
@@ -158,5 +160,9 @@ private fun BookCard(
             maxLines = 2, overflow = TextOverflow.Ellipsis, modifier = Modifier.padding(top = 6.dp))
         Text(book.author, style = MaterialTheme.typography.bodySmall,
             color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 1, overflow = TextOverflow.Ellipsis)
+        // Row always reserved, so rated and unrated cards keep the same height.
+        Box(Modifier.height(16.dp).padding(top = 2.dp)) {
+            if ((book.rating ?: 0) > 0) StarRating(book.rating, size = 13.dp)
+        }
     }
 }

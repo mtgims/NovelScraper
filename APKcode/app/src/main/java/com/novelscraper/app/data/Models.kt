@@ -55,6 +55,10 @@ data class BookRead(
     val volumes: List<VolumeRead> = emptyList(),
 )
 
+/** PATCH /api/books/{id}. A rating of 0 clears it. */
+@Serializable
+data class BookUpdate(val rating: Int? = null)
+
 @Serializable
 data class CollectionRead(val id: Int, val name: String, val sort_order: Int = 0)
 

@@ -4,6 +4,7 @@ import com.novelscraper.app.data.AuthConfig
 import com.novelscraper.app.data.BookCollectionsUpdate
 import com.novelscraper.app.data.BookRead
 import com.novelscraper.app.data.BookReorder
+import com.novelscraper.app.data.BookUpdate
 import com.novelscraper.app.data.ChapterListItem
 import com.novelscraper.app.data.ChapterRead
 import com.novelscraper.app.data.CollectionCreate
@@ -96,6 +97,10 @@ interface Api {
 
     @GET("api/books/{id}")
     suspend fun book(@Path("id") id: Int): BookRead
+
+    // Edit book metadata, currently just the rating (0 clears it).
+    @PATCH("api/books/{id}")
+    suspend fun editBook(@Path("id") id: Int, @Body body: BookUpdate): BookRead
 
     // Re-scrape from the book's source URL to pull in new chapters (incremental:
     // continues the last volume). 400 if imported/no source; 409 if already running.
