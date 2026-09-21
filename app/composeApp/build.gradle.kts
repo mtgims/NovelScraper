@@ -4,18 +4,17 @@ import java.security.MessageDigest
 import javax.inject.Inject
 
 plugins {
-    id("com.android.application")
+    id("com.android.kotlin.multiplatform.library")
+    // Android lint for the shared code (the KMP library plugin has none built in).
+    id("com.android.lint")
     id("org.jetbrains.kotlin.multiplatform")
     id("org.jetbrains.kotlin.plugin.compose")
     id("org.jetbrains.kotlin.plugin.serialization")
     id("org.jetbrains.compose")
 }
 
-// The app's version, shared by the Android APK and the desktop app. Bump BOTH for
-// every release: versionCode must increase for Android to accept the install over
-// a previous one, versionName is what people see. See ../CHANGELOG.md.
-val appVersionCode = 53
-val appVersionName = "0.30.1"
+// The app's version lives in ../gradle.properties (shared with androidApp).
+val appVersionName = providers.gradleProperty("appVersionName").get()
 
 // sherpa-onnx publishes its desktop JVM binding on GitHub releases, not Maven.
 // Downloaded into the build directory and checked against a pinned SHA-256.
@@ -40,37 +39,45 @@ abstract class DownloadFile : DefaultTask() {
 }
 
 val sherpaVersion = "1.13.8"
-val sherpaJvm by tasks.registering(DownloadFile::class) {
+val sherpaJvm = tasks.register<DownloadFile>("sherpaJvm") {
     url.set("https://github.com/k2-fsa/sherpa-onnx/releases/download/v$sherpaVersion/sherpa-onnx-jvm-$sherpaVersion.jar")
     sha256.set("77b7b047fade4eadada96b568eb92615049aaf1dc317c7244e46c1ea38b9a63b")
     dest.set(layout.buildDirectory.file("sherpa/sherpa-onnx-jvm-$sherpaVersion.jar"))
 }
-val sherpaNativeLinux by tasks.registering(DownloadFile::class) {
+val sherpaNativeLinux = tasks.register<DownloadFile>("sherpaNativeLinux") {
     url.set("https://github.com/k2-fsa/sherpa-onnx/releases/download/v$sherpaVersion/sherpa-onnx-native-lib-linux-x64-$sherpaVersion.jar")
     sha256.set("30c93b59381113f9c20aedbbf9fc1ad399158f6bc03dddc0f8934a6e28e069ba")
     dest.set(layout.buildDirectory.file("sherpa/sherpa-onnx-native-lib-linux-x64-$sherpaVersion.jar"))
 }
 
 // The desktop app uses the same font files as Android, copied at build time.
-val desktopFonts by tasks.registering(Sync::class) {
+val desktopFonts = tasks.register<Sync>("desktopFonts") {
     from("src/androidMain/res/font") { include("*.ttf"); into("font") }
     into(layout.buildDirectory.dir("generated/desktopFonts"))
 }
 
-// One Kotlin Multiplatform module for every app. Source sets:
+// The shared code of every app, as a Kotlin Multiplatform library. Source sets:
 //   jvmSharedMain  everything that runs the same on Android and desktop: models,
-//                  networking, view models, screens, theme. Android, Linux and
-//                  Windows are all JVM, so plain Java/JVM libraries (OkHttp,
-//                  Retrofit, commons-compress) are usable here.
-//   androidMain    the Android app: Application/Activity, the TTS foreground
-//                  service, WebView-based helpers, DownloadManager, resources.
-//   desktopMain    the Linux/Windows app (filled in from Phase 2 on).
+//                  networking, view models, screens, theme, extensions. Android,
+//                  Linux and Windows are all JVM, so plain Java/JVM libraries
+//                  (OkHttp, Retrofit, commons-compress) are usable here.
+//   androidMain    Android specifics: the TTS foreground service, WebView-based
+//                  helpers, DownloadManager, resources. The Android app itself
+//                  (Application, Activity, packaging) is the androidApp module.
+//   desktopMain    the Linux/Windows app, packaged here.
 // Platform differences are `expect`/`actual` declarations in jvmSharedMain
 // (see platform/Platform.kt), so each target is checked for completeness by the
 // compiler rather than wired up at runtime.
 kotlin {
-    androidTarget {
+    android {
+        namespace = "com.novelscraper.app.shared"
+        compileSdk = 37
+        minSdk = 26
         compilerOptions { jvmTarget.set(JvmTarget.JVM_17) }
+        // Fonts, icons and themes live here (res/), used by the code and the app.
+        androidResources { enable = true }
+        // Host tests (Robolectric) run the real framework code, resources included.
+        withHostTest { isIncludeAndroidResources = true }
     }
     jvm("desktop") {
         compilerOptions { jvmTarget.set(JvmTarget.JVM_17) }
@@ -87,27 +94,30 @@ kotlin {
     applyDefaultHierarchyTemplate {
         common {
             group("jvmShared") {
-                withAndroidTarget()
-                withJvm()
+                // The Android library target (AGP's KMP plugin) and the desktop JVM.
+                withCompilations {
+                    it.platformType == org.jetbrains.kotlin.gradle.plugin.KotlinPlatformType.androidJvm ||
+                        it.platformType == org.jetbrains.kotlin.gradle.plugin.KotlinPlatformType.jvm
+                }
             }
         }
     }
 
     sourceSets {
-        val jvmSharedMain by getting {
+        getByName("jvmSharedMain") {
             dependencies {
-                implementation("org.jetbrains.compose.runtime:runtime:1.10.3")
-                implementation("org.jetbrains.compose.foundation:foundation:1.10.3")
-                implementation("org.jetbrains.compose.ui:ui:1.10.3")
+                implementation("org.jetbrains.compose.runtime:runtime:1.12.0")
+                implementation("org.jetbrains.compose.foundation:foundation:1.12.0")
+                implementation("org.jetbrains.compose.ui:ui:1.12.0")
                 implementation("org.jetbrains.compose.material3:material3:1.9.0")
                 // Frozen at 1.7.3 upstream (no newer release); fine for the icons used.
                 implementation("org.jetbrains.compose.material:material-icons-extended:1.7.3")
-                implementation("org.jetbrains.androidx.lifecycle:lifecycle-viewmodel-compose:2.10.0")
-                implementation("org.jetbrains.androidx.lifecycle:lifecycle-runtime-compose:2.10.0")
+                implementation("org.jetbrains.androidx.lifecycle:lifecycle-viewmodel-compose:2.11.0")
+                implementation("org.jetbrains.androidx.lifecycle:lifecycle-runtime-compose:2.11.0")
                 implementation("org.jetbrains.androidx.navigation:navigation-compose:2.9.2")
 
                 // Networking: Retrofit + OkHttp + kotlinx-serialization JSON.
-                implementation("org.jetbrains.kotlinx:kotlinx-serialization-json:1.7.3")
+                implementation("org.jetbrains.kotlinx:kotlinx-serialization-json:1.11.0")
                 implementation("com.squareup.retrofit2:retrofit:2.11.0")
                 implementation("com.jakewharton.retrofit:retrofit2-kotlinx-serialization-converter:1.0.0")
                 implementation("com.squareup.okhttp3:okhttp:4.12.0")
@@ -115,11 +125,11 @@ kotlin {
 
                 // Image loading (covers / inline chapter images), through the same
                 // OkHttp client as the API so requests carry the auth cookie.
-                implementation("io.coil-kt.coil3:coil-compose:3.3.0")
-                implementation("io.coil-kt.coil3:coil-network-okhttp:3.3.0")
+                implementation("io.coil-kt.coil3:coil-compose:3.6.3")
+                implementation("io.coil-kt.coil3:coil-network-okhttp:3.6.3")
                 // Honour the server's Cache-Control/ETag (covers: max-age=300), as Coil 2
                 // did by default; Coil 3 otherwise reuses a cached image forever.
-                implementation("io.coil-kt.coil3:coil-network-cache-control:3.3.0")
+                implementation("io.coil-kt.coil3:coil-network-cache-control:3.6.3")
 
                 // Drag-to-reorder for the library grid.
                 implementation("sh.calvin.reorderable:reorderable:3.1.0")
@@ -139,18 +149,19 @@ kotlin {
                 // MediaSession + media-style notification for background/lock-screen TTS.
                 implementation("androidx.media:media:1.7.0")
                 // On-device Kokoro/Piper TTS via sherpa-onnx (ONNX model + espeak-ng
-                // phonemizer + voices).
-                implementation(files("libs/sherpa-onnx-1.13.5.aar"))
+                // phonemizer + voices). compileOnly: a library can't bundle a local
+                // .aar, so androidApp packages it.
+                compileOnly(files("libs/sherpa-onnx-1.13.5.aar"))
             }
         }
-        val desktopMain by getting {
+        getByName("desktopMain") {
             // Fonts copied from androidMain/res/font (see desktopFonts above).
             resources.srcDir(desktopFonts)
             dependencies {
                 implementation(compose.desktop.currentOs)
-                implementation("org.jetbrains.kotlinx:kotlinx-coroutines-swing:1.10.2")
+                implementation("org.jetbrains.kotlinx:kotlinx-coroutines-swing:1.11.0")
                 // BackHandler: Esc / the back gesture, through the navigation dispatcher.
-                implementation("org.jetbrains.compose.ui:ui-backhandler:1.10.3")
+                implementation("org.jetbrains.compose.ui:ui-backhandler:1.12.0")
                 // The HTML parser Android's Html.fromHtml uses; see platform/HtmlPlainText.kt.
                 implementation("org.ccil.cowan.tagsoup:tagsoup:1.2.1")
                 // sherpa-onnx for the Kokoro/Piper voices: the JVM binding plus the
@@ -158,12 +169,12 @@ kotlin {
                 implementation(files(sherpaJvm.flatMap { it.dest }, sherpaNativeLinux.flatMap { it.dest }))
             }
         }
-        val desktopTest by getting {
+        getByName("desktopTest") {
             dependencies {
                 implementation(kotlin("test"))
             }
         }
-        val androidUnitTest by getting {
+        getByName("androidHostTest") {
             dependencies {
                 implementation(kotlin("test"))
                 implementation("junit:junit:4.13.2")
@@ -172,109 +183,6 @@ kotlin {
             }
         }
     }
-}
-
-android {
-    namespace = "com.novelscraper.app"
-    compileSdk = 36
-
-    defaultConfig {
-        applicationId = "com.novelscraper.app"
-        minSdk = 26
-        targetSdk = 34
-        versionCode = appVersionCode
-        versionName = appVersionName
-    }
-
-    // Only the ABIs we target — the phone (arm64) and the emulator (x86_64) —
-    // packaged as SEPARATE APKs rather than one fat binary. The sherpa-onnx +
-    // ONNX Runtime native libs are ~30MB per ABI, so a combined APK made every
-    // phone download the 33.9MB x86_64 slice it can never run: 42% of the whole
-    // download. Splitting gives the phone an arm64-only APK and still produces
-    // an x86_64 one, so release builds stay testable on the emulator.
-    // (Replaces defaultConfig.ndk.abiFilters — AGP refuses to combine the two.)
-    splits {
-        abi {
-            isEnable = true
-            reset()
-            include("arm64-v8a", "x86_64")
-            isUniversalApk = false
-        }
-    }
-
-    buildTypes {
-        release {
-            // Not debuggable -> ART/Compose run optimized (debug builds are far
-            // jankier). Signed with the debug key so the release APK sideloads
-            // without extra key setup.
-            //
-            // R8 + resource shrinking: the unminified build carried 44.6MiB of
-            // dex across three files for ~50 Kotlin sources, nearly all of it
-            // unreachable Compose/AndroidX/sherpa API surface. The keep rules
-            // in proguard-rules.pro cover the four things R8 cannot see —
-            // sherpa-onnx's JNI classes, kotlinx-serialization's generated
-            // serializers, Retrofit's reflective proxy, and @JavascriptInterface
-            // members on the offscreen WebViews.
-            isMinifyEnabled = true
-            isShrinkResources = true
-            isDebuggable = false
-            signingConfig = signingConfigs.getByName("debug")
-            proguardFiles(
-                getDefaultProguardFile("proguard-android-optimize.txt"),
-                "proguard-rules.pro",
-            )
-        }
-    }
-
-    compileOptions {
-        sourceCompatibility = JavaVersion.VERSION_17
-        targetCompatibility = JavaVersion.VERSION_17
-    }
-    // Resources of the shared source set (the plugin host, built-in extensions)
-    // aren't packaged into the APK on their own; they're read as Java resources.
-    sourceSets["main"].resources.srcDir("src/jvmSharedMain/resources")
-
-    buildFeatures {
-        compose = true
-        // BuildConfig.DEBUG gates the OkHttp logging interceptor (net/Net.kt).
-        // It is a compile-time constant, so in release the whole branch — and
-        // with it the interceptor class — is eliminated.
-        buildConfig = true
-    }
-}
-
-// Every release build drops the phone APK at the PROJECT ROOT as
-// novelscraper.apk. The Gradle output path
-// (composeApp/build/outputs/apk/release/composeApp-<abi>-release.apk) is fine for tooling but
-// hopeless for "send me the build" — and since the ABI split it holds two
-// files, only one of which belongs on a phone. This puts the arm64 one in a
-// single predictable place, overwriting the previous build.
-//
-// A single-file copy rather than a Copy task: the destination directory is the
-// repo root, which CONTAINS app/build/, so declaring it as a task output makes
-// Gradle infer a phantom dependency on the APK-listing task and fail the build.
-// Declaring one exact output file avoids that.
-//
-// The emulator's x86_64 APK is deliberately left behind in the Gradle output
-// dir — the only thing that wants it is `adb install` on a dev machine.
-val copyApkToRoot by tasks.registering {
-    description = "Copy the arm64 release APK to <repo root>/novelscraper.apk"
-    group = "build"
-    // Resolved here, inside the configuration block, so doLast closes over
-    // plain locals. Script-level vals would drag the whole script object into
-    // the closure, which the configuration cache cannot serialize.
-    val src = layout.buildDirectory.file("outputs/apk/release/composeApp-arm64-v8a-release.apk")
-    val dst = rootProject.layout.projectDirectory.dir("..").file("novelscraper.apk").asFile
-    inputs.file(src)
-    outputs.file(dst)
-    doLast {
-        src.get().asFile.copyTo(dst, overwrite = true)
-        logger.lifecycle("APK -> ${dst.absolutePath}")
-    }
-}
-
-tasks.matching { it.name == "assembleRelease" }.configureEach {
-    finalizedBy(copyApkToRoot)
 }
 
 // html-parity tests (platform/HtmlParity*Test.kt): both test tasks read the
@@ -318,12 +226,12 @@ compose.desktop {
 // as novelscraper-x86_64.AppImage (like the APK): the app image Compose builds
 // (with its own Java runtime) wrapped by appimagetool. Both AppImage tools are
 // downloaded into the build directory and checked against pinned SHA-256s.
-val appImageTool by tasks.registering(DownloadFile::class) {
+val appImageTool = tasks.register<DownloadFile>("appImageTool") {
     url.set("https://github.com/AppImage/appimagetool/releases/download/1.9.1/appimagetool-x86_64.AppImage")
     sha256.set("ed4ce84f0d9caff66f50bcca6ff6f35aae54ce8135408b3fa33abfc3cb384eb0")
     dest.set(layout.buildDirectory.file("appimage-tools/appimagetool-x86_64.AppImage"))
 }
-val appImageRuntime by tasks.registering(DownloadFile::class) {
+val appImageRuntime = tasks.register<DownloadFile>("appImageRuntime") {
     url.set("https://github.com/AppImage/type2-runtime/releases/download/20251108/runtime-x86_64")
     sha256.set("2fca8b443c92510f1483a883f60061ad09b46b978b2631c807cd873a47ec260d")
     dest.set(layout.buildDirectory.file("appimage-tools/runtime-x86_64"))
@@ -381,7 +289,7 @@ abstract class BuildAppImage : DefaultTask() {
     }
 }
 
-val packageLinuxAppImage by tasks.registering(BuildAppImage::class) {
+val packageLinuxAppImage = tasks.register<BuildAppImage>("packageLinuxAppImage") {
     description = "Build <repo root>/novelscraper-x86_64.AppImage"
     group = "distribution"
     dependsOn("createDistributable")

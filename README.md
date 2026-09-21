@@ -97,7 +97,7 @@ its own reader and its own on-device TTS. The screens, networking and reader are
 shared code, so the Android and Linux apps are the same app (Windows comes next).
 
 ```bash
-cd app && mise exec -- ./gradlew :composeApp:assembleRelease        # Android
+cd app && mise exec -- ./gradlew :androidApp:assembleRelease        # Android
 cd app && mise exec -- ./gradlew :composeApp:packageLinuxAppImage   # Linux
 cd app && mise exec -- ./gradlew :composeApp:run                    # Linux, from source
 ```

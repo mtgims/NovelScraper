@@ -10,11 +10,11 @@ each time, so it doubles as the build number.
 - **`x`** stays 0 until you call it 1.0.
 
 **`versionCode` must increase for every build you sideload**, or Android refuses
-to install it over the previous one. Both fields live in
-`composeApp/build.gradle.kts`.
+to install it over the previous one. Both fields (`appVersionCode`,
+`appVersionName`) live in `gradle.properties`.
 
 ```bash
-cd app && mise exec -- ./gradlew :composeApp:assembleRelease
+cd app && mise exec -- ./gradlew :androidApp:assembleRelease
 ```
 
 The Linux app: `./gradlew :composeApp:packageLinuxAppImage` writes
@@ -24,13 +24,24 @@ starts it from source. Both apps share this version.
 The phone build is copied to **`novelscraper.apk` in the project root** on every
 release build, overwriting the previous one: that is the file to install or
 send. The emulator's x86_64 build stays at
-`app/composeApp/build/outputs/apk/release/composeApp-x86_64-release.apk`.
+`app/androidApp/build/outputs/apk/release/androidApp-x86_64-release.apk`.
 
 Since 0.25.0 the release is minified by R8. **Archive
-`composeApp/build/outputs/mapping/release/mapping.txt` with every APK you ship**, a
+`androidApp/build/outputs/mapping/release/mapping.txt` with every APK you ship**, a
 crash report is unreadable without the matching one.
 
 ---
+
+## 0.30.2, 2026-09-22 · `versionCode 54`
+Nothing new to see; the build underneath changed. The app now builds with Kotlin
+2.4.20, Compose Multiplatform 1.12.0, Android Gradle Plugin 9.4.1, Gradle 9.7.1
+and compileSdk 37 (targetSdk stays 34). The Android app is its own module
+(`androidApp`, with the Application, the activity and the packaging) on top of the
+shared code (`composeApp`, now a Kotlin Multiplatform library that also builds the
+Linux app). The version moved to `gradle.properties`, the phone build is
+`./gradlew :androidApp:assembleRelease`, and Android lint now reads all the code,
+which caught one real bug: an extension using `urlencode` crashed on Android 12
+and older (it called a method that only exists from Android 13); fixed.
 
 ## 0.30.1, 2026-09-22 · `versionCode 53`
 Sources now come only from repositories you add. The app ships with no sources

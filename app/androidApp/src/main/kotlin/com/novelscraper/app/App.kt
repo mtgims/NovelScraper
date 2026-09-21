@@ -21,7 +21,7 @@ import com.novelscraper.app.ui.theme.ThemeController
 class App : Application(), SingletonImageLoader.Factory {
     override fun onCreate() {
         super.onCreate()
-        initPlatform(this)  // first: the shared code's settings/files/toasts need it
+        initPlatform(this, BuildConfig.DEBUG)  // first: the shared code's settings/files/toasts need it
         Net.init()
         Extensions.init(Net.client)
         ReaderPrefs.init()

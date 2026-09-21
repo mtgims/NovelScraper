@@ -27,8 +27,7 @@ import androidx.core.content.ContextCompat
 import androidx.lifecycle.LifecycleService
 import androidx.lifecycle.lifecycleScope
 import androidx.media.app.NotificationCompat.MediaStyle
-import com.novelscraper.app.MainActivity
-import com.novelscraper.app.R
+import com.novelscraper.app.shared.R
 import com.novelscraper.app.data.ChapterRead
 import com.novelscraper.app.data.ProgressUpdate
 import com.novelscraper.app.data.ReaderPrefs
@@ -453,7 +452,7 @@ class TtsService : LifecycleService() {
 
     private fun buildNotification(): Notification {
         val contentPI = PendingIntent.getActivity(
-            this, 0, Intent(this, MainActivity::class.java),
+            this, 0, packageManager.getLaunchIntentForPackage(packageName) ?: Intent(),
             PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE,
         )
         val toggleIcon = if (playing) android.R.drawable.ic_media_pause

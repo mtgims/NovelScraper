@@ -30,7 +30,6 @@ import androidx.core.text.HtmlCompat
 import androidx.core.view.WindowCompat
 import androidx.core.view.WindowInsetsCompat
 import androidx.core.view.WindowInsetsControllerCompat
-import com.novelscraper.app.BuildConfig
 import java.io.File
 import java.util.Locale
 
@@ -38,8 +37,12 @@ import java.util.Locale
 lateinit var appContext: Context
     private set
 
-fun initPlatform(context: Context) {
+private var debugBuild = false
+
+/** [debug] is the app's BuildConfig.DEBUG (the shared module has none). */
+fun initPlatform(context: Context, debug: Boolean) {
     appContext = context.applicationContext
+    debugBuild = debug
 }
 
 private class PrefsStore(private val p: SharedPreferences) : KeyValueStore {
@@ -69,7 +72,7 @@ actual val browserUserAgent: String =
 
 actual val hasSystemTts: Boolean = true
 
-actual val isDebugBuild: Boolean = BuildConfig.DEBUG
+actual val isDebugBuild: Boolean get() = debugBuild
 
 actual fun appFilesDir(): File = appContext.filesDir
 

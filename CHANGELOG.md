@@ -10,6 +10,10 @@ what's in that APK, so you can tell what's on your phone.
 
 ## 2026-09-22
 
+- **New toolchain (0.30.2).** Kotlin 2.4.20, Compose Multiplatform 1.12.0, AGP
+  9.4.1, Gradle 9.7.1; the Android app is its own `androidApp` module and is built
+  with `./gradlew :androidApp:assembleRelease`. Lint now covers the shared code
+  and caught a crash in extensions using `urlencode` on Android 12 and older.
 - **Sources live in their own repository (0.30.1).** All 15 of NovelScraper's
   sources are extensions in github.com/mtgims/novelscraper-extensions; the app
   ships with none and adds repositories only when you do (ours, LNReader's, or

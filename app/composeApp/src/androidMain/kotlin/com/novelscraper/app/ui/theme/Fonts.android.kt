@@ -4,7 +4,7 @@ import androidx.compose.ui.text.font.Font
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontStyle
 import androidx.compose.ui.text.font.FontWeight
-import com.novelscraper.app.R
+import com.novelscraper.app.shared.R
 
 actual val Display = FontFamily(
     Font(R.font.playfair_semibold, FontWeight.SemiBold),

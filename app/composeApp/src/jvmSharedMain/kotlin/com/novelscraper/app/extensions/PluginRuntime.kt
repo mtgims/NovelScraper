@@ -167,8 +167,9 @@ class PluginRuntime private constructor(
                 val o = json.parseToJsonElement(a[0] as String).jsonObject
                 val s = o["s"]!!.jsonPrimitive.content
                 val cs = charset(o["charset"]?.jsonPrimitive?.contentOrNull)
-                if (o["op"]?.jsonPrimitive?.content == "decode") URLDecoder.decode(s, cs)
-                else URLEncoder.encode(s, cs).replace("+", "%20")
+                // The charset-name overloads: the Charset ones need Android 13.
+                if (o["op"]?.jsonPrimitive?.content == "decode") URLDecoder.decode(s, cs.name())
+                else URLEncoder.encode(s, cs.name()).replace("+", "%20")
             })
             function("storageGet", FunctionBinding { a -> env.storage(a[0] as String)[a[1] as String] ?: "" })
             function("storageSet", FunctionBinding { a ->

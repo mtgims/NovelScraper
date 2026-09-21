@@ -20,4 +20,4 @@ dependencyResolutionManagement {
 }
 
 rootProject.name = "NovelScraper"
-include(":composeApp")
+include(":composeApp", ":androidApp")
