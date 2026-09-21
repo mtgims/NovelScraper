@@ -8,6 +8,14 @@ what's in that APK, so you can tell what's on your phone.
 
 ---
 
+## 2026-09-22
+
+- **Source extensions (0.30.0).** A Browse tab reads novels straight from their
+  sites through extensions: LNReader's 280 community-maintained plugins run as
+  they are, and the app's own sources (Novel Archive, Novel Bin, OpenQuill,
+  Ranobes, Wuxia Click) ship built in, in the same format. Popular, latest,
+  search, novel pages and a reader, on Android and Linux.
+
 ## 2026-09-21
 
 - **The Linux app (0.29.0).** The phone app as a desktop app: library, reader,

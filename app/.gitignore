@@ -10,3 +10,4 @@
 .kotlin/
 local.properties
 composeApp/build/
+composeApp/pluginHost/node_modules/

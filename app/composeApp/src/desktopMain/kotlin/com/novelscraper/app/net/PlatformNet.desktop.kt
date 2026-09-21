@@ -2,6 +2,7 @@ package com.novelscraper.app.net
 
 import com.novelscraper.app.platform.DesktopDirs
 import com.novelscraper.app.platform.Log
+import com.novelscraper.app.platform.browserUserAgent
 import com.novelscraper.app.platform.showToast
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -16,11 +17,7 @@ import java.nio.file.StandardCopyOption
 /** The scrape relay on desktop: plain fetches from this computer's connection.
  *  There is no embedded browser, so pages that need one are left to the server. */
 actual object ScrapeRelay {
-    private const val UA =
-        "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) " +
-            "Chrome/126.0.0.0 Safari/537.36"
-
-    private val client = RelayClient(UA, renderer = null)
+    private val client = RelayClient(browserUserAgent, renderer = null)
 
     actual val connected: StateFlow<Boolean> get() = client.connected
     actual fun start() = client.start()

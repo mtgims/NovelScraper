@@ -14,8 +14,8 @@ plugins {
 // The app's version, shared by the Android APK and the desktop app. Bump BOTH for
 // every release: versionCode must increase for Android to accept the install over
 // a previous one, versionName is what people see. See ../CHANGELOG.md.
-val appVersionCode = 51
-val appVersionName = "0.29.0"
+val appVersionCode = 52
+val appVersionName = "0.30.0"
 
 // sherpa-onnx publishes its desktop JVM binding on GitHub releases, not Maven.
 // Downloaded into the build directory and checked against a pinned SHA-256.
@@ -126,6 +126,9 @@ kotlin {
 
                 // tar.bz2 extraction for downloaded TTS model packages.
                 implementation("org.apache.commons:commons-compress:1.27.1")
+
+                // QuickJS, the JavaScript engine that runs source extensions (plugins).
+                implementation("io.github.dokar3:quickjs-kt:1.0.15")
             }
         }
         androidMain {
@@ -173,7 +176,7 @@ kotlin {
 
 android {
     namespace = "com.novelscraper.app"
-    compileSdk = 35
+    compileSdk = 36
 
     defaultConfig {
         applicationId = "com.novelscraper.app"
@@ -227,6 +230,10 @@ android {
         sourceCompatibility = JavaVersion.VERSION_17
         targetCompatibility = JavaVersion.VERSION_17
     }
+    // Resources of the shared source set (the plugin host, built-in extensions)
+    // aren't packaged into the APK on their own; they're read as Java resources.
+    sourceSets["main"].resources.srcDir("src/jvmSharedMain/resources")
+
     buildFeatures {
         compose = true
         // BuildConfig.DEBUG gates the OkHttp logging interceptor (net/Net.kt).
@@ -283,6 +290,9 @@ tasks.withType<Test>().configureEach {
     systemProperty("htmlParity.dir", layout.projectDirectory.dir("src/htmlParity").asFile.absolutePath)
     systemProperty("htmlParity.record", providers.gradleProperty("htmlParityRecord").getOrElse("false"))
     systemProperty("htmlParity.extra", providers.gradleProperty("htmlParityExtra").getOrElse(""))
+    // LivePluginTest (real sites) runs only with -PlivePlugins=<id>[,<id>...].
+    systemProperty("live.plugins", providers.gradleProperty("livePlugins").getOrElse(""))
+    testLogging { if (providers.gradleProperty("livePlugins").isPresent) showStandardStreams = true }
 }
 
 // The desktop app (Linux; Windows later). `./gradlew :composeApp:run` starts it.

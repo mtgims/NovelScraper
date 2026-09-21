@@ -1,0 +1,18 @@
+{
+  "name": "novelscraper-plugin-host",
+  "private": true,
+  "description": "The JavaScript side of the extension host: the libraries and web APIs LNReader-format plugins expect, bundled for QuickJS. `npm run build` writes ../src/jvmSharedMain/resources/plugin-host/host.js (committed, so the app build needs no Node).",
+  "scripts": {
+    "build": "esbuild src/host.js --bundle --format=iife --target=es2020 --minify --legal-comments=none --outfile=../src/jvmSharedMain/resources/plugin-host/host.js"
+  },
+  "dependencies": {
+    "@noble/ciphers": "2.2.0",
+    "cheerio": "1.0.0-rc.12",
+    "dayjs": "1.11.21",
+    "htmlparser2": "12.0.0",
+    "whatwg-url-without-unicode": "8.0.0-3"
+  },
+  "devDependencies": {
+    "esbuild": "0.25.10"
+  }
+}

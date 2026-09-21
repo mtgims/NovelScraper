@@ -19,6 +19,7 @@ import androidx.compose.ui.window.application
 import coil3.SingletonImageLoader
 import coil3.disk.DiskCache
 import com.novelscraper.app.data.ReaderPrefs
+import com.novelscraper.app.extensions.Extensions
 import com.novelscraper.app.net.AutoUpdate
 import com.novelscraper.app.net.Net
 import com.novelscraper.app.net.ScrapeRelay
@@ -40,6 +41,7 @@ import java.io.File
 /** Everything App.onCreate does on Android, before the first window. */
 fun initApp() {
     Net.init()
+    Extensions.init(Net.client)
     ReaderPrefs.init()
     ThemeController.init()
     TtsController.player = DesktopTtsPlayer

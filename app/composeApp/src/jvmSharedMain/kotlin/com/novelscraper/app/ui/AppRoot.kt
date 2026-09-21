@@ -20,6 +20,11 @@ import androidx.navigation.compose.rememberNavController
 import androidx.navigation.navArgument
 import androidx.savedstate.read
 import com.novelscraper.app.platform.encodeRouteArg
+import com.novelscraper.app.ui.browse.BrowseScreen
+import com.novelscraper.app.ui.browse.ExtensionsScreen
+import com.novelscraper.app.ui.browse.SourceNovelScreen
+import com.novelscraper.app.ui.browse.SourceReaderScreen
+import com.novelscraper.app.ui.browse.SourceScreen
 import com.novelscraper.app.ui.components.PillNavBar
 import com.novelscraper.app.ui.components.isTopLevelRoute
 import com.novelscraper.app.ui.screen.BookScreen
@@ -71,7 +76,7 @@ private fun AuthFlow(vm: AuthViewModel) {
     }
 }
 
-private val TAB_ORDER = listOf("library", "new", "jobs", "stats", "settings")
+private val TAB_ORDER = listOf("library", "browse", "new", "jobs", "stats", "settings")
 // Tab rank drives slide direction; detail screens (book/reader) rank high so
 // opening them slides forward (left), and back-navigation slides right.
 private fun routeRank(route: String?): Int {
@@ -153,6 +158,47 @@ private fun AuthedApp(username: String, onLogout: () -> Unit) {
                             restoreState = true
                         }
                     },
+                )
+            }
+            composable("browse") {
+                BrowseScreen(
+                    onOpenSource = { id -> nav.navigate("source/${encodeRouteArg(id)}") },
+                    onManage = { nav.navigate("extensions") },
+                )
+            }
+            composable("extensions") { ExtensionsScreen(onBack = { nav.popBackStack() }) }
+            composable("source/{plugin}") { e ->
+                val plugin = e.arguments!!.read { getString("plugin") }
+                SourceScreen(
+                    pluginId = plugin,
+                    onBack = { nav.popBackStack() },
+                    onOpenNovel = { path -> nav.navigate("source-novel/${encodeRouteArg(plugin)}?path=${encodeRouteArg(path)}") },
+                )
+            }
+            composable(
+                "source-novel/{plugin}?path={path}",
+                arguments = listOf(navArgument("path") { type = NavType.StringType; defaultValue = "" }),
+            ) { e ->
+                val plugin = e.arguments!!.read { getString("plugin") }
+                val path = e.arguments!!.read { getString("path") }
+                SourceNovelScreen(
+                    pluginId = plugin, path = path,
+                    onBack = { nav.popBackStack() },
+                    onRead = { i -> nav.navigate("source-read/${encodeRouteArg(plugin)}/$i?path=${encodeRouteArg(path)}") },
+                )
+            }
+            composable(
+                "source-read/{plugin}/{index}?path={path}",
+                arguments = listOf(
+                    navArgument("index") { type = NavType.IntType },
+                    navArgument("path") { type = NavType.StringType; defaultValue = "" },
+                ),
+            ) { e ->
+                SourceReaderScreen(
+                    pluginId = e.arguments!!.read { getString("plugin") },
+                    novelPath = e.arguments!!.read { getString("path") },
+                    index = e.arguments!!.read { getInt("index") },
+                    onBack = { nav.popBackStack() },
                 )
             }
             composable("jobs") { ProgressScreen() }

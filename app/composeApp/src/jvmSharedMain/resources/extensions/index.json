@@ -1,0 +1,7 @@
+[
+  {"id": "novelscraper.novelarchive", "name": "Novel Archive", "site": "https://novelarchive.cc/", "lang": "English", "version": "1.0.0", "url": "novelscraper/novelarchive.js", "iconUrl": "https://novelarchive.cc/favicon.ico"},
+  {"id": "novelscraper.novelbin", "name": "Novel Bin (novel-bin.com)", "site": "https://novel-bin.com/", "lang": "English", "version": "1.0.0", "url": "novelscraper/novelbin.js", "iconUrl": "https://novel-bin.com/favicon.ico"},
+  {"id": "novelscraper.openquill", "name": "OpenQuill", "site": "https://openquill.net/", "lang": "English", "version": "1.0.0", "url": "novelscraper/openquill.js", "iconUrl": "https://openquill.net/favicon.ico"},
+  {"id": "novelscraper.ranobesnet", "name": "Ranobes (ranobes.net)", "site": "https://ranobes.net/", "lang": "English", "version": "1.0.0", "url": "novelscraper/ranobesnet.js", "iconUrl": "https://ranobes.net/templates/Dark/images/favicon.ico"},
+  {"id": "novelscraper.wuxiaclick", "name": "Wuxia Click", "site": "https://wuxia.click/", "lang": "English", "version": "1.0.0", "url": "novelscraper/wuxiaclick.js", "iconUrl": "https://wuxia.click/apple-touch-icon.png"}
+]

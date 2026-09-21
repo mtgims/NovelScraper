@@ -40,6 +40,10 @@ expect val hasWebView: Boolean
  *  TextToSpeech). Without one, narration uses the downloadable Kokoro/Piper models. */
 expect val hasSystemTts: Boolean
 
+/** The User-Agent a normal browser on this kind of device sends; used for the
+ *  requests made on the user's behalf (scrape relay, source extensions). */
+expect val browserUserAgent: String
+
 /** True in debug builds (gates request logging). */
 expect val isDebugBuild: Boolean
 
@@ -58,6 +62,9 @@ expect fun htmlToPlain(html: String): String
 
 /** Percent-encode a value for use inside a navigation route. */
 expect fun encodeRouteArg(value: String): String
+
+/** Open a web page in the user's browser. */
+expect fun openInBrowser(url: String)
 
 /** A short, non-blocking message to the user. */
 expect fun showToast(message: String, long: Boolean = false)

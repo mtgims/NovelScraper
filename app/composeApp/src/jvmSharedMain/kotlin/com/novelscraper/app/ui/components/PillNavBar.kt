@@ -18,6 +18,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.MenuBook
 import androidx.compose.material.icons.filled.AddCircleOutline
 import androidx.compose.material.icons.filled.BarChart
+import androidx.compose.material.icons.filled.Explore
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material.icons.filled.Sync
 import androidx.compose.material3.Icon
@@ -37,6 +38,7 @@ private data class NavItem(val route: String, val label: String, val icon: Image
 
 private val ITEMS = listOf(
     NavItem("library", "Library", Icons.AutoMirrored.Filled.MenuBook),
+    NavItem("browse", "Browse", Icons.Filled.Explore),
     NavItem("new", "Scrape", Icons.Filled.AddCircleOutline),
     NavItem("jobs", "Progress", Icons.Filled.Sync),
     NavItem("stats", "Stats", Icons.Filled.BarChart),

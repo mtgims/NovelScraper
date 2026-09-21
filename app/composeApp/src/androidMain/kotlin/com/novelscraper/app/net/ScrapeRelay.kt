@@ -5,6 +5,7 @@ import android.content.Context
 import android.os.SystemClock
 import android.webkit.WebView
 import android.webkit.WebViewClient
+import com.novelscraper.app.platform.browserUserAgent
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.StateFlow
@@ -24,9 +25,7 @@ import kotlinx.serialization.json.jsonPrimitive
  */
 actual object ScrapeRelay {
     // A believable mobile-Chrome UA so the residential/mobile IP + UA look normal.
-    private const val UA =
-        "Mozilla/5.0 (Linux; Android 14; K) AppleWebKit/537.36 (KHTML, like Gecko) " +
-        "Chrome/126.0.0.0 Mobile Safari/537.36"
+    private val UA = browserUserAgent
 
     // Overall budget for a single WebView render (well under the server's relay
     // timeout): time for the page to load, run JS and clear a Cloudflare challenge.

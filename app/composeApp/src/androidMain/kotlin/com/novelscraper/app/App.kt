@@ -7,6 +7,7 @@ import coil3.ImageLoader
 import coil3.PlatformContext
 import coil3.SingletonImageLoader
 import com.novelscraper.app.data.ReaderPrefs
+import com.novelscraper.app.extensions.Extensions
 import com.novelscraper.app.net.AutoUpdate
 import com.novelscraper.app.net.Net
 import com.novelscraper.app.net.NuResolver
@@ -22,6 +23,7 @@ class App : Application(), SingletonImageLoader.Factory {
         super.onCreate()
         initPlatform(this)  // first: the shared code's settings/files/toasts need it
         Net.init()
+        Extensions.init(Net.client)
         ReaderPrefs.init()
         ThemeController.init()
         TtsController.player = AndroidTtsPlayer(this)

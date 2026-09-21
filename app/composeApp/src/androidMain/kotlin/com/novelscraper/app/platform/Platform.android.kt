@@ -62,6 +62,11 @@ actual fun settingsStore(name: String): KeyValueStore =
 
 actual val hasWebView: Boolean = true
 
+// A believable mobile Chrome, so requests from a phone's IP look like a phone.
+actual val browserUserAgent: String =
+    "Mozilla/5.0 (Linux; Android 14; K) AppleWebKit/537.36 (KHTML, like Gecko) " +
+        "Chrome/126.0.0.0 Mobile Safari/537.36"
+
 actual val hasSystemTts: Boolean = true
 
 actual val isDebugBuild: Boolean = BuildConfig.DEBUG
@@ -74,6 +79,15 @@ actual fun htmlToPlain(html: String): String =
     HtmlCompat.fromHtml(html, HtmlCompat.FROM_HTML_MODE_COMPACT).toString()
 
 actual fun encodeRouteArg(value: String): String = Uri.encode(value)
+
+actual fun openInBrowser(url: String) {
+    runCatching {
+        appContext.startActivity(
+            android.content.Intent(android.content.Intent.ACTION_VIEW, Uri.parse(url))
+                .addFlags(android.content.Intent.FLAG_ACTIVITY_NEW_TASK),
+        )
+    }.onFailure { showToast("No browser to open $url") }
+}
 
 private val mainHandler by lazy { Handler(Looper.getMainLooper()) }
 
@@ -216,7 +230,7 @@ actual fun rememberSystemVoices(): List<SystemVoice> {
                 }.getOrDefault(emptyList())
             }
         }
-        onDispose { engine?.shutdown() }
+        onDispose { engine.shutdown() }
     }
     return voices
 }

@@ -19,6 +19,10 @@ actual fun settingsStore(name: String): KeyValueStore =
 
 actual val hasWebView: Boolean = false
 
+actual val browserUserAgent: String =
+    "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) " +
+        "Chrome/126.0.0.0 Safari/537.36"
+
 actual val hasSystemTts: Boolean = false
 
 actual val isDebugBuild: Boolean = System.getProperty("novelscraper.debug") == "true"
@@ -31,6 +35,15 @@ actual fun htmlToPlain(html: String): String = HtmlPlainText.convert(html)
 
 actual fun encodeRouteArg(value: String): String =
     URLEncoder.encode(value, Charsets.UTF_8).replace("+", "%20")
+
+actual fun openInBrowser(url: String) {
+    val opened = runCatching {
+        val desktop = java.awt.Desktop.getDesktop()
+        if (!desktop.isSupported(java.awt.Desktop.Action.BROWSE)) error("unsupported")
+        desktop.browse(java.net.URI(url))
+    }.isSuccess || runCatching { ProcessBuilder("xdg-open", url).start() }.isSuccess
+    if (!opened) showToast("Couldn't open a browser for $url")
+}
 
 actual fun showToast(message: String, long: Boolean) {
     Toasts.queue.trySend(message to long)

@@ -32,6 +32,30 @@ crash report is unreadable without the matching one.
 
 ---
 
+## 0.30.0, 2026-09-22 · `versionCode 52`
+**Source extensions.** A new Browse tab reads novels straight from their sites
+through extensions, on the phone and on Linux:
+- LNReader's plugins work as they are: its repository (280 sources, kept up by
+  its community) is listed under Browse, Extensions, where sources are installed,
+  updated and removed; other repositories in the same format can be added. The
+  app runs each plugin in its own JavaScript engine (QuickJS) with the same
+  libraries LNReader gives them.
+- The app's own sources ship as built-in extensions in that format: Novel Archive,
+  Novel Bin (novel-bin.com), OpenQuill, Ranobes (ranobes.net) and Wuxia Click.
+- A source shows its popular and latest novels and searches them; a novel's page
+  has its details and chapters (side by side in a wide window), and chapters open
+  in a reader with the library reader's type and measure (arrows move between
+  chapters on a keyboard).
+- Requests go out from your own device and connection. A site that shows a
+  browser check (Cloudflare) is reported as such; passing those checks comes
+  later.
+
+Reading from a source doesn't add anything to your library yet, and narration
+works on library books only for now; both come with the local library.
+
+Under the hood: Kotlin 2.3.21 and compileSdk 36 (the JavaScript engine needs
+them). APK 35.0 MB (0.29.0: 33.8 MB).
+
 ## 0.29.0, 2026-09-21 · `versionCode 51`
 **The Linux app.** The same app as on the phone, as a desktop window, against the
 same server: sign in, library, collections, book page, reader, ratings, volume
