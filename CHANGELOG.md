@@ -10,6 +10,8 @@ what's in that APK, so you can tell what's on your phone.
 
 ## 2026-09-21
 
+- **Android: importing a downloaded volume (0.28.3).** An EPUB saved with
+  ⋮ → Download can be imported again; it was rejected as "not an .epub file".
 - **Fix: exporting reading progress** (Stats → Export) failed with a server
   error since the 2026-09-20 stats refactor, which dropped an import the export
   still used. It now uses the same batched query as the stats page, and has a

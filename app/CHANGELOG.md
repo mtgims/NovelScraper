@@ -28,6 +28,12 @@ crash report is unreadable without the matching one.
 
 ---
 
+## 0.28.3, 2026-09-21 · `versionCode 50`
+Importing an EPUB the app itself downloaded works. Android lists a download by
+its title ("Renegade Immortal · volume 1"), not its file name, and the server
+turned the upload away for not ending in .epub. The picker only offers EPUB
+files, so the name now gets the extension when it lacks one.
+
 ## 0.28.2, 2026-09-21 · `versionCode 49`
 No visible change: the groundwork for the Linux and Windows apps. The project
 moved from `APKcode/` to `app/` and became Kotlin Multiplatform, one module

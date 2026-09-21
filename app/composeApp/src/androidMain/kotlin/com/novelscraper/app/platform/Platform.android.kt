@@ -134,7 +134,7 @@ actual fun rememberEpubPicker(onPicked: (List<PickedFile>) -> Unit): () -> Unit 
         if (uris.isNotEmpty()) {
             val cr = ctx.contentResolver
             onPicked(uris.map { uri ->
-                PickedFile(displayName(ctx, uri) ?: "book.epub") { cr.openInputStream(uri) }
+                PickedFile(epubName(displayName(ctx, uri))) { cr.openInputStream(uri) }
             })
         }
     }
@@ -145,6 +145,15 @@ private fun displayName(ctx: Context, uri: Uri): String? =
     ctx.contentResolver.query(uri, arrayOf(OpenableColumns.DISPLAY_NAME), null, null, null)?.use { c ->
         if (c.moveToFirst()) c.getString(0) else null
     }
+
+/** The upload name for a picked EPUB. Some providers report a title rather than
+ *  the file name (a DownloadManager download shows as "Book · volume 1"), and the
+ *  server only accepts names ending in .epub; the picker is limited to EPUBs, so
+ *  the extension is safe to add. */
+internal fun epubName(displayName: String?): String {
+    val name = displayName?.trim().orEmpty().ifEmpty { "book" }
+    return if (name.endsWith(".epub", ignoreCase = true)) name else "$name.epub"
+}
 
 @Composable
 actual fun rememberFileSaver(mimeType: String, onTarget: (SaveTarget?) -> Unit): (String) -> Unit {
