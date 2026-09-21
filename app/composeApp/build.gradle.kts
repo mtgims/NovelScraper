@@ -14,8 +14,8 @@ plugins {
 // The app's version, shared by the Android APK and the desktop app. Bump BOTH for
 // every release: versionCode must increase for Android to accept the install over
 // a previous one, versionName is what people see. See ../CHANGELOG.md.
-val appVersionCode = 52
-val appVersionName = "0.30.0"
+val appVersionCode = 53
+val appVersionName = "0.30.1"
 
 // sherpa-onnx publishes its desktop JVM binding on GitHub releases, not Maven.
 // Downloaded into the build directory and checked against a pinned SHA-256.
@@ -292,6 +292,7 @@ tasks.withType<Test>().configureEach {
     systemProperty("htmlParity.extra", providers.gradleProperty("htmlParityExtra").getOrElse(""))
     // LivePluginTest (real sites) runs only with -PlivePlugins=<id>[,<id>...].
     systemProperty("live.plugins", providers.gradleProperty("livePlugins").getOrElse(""))
+    systemProperty("live.repo", providers.gradleProperty("liveRepo").getOrElse(""))
     testLogging { if (providers.gradleProperty("livePlugins").isPresent) showStandardStreams = true }
 }
 

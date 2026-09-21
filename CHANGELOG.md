@@ -10,6 +10,10 @@ what's in that APK, so you can tell what's on your phone.
 
 ## 2026-09-22
 
+- **Sources live in their own repository (0.30.1).** All 15 of NovelScraper's
+  sources are extensions in github.com/mtgims/novelscraper-extensions; the app
+  ships with none and adds repositories only when you do (ours, LNReader's, or
+  any other in the same format).
 - **Source extensions (0.30.0).** A Browse tab reads novels straight from their
   sites through extensions: LNReader's 280 community-maintained plugins run as
   they are, and the app's own sources (Novel Archive, Novel Bin, OpenQuill,

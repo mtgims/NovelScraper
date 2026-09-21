@@ -32,6 +32,15 @@ crash report is unreadable without the matching one.
 
 ---
 
+## 0.30.1, 2026-09-22 · `versionCode 53`
+Sources now come only from repositories you add. The app ships with no sources
+and no repositories: under Browse, Extensions, Repositories, add the address of a
+repository's index.json and install what you want from it, the way LNReader
+works. NovelScraper's own sources, all 15 of them, live in their own repository,
+github.com/mtgims/novelscraper-extensions; add
+`https://raw.githubusercontent.com/mtgims/novelscraper-extensions/master/index.json`.
+LNReader's repository, or anyone's in the same format, can be added the same way.
+
 ## 0.30.0, 2026-09-22 · `versionCode 52`
 **Source extensions.** A new Browse tab reads novels straight from their sites
 through extensions, on the phone and on Linux:

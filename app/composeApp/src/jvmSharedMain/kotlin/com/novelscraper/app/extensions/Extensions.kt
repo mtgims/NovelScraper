@@ -52,15 +52,12 @@ data class InstalledPlugin(
  * installed (their code under <files>/extensions/), and a small cache of running
  * plugins ([runtime]).
  *
- * Repositories are LNReader-style plugin indexes (a JSON array of [RepoPlugin]).
- * LNReader's own is there by default; the app's own plugins are built in
- * ([BUILTIN_REPO], code bundled as resources).
+ * Repositories are plugin indexes in LNReader's format (a JSON array of
+ * [RepoPlugin]), added by the user by URL: NovelScraper's own
+ * (github.com/mtgims/novelscraper-extensions), LNReader's, or anyone's. The app
+ * ships with none and installs nothing by itself.
  */
 object Extensions {
-    const val LNREADER_REPO =
-        "https://raw.githubusercontent.com/lnreader/lnreader-plugins/plugins/v3.0.0/.dist/plugins.min.json"
-    /** Pseudo-URL of the plugins shipped inside the app (resources/extensions/). */
-    const val BUILTIN_REPO = "builtin:novelscraper"
 
     private const val TAG = "Extensions"
     private const val MAX_RUNNING = 4
@@ -96,7 +93,7 @@ object Extensions {
             .build()
         _repos.value = prefs.getString("repos", null)
             ?.let { runCatching { json.decodeFromString(ListSerializer(String.serializer()), it) }.getOrNull() }
-            ?: listOf(LNREADER_REPO)
+            ?: emptyList()
         _installed.value = runCatching {
             json.decodeFromString(ListSerializer(InstalledPlugin.serializer()), File(dir, "installed.json").readText())
         }.getOrDefault(emptyList())
@@ -117,12 +114,11 @@ object Extensions {
         prefs.putString("repos", json.encodeToString(ListSerializer(String.serializer()), list))
     }
 
-    /** Every plugin the repositories (and the app itself) offer. A repository that
+    /** Every plugin the repositories offer. A repository that
      *  can't be reached is skipped and reported in [AvailableResult.failed]. */
     suspend fun available(): AvailableResult = withContext(Dispatchers.IO) {
         val plugins = ArrayList<RepoPlugin>()
         val failed = ArrayList<String>()
-        plugins += builtinIndex()
         for (repo in _repos.value) {
             try {
                 val body = get(repo)
@@ -137,19 +133,12 @@ object Extensions {
 
     data class AvailableResult(val plugins: List<RepoPlugin>, val failed: List<String>)
 
-    private fun builtinIndex(): List<RepoPlugin> = runCatching {
-        json.decodeFromString(ListSerializer(RepoPlugin.serializer()), resource("/extensions/index.json"))
-            .map { it.copy(repo = BUILTIN_REPO) }
-    }.getOrDefault(emptyList())
-
     // --- install / update / remove --------------------------------------------------
 
-    /** Download (or copy, for built-ins) the plugin's code, check that it loads,
+    /** Download the plugin's code, check that it loads,
      *  and add it to [installed]; replaces an installed older version. */
     suspend fun install(p: RepoPlugin) = mutex.withLock {
-        val code = withContext(Dispatchers.IO) {
-            if (p.repo == BUILTIN_REPO) resource("/extensions/${p.url}") else get(p.url)
-        }
+        val code = withContext(Dispatchers.IO) { get(p.url) }
         // Refuse code that doesn't load, before it replaces a working version.
         PluginRuntime.load(p.id, code, environment()).use { rt ->
             require(rt.info.id == p.id) { "The plugin calls itself ${rt.info.id}, the index says ${p.id}" }
@@ -237,10 +226,6 @@ object Extensions {
             if (!r.isSuccessful) error("HTTP ${r.code}")
             r.body?.string() ?: error("empty response")
         }
-
-    private fun resource(path: String): String =
-        checkNotNull(Extensions::class.java.getResourceAsStream(path)) { "$path missing from the app" }
-            .use { it.readBytes().decodeToString() }
 }
 
 /** Compare dotted version strings numerically ("2.10.0" > "2.9.1"). */

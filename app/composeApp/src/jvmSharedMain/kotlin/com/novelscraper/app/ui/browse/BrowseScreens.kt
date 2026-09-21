@@ -298,7 +298,7 @@ fun ExtensionsScreen(onBack: () -> Unit) {
                 else LazyColumn(contentPadding = PaddingValues(bottom = 104.dp)) {
                     items(list, key = { it.id }) { p ->
                         val offer = offered[p.id]
-                        SourceRow(p.name, p.lang, p.iconUrl, "v${p.version}${if (p.repo == Extensions.BUILTIN_REPO) " · built in" else ""}", null) {
+                        SourceRow(p.name, p.lang, p.iconUrl, "v${p.version}", null) {
                             if (p.id in ui.busy) CircularProgressIndicator(Modifier.size(22.dp), strokeWidth = 2.dp)
                             else Row {
                                 if (offer != null && Extensions.hasUpdate(p, offer)) TextButton(onClick = { vm.install(offer) }) { Text("Update") }
@@ -308,14 +308,26 @@ fun ExtensionsScreen(onBack: () -> Unit) {
                     }
                 }
             }
+            repos.isEmpty() -> Centered {
+                Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                    Text("No repositories yet.", style = MaterialTheme.typography.titleMedium)
+                    Text(
+                        "Sources come from extension repositories. Add one by its address " +
+                            "(the URL of its index.json), then install the sources you want.",
+                        style = MaterialTheme.typography.bodyMedium, textAlign = TextAlign.Center,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        modifier = Modifier.padding(top = 6.dp, bottom = 14.dp).widthIn(max = 460.dp),
+                    )
+                    Button(onClick = { showRepos = true }) { Text("Add a repository") }
+                }
+            }
             ui.loading && ui.available.isEmpty() -> Centered { CircularProgressIndicator() }
             else -> {
                 val list = ui.available.filter { it.id !in installedIds && matches(it.name, it.site, it.lang) }
-                    .sortedWith(compareBy({ it.repo != Extensions.BUILTIN_REPO }, { languageRank(it.lang) }, { it.name.lowercase() }))
+                    .sortedWith(compareBy({ languageRank(it.lang) }, { it.name.lowercase() }))
                 LazyColumn(contentPadding = PaddingValues(bottom = 104.dp)) {
                     items(list, key = { it.id }) { p ->
-                        SourceRow(p.name, p.lang, p.iconUrl,
-                            "v${p.version}${if (p.repo == Extensions.BUILTIN_REPO) " · NovelScraper" else ""}", null) {
+                        SourceRow(p.name, p.lang, p.iconUrl, "v${p.version}", null) {
                             if (p.id in ui.busy) CircularProgressIndicator(Modifier.size(22.dp), strokeWidth = 2.dp)
                             else TextButton(onClick = { vm.install(p) }) { Text("Install") }
                         }
@@ -341,21 +353,18 @@ private fun RepositoriesDialog(
         title = { Text("Repositories") },
         text = {
             Column {
-                Text("Plugin lists in LNReader's format. The app's own sources are always available.",
+                Text("Extension repositories: the address of an index.json in LNReader's format.",
                     style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                 repos.forEach { r ->
                     Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.padding(top = 8.dp)) {
-                        Text(if (r == Extensions.LNREADER_REPO) "LNReader plugins" else r,
+                        Text(r,
                             style = MaterialTheme.typography.bodyMedium, modifier = Modifier.weight(1f),
                             maxLines = 2, overflow = TextOverflow.Ellipsis)
                         TextButton(onClick = { onRemove(r) }) { Text("Remove") }
                     }
                 }
-                OutlinedTextField(url, { url = it }, singleLine = true, placeholder = { Text("https://…/plugins.min.json") },
+                OutlinedTextField(url, { url = it }, singleLine = true, placeholder = { Text("https://…/index.json") },
                     modifier = Modifier.fillMaxWidth().padding(top = 10.dp))
-                if (Extensions.LNREADER_REPO !in repos) {
-                    TextButton(onClick = { onAdd(Extensions.LNREADER_REPO) }) { Text("Add LNReader's repository back") }
-                }
             }
         },
         confirmButton = { TextButton(onClick = { onAdd(url); url = "" }, enabled = url.startsWith("http")) { Text("Add") } },

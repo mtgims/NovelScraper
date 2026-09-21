@@ -8,6 +8,7 @@ import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
 import okhttp3.OkHttpClient
 import okhttp3.Request
+import java.io.File
 import kotlin.test.Test
 import kotlin.test.assertTrue
 
@@ -28,22 +29,18 @@ class LivePluginTest {
 
     @Test fun plugins() = runBlocking {
         if (ids.isEmpty()) return@runBlocking
-        val index = http.newCall(Request.Builder().url(INDEX).build()).execute().use { it.body!!.string() }
-        val entries = Json.parseToJsonElement(index).jsonArray.associateBy { it.jsonObject["id"]!!.jsonPrimitive.content }
-        val builtins = Json.parseToJsonElement(
-            javaClass.getResourceAsStream("/extensions/index.json")!!.use { it.readBytes().decodeToString() },
-        ).jsonArray.associate { it.jsonObject["id"]!!.jsonPrimitive.content to it.jsonObject["url"]!!.jsonPrimitive.content }
+        // Plugins from a local checkout of an extensions repository (-PliveRepo=<dir>),
+        // else from LNReader's published index.
+        val repoDir = System.getProperty("live.repo").orEmpty().takeIf { it.isNotBlank() }?.let { File(it) }
+        val indexText = if (repoDir != null) File(repoDir, "index.json").readText()
+            else http.newCall(Request.Builder().url(INDEX).build()).execute().use { it.body!!.string() }
+        val entries = Json.parseToJsonElement(indexText).jsonArray.associateBy { it.jsonObject["id"]!!.jsonPrimitive.content }
         val failures = mutableListOf<String>()
         for (id in ids) {
-            val builtin = builtins[id]
-            val code = if (builtin != null) {
-                // The app's own plugins, from its resources.
-                javaClass.getResourceAsStream("/extensions/$builtin")!!.use { it.readBytes().decodeToString() }
-            } else {
-                val entry = entries[id]?.jsonObject ?: run { failures += "$id: not in the index"; continue }
-                http.newCall(Request.Builder().url(entry["url"]!!.jsonPrimitive.content).build())
-                    .execute().use { it.body!!.string() }
-            }
+            val entry = entries[id]?.jsonObject ?: run { failures += "$id: not in the index"; continue }
+            val url = entry["url"]!!.jsonPrimitive.content
+            val code = if (repoDir != null) File(repoDir, url.substringAfter("/master/")).readText()
+                else http.newCall(Request.Builder().url(url).build()).execute().use { it.body!!.string() }
             try {
                 val t0 = System.nanoTime()
                 PluginRuntime.load(id, code, env).use { p ->

@@ -107,13 +107,16 @@ The phone build lands at `novelscraper.apk` in the repo root and the Linux one a
 executable and run it; it needs FUSE 2, `fuse2` on Arch). `app/CHANGELOG.md`
 tracks every version.
 
-**Sources are extensions.** The Browse tab installs sources from LNReader's plugin
-repository (and any other repository in its format) and from the app's own
-built-in set, then browses, searches and reads them straight from the site, from
-your own connection. Plugins run in QuickJS inside the app. The JavaScript host
-they run against lives in `app/composeApp/pluginHost/` (`npm install && npm run
-build` regenerates the bundled `host.js`); the built-in plugins are in
-`app/composeApp/src/jvmSharedMain/resources/extensions/`.
+**Sources are extensions.** They live in their own repository,
+[novelscraper-extensions](https://github.com/mtgims/novelscraper-extensions), which
+also explains how to write one. The app ships with no sources: under Browse,
+Extensions, Repositories, add
+`https://raw.githubusercontent.com/mtgims/novelscraper-extensions/master/index.json`
+(or LNReader's repository, or any in the same format), then install sources and
+browse, search and read them straight from the site, from your own connection.
+Plugins run in QuickJS inside the app; the JavaScript host they run against lives
+in `app/composeApp/pluginHost/` (`npm install && npm run build` regenerates the
+bundled `host.js`).
 
 On Linux the app keeps its settings and login in `~/.config/novelscraper`,
 downloaded voices in `~/.local/share/novelscraper` and its image cache in
