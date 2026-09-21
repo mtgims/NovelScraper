@@ -10,6 +10,11 @@ what's in that APK, so you can tell what's on your phone.
 
 ## 2026-09-22
 
+- **Local library and streaming (0.31.0).** The apps keep the library on the
+  device and read novels straight from their sources, with Add to library and
+  Download for offline reading and narration. The server account is optional;
+  signed in, the server's library is imported and kept in step (changes made
+  offline are sent later).
 - **New toolchain (0.30.2).** Kotlin 2.4.20, Compose Multiplatform 1.12.0, AGP
   9.4.1, Gradle 9.7.1; the Android app is its own `androidApp` module and is built
   with `./gradlew :androidApp:assembleRelease`. Lint now covers the shared code

@@ -1,0 +1,111 @@
+-- A novel the app knows about. Two origins:
+--   source  read straight from its site through an extension: plugin_id + path
+--   server  scraped or imported on the NovelScraper server: server_id (its id
+--           there) and server_meta (the server's BookRead JSON: slug, volumes...)
+-- A source novel gets a row as soon as it is opened from Browse, with
+-- in_library = 0; "Add to library" sets it to 1. Rows outside the library that
+-- have not been opened for a while are pruned.
+CREATE TABLE book (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    plugin_id TEXT,
+    path TEXT,
+    server_id INTEGER UNIQUE,
+    server_meta TEXT,
+    title TEXT NOT NULL,
+    author TEXT NOT NULL DEFAULT '',
+    cover TEXT,
+    summary TEXT NOT NULL DEFAULT '',
+    genres TEXT NOT NULL DEFAULT '',
+    status TEXT NOT NULL DEFAULT '',
+    -- What to show under the title: the source's name, or the server's site.
+    site TEXT NOT NULL DEFAULT '',
+    web_url TEXT,
+    rating INTEGER,
+    in_library INTEGER NOT NULL DEFAULT 0,
+    sort_order INTEGER NOT NULL DEFAULT 0,
+    added_at INTEGER NOT NULL DEFAULT 0,
+    opened_at INTEGER NOT NULL DEFAULT 0,
+    -- The resume point: the chapter last opened and how far down it (0..1).
+    last_chapter_id INTEGER,
+    scroll REAL NOT NULL DEFAULT 0,
+    -- When the chapter list was last fetched from the source or server (0 = never).
+    checked_at INTEGER NOT NULL DEFAULT 0,
+    UNIQUE (plugin_id, path)
+);
+
+selectById:
+SELECT * FROM book WHERE id = ?;
+
+selectBySource:
+SELECT * FROM book WHERE plugin_id = ? AND path = ?;
+
+selectByServerId:
+SELECT * FROM book WHERE server_id = ?;
+
+selectServerIds:
+SELECT id, server_id FROM book WHERE server_id IS NOT NULL;
+
+-- The library grid, with the counts it shows.
+selectLibrary:
+SELECT b.*,
+    (SELECT count(*) FROM chapter c WHERE c.book_id = b.id) AS chapter_count,
+    (SELECT count(*) FROM chapter c WHERE c.book_id = b.id AND c.read = 0) AS unread_count,
+    (SELECT count(*) FROM chapter c JOIN chapter_content cc ON cc.chapter_id = c.id
+        WHERE c.book_id = b.id AND cc.kept = 1) AS downloaded_count
+FROM book b
+WHERE b.in_library = 1
+ORDER BY b.sort_order, b.id;
+
+insertSource:
+INSERT INTO book (plugin_id, path, title, author, cover, site, web_url, opened_at)
+VALUES (?, ?, ?, ?, ?, ?, ?, ?);
+
+insertServer:
+INSERT INTO book (server_id, server_meta, title, author, site, rating, in_library, sort_order, added_at)
+VALUES (?, ?, ?, ?, ?, ?, 1, ?, ?);
+
+lastInsertId:
+SELECT last_insert_rowid();
+
+updateSourceMeta:
+UPDATE book SET title = ?, author = ?, cover = ?, summary = ?, genres = ?, status = ?, web_url = ?
+WHERE id = ?;
+
+updateServerMeta:
+UPDATE book SET server_meta = ?, title = ?, author = ?, site = ?, rating = ?
+WHERE id = ?;
+
+setInLibrary:
+UPDATE book SET in_library = ?, added_at = ?, sort_order = ? WHERE id = ?;
+
+setRating:
+UPDATE book SET rating = ? WHERE id = ?;
+
+setSortOrder:
+UPDATE book SET sort_order = ? WHERE id = ?;
+
+maxSortOrder:
+SELECT coalesce(max(sort_order), 0) FROM book WHERE in_library = 1;
+
+setOpened:
+UPDATE book SET opened_at = ? WHERE id = ?;
+
+setResume:
+UPDATE book SET last_chapter_id = ?, scroll = ? WHERE id = ?;
+
+setCheckedAt:
+UPDATE book SET checked_at = ? WHERE id = ?;
+
+delete:
+DELETE FROM book WHERE id = ?;
+
+-- Novels looked at in Browse but never added, untouched since the cutoff and
+-- with nothing downloaded.
+pruneUnused:
+DELETE FROM book
+WHERE in_library = 0 AND opened_at < ?
+  AND id NOT IN (SELECT c.book_id FROM chapter c JOIN chapter_content cc ON cc.chapter_id = c.id WHERE cc.kept = 1);
+
+-- The resume point as a chapter position.
+resume:
+SELECT b.scroll, c.position FROM book b LEFT JOIN chapter c ON c.id = b.last_chapter_id WHERE b.id = ?;

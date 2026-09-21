@@ -20,7 +20,8 @@ import coil3.SingletonImageLoader
 import coil3.disk.DiskCache
 import com.novelscraper.app.data.ReaderPrefs
 import com.novelscraper.app.extensions.Extensions
-import com.novelscraper.app.net.AutoUpdate
+import com.novelscraper.app.library.Library
+import com.novelscraper.app.net.Account
 import com.novelscraper.app.net.Net
 import com.novelscraper.app.net.ScrapeRelay
 import com.novelscraper.app.net.buildImageLoader
@@ -41,7 +42,9 @@ import java.io.File
 /** Everything App.onCreate does on Android, before the first window. */
 fun initApp() {
     Net.init()
+    Account.init()
     Extensions.init(Net.client)
+    Library.init()
     ReaderPrefs.init()
     ThemeController.init()
     TtsController.player = DesktopTtsPlayer
@@ -68,9 +71,9 @@ fun main() {
     // the app exits (window close, logout, SIGTERM).
     Runtime.getRuntime().addShutdownHook(Thread { PropertiesStore.flush() })
     // The desktop app is "in the foreground" while it runs: keep the relay up so
-    // scrapes go through this computer's connection, and check for due updates.
-    ScrapeRelay.start()
-    AutoUpdate.trigger()
+    // scrapes go through this computer's connection, check for due updates and
+    // bring in the server's library (when signed in).
+    Account.onForeground()
 
     application {
         val windowPrefs = settingsStore("window")

@@ -111,10 +111,11 @@ object ReaderPrefs {
         prefs.putFloat("font_scale", clamped)
     }
 
-    fun getScroll(bookId: Int, position: Int): Float =
-        prefs.getFloat("scroll_${bookId}_$position", 0f)
+    /** In-chapter scroll, per novel ([ReaderViewModel.scrollKey]) and chapter. */
+    fun getScroll(novelKey: String, position: Int): Float =
+        prefs.getFloat("scroll_${novelKey}_$position", 0f)
 
-    fun setScroll(bookId: Int, position: Int, fraction: Float) {
-        prefs.putFloat("scroll_${bookId}_$position", fraction.coerceIn(0f, 1f))
+    fun setScroll(novelKey: String, position: Int, fraction: Float) {
+        prefs.putFloat("scroll_${novelKey}_$position", fraction.coerceIn(0f, 1f))
     }
 }

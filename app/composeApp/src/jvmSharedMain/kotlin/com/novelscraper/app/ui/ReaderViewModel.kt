@@ -2,32 +2,36 @@ package com.novelscraper.app.ui
 
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
-import com.novelscraper.app.data.BookRead
-import com.novelscraper.app.data.ChapterListItem
 import com.novelscraper.app.data.ChapterRead
-import com.novelscraper.app.data.ProgressUpdate
-import com.novelscraper.app.data.ReadingProgressRead
-import com.novelscraper.app.net.Net
+import com.novelscraper.app.library.LibBook
+import com.novelscraper.app.library.LibChapter
+import com.novelscraper.app.library.Library
+import com.novelscraper.app.ui.browse.describe
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.launch
 
 sealed interface ReaderState {
     data object Loading : ReaderState
     data class Error(val message: String) : ReaderState
-    data class Data(val chapter: ChapterRead) : ReaderState
+    /** [scrollKey] names the novel for the per-chapter scroll positions. */
+    data class Data(val chapter: ChapterRead, val scrollKey: String) : ReaderState
 }
 
-/** Book + chapter list + progress, fetched once so the reader's chapters sheet
- *  can list every volume and reflect/edit read state. */
+/** The novel and its chapter list, for the reader's chapters sheet. */
 data class ReaderMeta(
-    val book: BookRead,
-    val chapters: List<ChapterListItem>,
+    val book: LibBook,
+    val chapters: List<LibChapter>,
     val readPositions: Set<Int>,
 )
 
+/** A chapter from the local library: stored text, or fetched from the novel's
+ *  source or server (and cached). Opening it makes it the resume point. */
 class ReaderViewModel : ViewModel() {
+    private val lib = Library.store
 
     private val _state = MutableStateFlow<ReaderState>(ReaderState.Loading)
     val state: StateFlow<ReaderState> = _state.asStateFlow()
@@ -36,6 +40,7 @@ class ReaderViewModel : ViewModel() {
     val meta: StateFlow<ReaderMeta?> = _meta.asStateFlow()
 
     private var loadingKey: Pair<Int, Int>? = null
+    private var loadJob: Job? = null
     private var metaId: Int? = null
 
     fun load(bookId: Int, position: Int) {
@@ -43,64 +48,50 @@ class ReaderViewModel : ViewModel() {
         if (loadingKey == key && _state.value is ReaderState.Data) return
         loadingKey = key
         _state.value = ReaderState.Loading
-        viewModelScope.launch {
+        loadJob?.cancel()
+        loadJob = viewModelScope.launch {
             _state.value = try {
-                val chapter = Net.api.chapter(bookId, position)
-                // Mark read + set resume point (best-effort), and reflect it locally.
-                markRead(bookId, position)
-                ReaderState.Data(chapter)
+                val book = lib.book(bookId) ?: error("This novel is no longer in your library.")
+                val chapter = lib.chapter(bookId, position)
+                lib.markOpened(bookId, position)
+                // Fetch the next chapter ahead, so turning the page (or narration
+                // rolling on) doesn't wait on the site.
+                if (chapter.has_next) launch { runCatching { lib.chapter(bookId, position + 1) } }
+                ReaderState.Data(chapter, scrollKey(book))
+            } catch (e: kotlinx.coroutines.CancellationException) {
+                throw e
+            } catch (e: IllegalStateException) {
+                ReaderState.Error(e.message ?: "Couldn't load this chapter.")
             } catch (e: Exception) {
-                ReaderState.Error("Couldn't load this chapter.")
+                ReaderState.Error(describe(e))
             }
         }
     }
 
-    /** Load book + chapter list + progress once for the chapters sheet. */
+    /** Follow the novel and its chapter list for the chapters sheet. */
     fun ensureMeta(bookId: Int) {
         if (metaId == bookId) return
         metaId = bookId
         viewModelScope.launch {
-            try {
-                val book = Net.api.book(bookId)
-                val chapters = Net.api.chapters(bookId)
-                val progress = runCatching { Net.api.progress(bookId) }.getOrNull()
-                _meta.value = ReaderMeta(book, chapters, progress?.read_positions?.toSet() ?: emptySet())
-            } catch (_: Exception) { metaId = null /* allow retry */ }
+            combine(lib.bookFlow(bookId), lib.chaptersFlow(bookId)) { b, list ->
+                b?.let { ReaderMeta(it, list, list.filter { c -> c.read }.map { c -> c.position }.toSet()) }
+            }.collect { _meta.value = it }
         }
     }
 
-    private fun markRead(bookId: Int, position: Int) {
-        applyProgress(bookId, ProgressUpdate(last_position = position, mark_read = position))
-    }
-
-    /** Toggle one chapter's read state from the sheet. */
     fun setChapterRead(bookId: Int, position: Int, read: Boolean) {
-        applyProgress(
-            bookId,
-            if (read) ProgressUpdate(mark_read = position)
-            else ProgressUpdate(unmark_read = position),
-        )
+        viewModelScope.launch { lib.setRead(bookId, listOf(position), read) }
     }
 
-    /** PUT the update and fold the returned read set back into [meta]. */
-    private fun applyProgress(bookId: Int, update: ProgressUpdate) {
-        viewModelScope.launch {
-            try {
-                val p = Net.api.putProgress(bookId, update)
-                val m = _meta.value
-                if (m != null && m.book.id == bookId) {
-                    _meta.value = m.copy(readPositions = p.read_positions.toSet())
-                }
-            } catch (_: Exception) { /* best-effort */ }
-        }
-    }
-
-    /** Persist in-chapter scroll fraction to the server (resume across devices). */
+    /** Save the resume point's scroll (how far down this chapter). */
     fun saveScroll(bookId: Int, position: Int, fraction: Float) {
-        viewModelScope.launch {
-            try {
-                Net.api.putProgress(bookId, ProgressUpdate(last_position = position, scroll = fraction))
-            } catch (_: Exception) { /* best-effort */ }
-        }
+        // Outlives the screen: this runs as the reader closes.
+        lib.scope.launch { runCatching { lib.saveScroll(bookId, position, fraction) } }
+    }
+
+    companion object {
+        /** Server novels keep the server's id, as scroll positions saved before
+         *  the local library were keyed by it. */
+        fun scrollKey(book: LibBook): String = book.serverId?.toString() ?: "L${book.id}"
     }
 }

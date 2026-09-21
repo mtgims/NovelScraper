@@ -1,0 +1,126 @@
+-- A novel's chapters in reading order. position is 1-based and follows the
+-- source's current list (it is renumbered when the list changes); path is the
+-- stable key: the extension's chapter path, or the server's position as text.
+CREATE TABLE chapter (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    book_id INTEGER NOT NULL REFERENCES book(id) ON DELETE CASCADE,
+    position INTEGER NOT NULL,
+    path TEXT NOT NULL,
+    number TEXT NOT NULL DEFAULT '',
+    title TEXT NOT NULL,
+    volume INTEGER NOT NULL DEFAULT 1,
+    release_time TEXT,
+    read INTEGER NOT NULL DEFAULT 0,
+    UNIQUE (book_id, path)
+);
+
+CREATE INDEX chapter_book_position ON chapter(book_id, position);
+
+-- A chapter's text (HTML). kept = 1 for a download (stays until removed);
+-- kept = 0 for text cached while streaming (the oldest are pruned).
+CREATE TABLE chapter_content (
+    chapter_id INTEGER PRIMARY KEY REFERENCES chapter(id) ON DELETE CASCADE,
+    html TEXT NOT NULL,
+    kept INTEGER NOT NULL DEFAULT 0,
+    fetched_at INTEGER NOT NULL
+);
+
+-- Chapters waiting to be downloaded, oldest request first.
+CREATE TABLE download_queue (
+    chapter_id INTEGER PRIMARY KEY REFERENCES chapter(id) ON DELETE CASCADE,
+    queued_at INTEGER NOT NULL
+);
+
+selectByBook:
+SELECT c.id, c.position, c.path, c.number, c.title, c.volume, c.release_time, c.read,
+    coalesce(cc.kept, 0) AS downloaded
+FROM chapter c LEFT JOIN chapter_content cc ON cc.chapter_id = c.id
+WHERE c.book_id = ?
+ORDER BY c.position;
+
+selectAt:
+SELECT * FROM chapter WHERE book_id = ? AND position = ?;
+
+selectById:
+SELECT * FROM chapter WHERE id = ?;
+
+selectPaths:
+SELECT id, path FROM chapter WHERE book_id = ?;
+
+maxPosition:
+SELECT coalesce(max(position), 0) FROM chapter WHERE book_id = ?;
+
+insert:
+INSERT INTO chapter (book_id, position, path, number, title, volume, release_time)
+VALUES (?, ?, ?, ?, ?, ?, ?);
+
+updateMeta:
+UPDATE chapter SET position = ?, number = ?, title = ?, volume = ?, release_time = ?
+WHERE id = ?;
+
+deleteById:
+DELETE FROM chapter WHERE id = ?;
+
+setRead:
+UPDATE chapter SET read = ? WHERE book_id = ? AND position = ?;
+
+setReadIn:
+UPDATE chapter SET read = ? WHERE book_id = ? AND position IN ?;
+
+setAllRead:
+UPDATE chapter SET read = ? WHERE book_id = ?;
+
+readPositions:
+SELECT position FROM chapter WHERE book_id = ? AND read = 1 ORDER BY position;
+
+counts:
+SELECT count(*) AS total, coalesce(sum(read), 0) AS read FROM chapter WHERE book_id = ?;
+
+-- Text ------------------------------------------------------------------------
+
+content:
+SELECT html FROM chapter_content WHERE chapter_id = ?;
+
+isKept:
+SELECT kept FROM chapter_content WHERE chapter_id = ?;
+
+-- Store text; a download (kept = 1) is never downgraded by a later cache write.
+putContent:
+INSERT OR REPLACE INTO chapter_content (chapter_id, html, kept, fetched_at)
+VALUES (:chapter_id, :html,
+    max(:kept, coalesce((SELECT kept FROM chapter_content WHERE chapter_id = :chapter_id), 0)),
+    :fetched_at);
+
+-- Keep only the newest `keep` cached (not downloaded) chapters.
+pruneCache:
+DELETE FROM chapter_content
+WHERE kept = 0 AND chapter_id NOT IN (
+    SELECT chapter_id FROM chapter_content WHERE kept = 0 ORDER BY fetched_at DESC LIMIT ?
+);
+
+removeDownloads:
+DELETE FROM chapter_content
+WHERE chapter_id IN (SELECT id FROM chapter WHERE book_id = ?);
+
+-- Download queue -------------------------------------------------------------
+
+enqueue:
+INSERT OR IGNORE INTO download_queue (chapter_id, queued_at) VALUES (?, ?);
+
+nextQueued:
+SELECT q.chapter_id, c.book_id, c.position
+FROM download_queue q JOIN chapter c ON c.id = q.chapter_id
+ORDER BY q.queued_at, c.book_id, c.position
+LIMIT 1;
+
+dequeue:
+DELETE FROM download_queue WHERE chapter_id = ?;
+
+queuedCount:
+SELECT count(*) FROM download_queue;
+
+queuedForBook:
+SELECT count(*) FROM download_queue q JOIN chapter c ON c.id = q.chapter_id WHERE c.book_id = ?;
+
+clearQueueForBook:
+DELETE FROM download_queue WHERE chapter_id IN (SELECT id FROM chapter WHERE book_id = ?);

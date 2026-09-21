@@ -45,6 +45,8 @@ data class InstalledPlugin(
     val version: String,
     val iconUrl: String = "",
     val repo: String = "",
+    /** Headers its images (covers) need, from the plugin's imageRequestInit. */
+    val imageHeaders: Map<String, String> = emptyMap(),
 )
 
 /**
@@ -140,8 +142,9 @@ object Extensions {
     suspend fun install(p: RepoPlugin) = mutex.withLock {
         val code = withContext(Dispatchers.IO) { get(p.url) }
         // Refuse code that doesn't load, before it replaces a working version.
-        PluginRuntime.load(p.id, code, environment()).use { rt ->
+        val headers = PluginRuntime.load(p.id, code, environment()).use { rt ->
             require(rt.info.id == p.id) { "The plugin calls itself ${rt.info.id}, the index says ${p.id}" }
+            headersOf(rt.info)
         }
         withContext(Dispatchers.IO) {
             dir.mkdirs()
@@ -151,7 +154,7 @@ object Extensions {
             if (!tmp.renameTo(f)) { f.delete(); tmp.renameTo(f) }
         }
         running.remove(p.id)?.close()
-        val entry = InstalledPlugin(p.id, p.name, p.site, p.lang, p.version, p.iconUrl, p.repo)
+        val entry = InstalledPlugin(p.id, p.name, p.site, p.lang, p.version, p.iconUrl, p.repo, headers)
         saveInstalled(_installed.value.filter { it.id != p.id } + entry)
     }
 
@@ -183,6 +186,11 @@ object Extensions {
         val code = withContext(Dispatchers.IO) { codeFile(id).readText() }
         val rt = PluginRuntime.load(id, code, environment())
         running[id] = rt
+        // Plugins installed before image headers were recorded get them now.
+        val headers = headersOf(rt.info)
+        _installed.value.firstOrNull { it.id == id }?.takeIf { it.imageHeaders != headers }?.let { entry ->
+            saveInstalled(_installed.value.map { if (it.id == id) entry.copy(imageHeaders = headers) else it })
+        }
         while (running.size > MAX_RUNNING) {
             val eldest = running.entries.first()
             running.remove(eldest.key)
@@ -190,6 +198,15 @@ object Extensions {
         }
         rt
     }
+
+    /** Headers a source's images need (Referer, User-Agent); empty for most. */
+    fun imageHeaders(pluginId: String?): Map<String, String> =
+        pluginId?.let { id -> _installed.value.firstOrNull { it.id == id }?.imageHeaders }.orEmpty()
+
+    private fun headersOf(info: PluginInfo): Map<String, String> =
+        (info.imageRequestInit?.get("headers") as? kotlinx.serialization.json.JsonObject)
+            ?.mapValues { (it.value as? kotlinx.serialization.json.JsonPrimitive)?.content.orEmpty() }
+            .orEmpty()
 
     private fun environment() = PluginEnvironment(http, browserUserAgent, ::storageFor)
 

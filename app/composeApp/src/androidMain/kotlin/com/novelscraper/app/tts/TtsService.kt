@@ -29,9 +29,8 @@ import androidx.lifecycle.lifecycleScope
 import androidx.media.app.NotificationCompat.MediaStyle
 import com.novelscraper.app.shared.R
 import com.novelscraper.app.data.ChapterRead
-import com.novelscraper.app.data.ProgressUpdate
 import com.novelscraper.app.data.ReaderPrefs
-import com.novelscraper.app.net.Net
+import com.novelscraper.app.library.Library
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.channels.Channel
@@ -158,7 +157,7 @@ class TtsService : LifecycleService() {
     private fun loadAndSpeak(pos: Int, startIndex: Int = 0) {
         lifecycleScope.launch {
             val chapter: ChapterRead = try {
-                Net.api.chapter(bookId, pos)
+                Library.store.chapter(bookId, pos)
             } catch (e: Exception) {
                 stopPlayback(); return@launch
             }
@@ -174,7 +173,7 @@ class TtsService : LifecycleService() {
             index = 0
             // Listening marks the chapter read + moves the resume point.
             launch(Dispatchers.IO) {
-                try { Net.api.putProgress(bookId, ProgressUpdate(last_position = pos, mark_read = pos)) }
+                try { Library.store.markOpened(bookId, pos) }
                 catch (_: Exception) {}
             }
             if (sentences.isEmpty()) { skip(+1); return@launch }

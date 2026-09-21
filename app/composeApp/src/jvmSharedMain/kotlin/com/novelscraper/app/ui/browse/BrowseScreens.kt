@@ -102,6 +102,7 @@ import com.novelscraper.app.extensions.RepoPlugin
 import com.novelscraper.app.platform.PlatformBackHandler
 import com.novelscraper.app.platform.openInBrowser
 import com.novelscraper.app.platform.showToast
+import com.novelscraper.app.ui.components.RemoteImage
 import com.novelscraper.app.ui.components.ScreenTitle
 import com.novelscraper.app.ui.theme.Kicker
 import com.novelscraper.app.ui.theme.Serif
@@ -109,27 +110,6 @@ import kotlinx.coroutines.launch
 import java.util.Locale
 
 // --- shared bits ---------------------------------------------------------------------
-
-@Composable
-private fun RemoteImage(
-    url: String?,
-    headers: Map<String, String>,
-    contentDescription: String?,
-    modifier: Modifier,
-    contentScale: ContentScale = ContentScale.Crop,
-) {
-    if (url.isNullOrBlank()) return
-    AsyncImage(
-        model = ImageRequest.Builder(LocalPlatformContext.current)
-            .data(url)
-            .httpHeaders(NetworkHeaders.Builder().apply { headers.forEach { (k, v) -> set(k, v) } }.build())
-            .crossfade(true)
-            .build(),
-        contentDescription = contentDescription,
-        contentScale = contentScale,
-        modifier = modifier,
-    )
-}
 
 @Composable
 private fun Centered(content: @Composable () -> Unit) =
@@ -142,13 +122,6 @@ private fun ErrorText(message: String, onRetry: (() -> Unit)? = null) {
         if (onRetry != null) TextButton(onClick = onRetry) { Text("Try again") }
     }
 }
-
-/** Plugins give release times as ISO timestamps or as the site's own text
- *  ("3 days ago"); show the former as a date, the latter as is. */
-private fun readableDate(s: String): String = runCatching {
-    java.time.OffsetDateTime.parse(s).toLocalDate()
-        .format(java.time.format.DateTimeFormatter.ofPattern("d MMM yyyy", Locale.ENGLISH))
-}.getOrElse { s }
 
 /** Repository indexes give the language as a name ("English", "Русский");
  *  a short code ("en") is turned into its name. */
@@ -376,7 +349,7 @@ private fun RepositoriesDialog(
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun SourceScreen(pluginId: String, onBack: () -> Unit, onOpenNovel: (String) -> Unit) {
+fun SourceScreen(pluginId: String, onBack: () -> Unit, onOpenNovel: (bookId: Int) -> Unit) {
     PlatformBackHandler(onBack = onBack)
     val vm: SourceViewModel = viewModel(key = "source-$pluginId") { SourceViewModel(pluginId) }
     val ui by vm.ui.collectAsState()
@@ -428,7 +401,7 @@ fun SourceScreen(pluginId: String, onBack: () -> Unit, onOpenNovel: (String) -> 
                 modifier = Modifier.fillMaxSize(),
             ) {
                 itemsIndexed(ui.items, key = { _, it -> it.path }) { _, novel ->
-                    Column(Modifier.fillMaxWidth().clickable { onOpenNovel(novel.path) }) {
+                    Column(Modifier.fillMaxWidth().clickable { vm.open(novel, onOpenNovel) }) {
                         Box(
                             Modifier.fillMaxWidth().aspectRatio(3f / 4f).clip(RoundedCornerShape(10.dp))
                                 .background(MaterialTheme.colorScheme.surfaceVariant),
@@ -452,228 +425,5 @@ fun SourceScreen(pluginId: String, onBack: () -> Unit, onOpenNovel: (String) -> 
                 }
             }
         }
-    }
-}
-
-// --- A novel from a source ----------------------------------------------------------
-
-@OptIn(ExperimentalMaterial3Api::class)
-@Composable
-fun SourceNovelScreen(pluginId: String, path: String, onBack: () -> Unit, onRead: (Int) -> Unit) {
-    PlatformBackHandler(onBack = onBack)
-    val vm: SourceNovelViewModel = viewModel(key = "novel-$pluginId-$path") { SourceNovelViewModel(pluginId, path) }
-    val ui by vm.ui.collectAsState()
-    val novel = ui.novel
-
-    Column(Modifier.fillMaxSize()) {
-        TopAppBar(
-            title = { Text(novel?.name ?: "", maxLines = 1, overflow = TextOverflow.Ellipsis) },
-            navigationIcon = { IconButton(onClick = onBack) { Icon(Icons.AutoMirrored.Filled.ArrowBack, "Back") } },
-            actions = {
-                ui.webUrl?.let { url -> IconButton(onClick = { openInBrowser(url) }) { Icon(Icons.Filled.OpenInBrowser, "Open website") } }
-            },
-        )
-        when {
-            ui.loading -> Centered { CircularProgressIndicator() }
-            novel == null -> Centered { ErrorText(ui.error ?: "Couldn't load this novel.", vm::load) }
-            else -> BoxWithConstraints(Modifier.fillMaxSize()) {
-                val details: @Composable () -> Unit = { NovelDetails(novel, ui, vm.canLoadMore, onRead) }
-                val chapters: androidx.compose.foundation.lazy.LazyListScope.() -> Unit = {
-                    itemsIndexed(ui.chapters, key = { i, c -> "$i-${c.path}" }) { i, c ->
-                        Column(Modifier.fillMaxWidth().clickable { onRead(i) }.padding(horizontal = 20.dp, vertical = 12.dp)) {
-                            Text(c.name, style = MaterialTheme.typography.bodyLarge, maxLines = 2, overflow = TextOverflow.Ellipsis)
-                            c.releaseTime?.takeIf { it.isNotBlank() }?.let {
-                                Text(readableDate(it), style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                            }
-                        }
-                    }
-                    if (vm.canLoadMore || ui.loadingMore) {
-                        item {
-                            Box(Modifier.fillMaxWidth().padding(16.dp), contentAlignment = Alignment.Center) {
-                                if (ui.loadingMore) CircularProgressIndicator(Modifier.size(28.dp))
-                                else OutlinedButton(onClick = vm::loadMoreChapters) { Text("Load more chapters") }
-                            }
-                        }
-                    }
-                    ui.error?.let { item { Box(Modifier.padding(16.dp)) { ErrorText(it) } } }
-                    item { Spacer(Modifier.height(40.dp)) }
-                }
-                if (maxWidth >= 900.dp) {
-                    // Wide window: details beside the chapter list, like the library's book page.
-                    Row(Modifier.fillMaxSize()) {
-                        Column(Modifier.width(420.dp).fillMaxHeight().verticalScroll(rememberScrollState())) { details() }
-                        VerticalDivider(color = MaterialTheme.colorScheme.outline.copy(alpha = 0.3f))
-                        LazyColumn(Modifier.weight(1f).fillMaxHeight(), content = chapters)
-                    }
-                } else {
-                    LazyColumn(Modifier.fillMaxSize()) {
-                        item { details(); HorizontalDivider(Modifier.padding(top = 8.dp)) }
-                        chapters()
-                    }
-                }
-            }
-        }
-    }
-}
-
-@Composable
-private fun NovelDetails(
-    novel: com.novelscraper.app.extensions.SourceNovel,
-    ui: SourceNovelUi,
-    more: Boolean,
-    onRead: (Int) -> Unit,
-) {
-    var expanded by rememberSaveable { mutableStateOf(false) }
-    Column {
-        Row(Modifier.padding(20.dp)) {
-            Box(Modifier.width(120.dp).aspectRatio(3f / 4f).clip(RoundedCornerShape(10.dp))
-                .background(MaterialTheme.colorScheme.surfaceVariant)) {
-                RemoteImage(novel.cover, ui.imageHeaders, novel.name, Modifier.fillMaxSize())
-            }
-            Column(Modifier.padding(start = 16.dp)) {
-                Text(novel.name, style = MaterialTheme.typography.titleLarge)
-                novel.author?.takeIf { it.isNotBlank() }?.let {
-                    Text(it, style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                }
-                novel.status?.takeIf { it.isNotBlank() && !it.equals("Unknown", true) }?.let {
-                    Text(it.uppercase(), style = Kicker, color = MaterialTheme.colorScheme.primary,
-                        modifier = Modifier.padding(top = 6.dp))
-                }
-                Text("${ui.chapters.size}${if (more) "+" else ""} chapters", style = Kicker,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.padding(top = 2.dp))
-                if (ui.chapters.isNotEmpty()) {
-                    Button(onClick = { onRead(0) }, modifier = Modifier.padding(top = 12.dp)) { Text("Start reading") }
-                }
-            }
-        }
-        novel.genres?.takeIf { it.isNotBlank() }?.let {
-            Text(it, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant,
-                modifier = Modifier.padding(horizontal = 20.dp))
-        }
-        novel.summary?.takeIf { it.isNotBlank() }?.let {
-            Text(
-                it.trim(), style = MaterialTheme.typography.bodyMedium,
-                maxLines = if (expanded) Int.MAX_VALUE else 6, overflow = TextOverflow.Ellipsis,
-                modifier = Modifier.padding(horizontal = 20.dp).padding(top = 12.dp),
-            )
-            TextButton(onClick = { expanded = !expanded }, modifier = Modifier.padding(horizontal = 8.dp)) {
-                Text(if (expanded) "Less" else "More")
-            }
-        }
-        Text("Read here straight from the site; nothing is saved to your library yet.",
-            style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant,
-            modifier = Modifier.padding(horizontal = 20.dp, vertical = 4.dp))
-    }
-}
-
-// --- Reading a chapter from a source -----------------------------------------------
-
-/**
- * Reads a chapter straight from the source: the same text measure and fonts as
- * the library reader, previous/next through the novel's chapter list. No
- * narration or saved progress yet (that comes with the local library).
- */
-@OptIn(ExperimentalMaterial3Api::class)
-@Composable
-fun SourceReaderScreen(pluginId: String, novelPath: String, index: Int, onBack: () -> Unit) {
-    PlatformBackHandler(onBack = onBack)
-    val vm: SourceReaderViewModel = viewModel(key = "read-$pluginId-$novelPath") {
-        SourceReaderViewModel(pluginId, novelPath, index)
-    }
-    val ui by vm.ui.collectAsState()
-    val fontScale by ReaderPrefs.fontScale.collectAsState()
-    val scroll = remember(ui.index) { androidx.compose.foundation.ScrollState(0) }
-    val scope = rememberCoroutineScope()
-    val focus = remember { FocusRequester() }
-    LaunchedEffect(Unit) { runCatching { focus.requestFocus() } }
-    val hasPrev = ui.index > 0
-    val hasNext = ui.index < ui.count - 1
-
-    Column(
-        Modifier.fillMaxSize().focusRequester(focus).focusable().onPreviewKeyEvent { e ->
-            if (e.type != KeyEventType.KeyDown) return@onPreviewKeyEvent false
-            val step = scroll.viewportSize * 0.9f
-            when {
-                e.key == Key.DirectionRight && hasNext -> { vm.open(ui.index + 1); true }
-                e.key == Key.DirectionLeft && hasPrev -> { vm.open(ui.index - 1); true }
-                e.key == Key.PageDown || (e.key == Key.Spacebar && !e.isShiftPressed) -> { scope.launch { scroll.animateScrollBy(step) }; true }
-                e.key == Key.PageUp || (e.key == Key.Spacebar && e.isShiftPressed) -> { scope.launch { scroll.animateScrollBy(-step) }; true }
-                else -> false
-            }
-        },
-    ) {
-        TopAppBar(
-            title = { Text(ui.title, maxLines = 1, overflow = TextOverflow.Ellipsis) },
-            navigationIcon = { IconButton(onClick = onBack) { Icon(Icons.AutoMirrored.Filled.ArrowBack, "Back") } },
-            actions = {
-                TextButton(onClick = { ReaderPrefs.decreaseFont() }) { Text("A-") }
-                TextButton(onClick = { ReaderPrefs.increaseFont() }) { Text("A+") }
-            },
-        )
-        Box(Modifier.weight(1f).fillMaxWidth()) {
-            val html = ui.html
-            when {
-                ui.loading -> Centered { CircularProgressIndicator() }
-                html == null -> Centered { ErrorText(ui.error ?: "Couldn't load the chapter.") { vm.open(ui.index) } }
-                else -> SourceChapterText(html, fontScale, scroll)
-            }
-        }
-        Surface(tonalElevation = 3.dp) {
-            Row(
-                Modifier.fillMaxWidth().padding(horizontal = 8.dp, vertical = 4.dp),
-                horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically,
-            ) {
-                TextButton(enabled = hasPrev, onClick = { vm.open(ui.index - 1) }) {
-                    Icon(Icons.Filled.ChevronLeft, null); Text("Prev")
-                }
-                Text("${ui.index + 1} / ${ui.count}", style = MaterialTheme.typography.labelMedium)
-                TextButton(enabled = hasNext, onClick = { vm.open(ui.index + 1) }) {
-                    Text("Next"); Icon(Icons.Filled.ChevronRight, null)
-                }
-            }
-        }
-    }
-}
-
-@Composable
-private fun SourceChapterText(html: String, fontScale: Float, scroll: androidx.compose.foundation.ScrollState) {
-    val plain = remember(html) { Sentences.plain(html) }
-    val images = remember(html) { Sentences.imageSrcs(html).map { it.takeIf { s -> s.startsWith("http") } } }
-    // Runs of text between images, laid out like the library reader (an image is a
-    // line holding just its placeholder, as Sentences.plain isolates it).
-    val blocks = remember(plain) {
-        val out = ArrayList<String>()
-        val text = StringBuilder()
-        for (line in plain.split('\n')) {
-            if (line.trim() == Sentences.OBJ.toString()) {
-                if (text.isNotBlank()) out += text.toString().trim()
-                text.clear(); out += line.trim()
-            } else text.append(line).append('\n')
-        }
-        if (text.isNotBlank()) out += text.toString().trim()
-        out
-    }
-    Column(
-        Modifier.fillMaxSize().verticalScroll(scroll).padding(horizontal = 22.dp, vertical = 16.dp),
-        horizontalAlignment = Alignment.CenterHorizontally,
-    ) {
-        var img = 0
-        val measure = Modifier.widthIn(max = 620.dp).fillMaxWidth()
-        blocks.forEach { block ->
-            if (block == Sentences.OBJ.toString()) {
-                images.getOrNull(img++)?.let { url ->
-                    RemoteImage(url, emptyMap(), null, measure.padding(vertical = 10.dp), ContentScale.FillWidth)
-                }
-            } else {
-                Text(
-                    block,
-                    fontFamily = Serif,
-                    fontSize = (19 * fontScale).sp,
-                    lineHeight = (31 * fontScale).sp,
-                    modifier = measure,
-                )
-            }
-        }
-        Spacer(Modifier.height(40.dp))
     }
 }

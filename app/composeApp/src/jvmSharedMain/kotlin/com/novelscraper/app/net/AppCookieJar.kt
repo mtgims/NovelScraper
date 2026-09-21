@@ -51,6 +51,13 @@ class AppCookieJar(private val prefs: KeyValueStore) : CookieJar {
         return valid
     }
 
+    /** True if a live cookie is stored for [url]'s host (a session, most likely). */
+    @Synchronized
+    fun hasCookieFor(url: HttpUrl): Boolean {
+        val now = System.currentTimeMillis()
+        return store[url.host]?.values?.any { it.expiresAt > now } == true
+    }
+
     @Synchronized
     fun clear() {
         store.clear()

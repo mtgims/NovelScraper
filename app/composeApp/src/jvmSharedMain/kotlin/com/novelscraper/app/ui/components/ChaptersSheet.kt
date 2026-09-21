@@ -31,7 +31,7 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
-import com.novelscraper.app.data.ChapterListItem
+import com.novelscraper.app.library.LibChapter
 
 /**
  * Bottom-sheet table of contents: volumes as a collapsible accordion so a book
@@ -42,7 +42,7 @@ import com.novelscraper.app.data.ChapterListItem
 @Composable
 fun ChaptersSheet(
     title: String,
-    chapters: List<ChapterListItem>,
+    chapters: List<LibChapter>,
     readPositions: Set<Int>,
     currentPos: Int,
     onJump: (Int) -> Unit,

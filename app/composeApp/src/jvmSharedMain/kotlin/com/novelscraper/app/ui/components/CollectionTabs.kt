@@ -30,12 +30,12 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
-import com.novelscraper.app.data.CollectionRead
+import com.novelscraper.app.library.LibCollection
 
 @OptIn(ExperimentalFoundationApi::class)
 @Composable
 fun CollectionTabs(
-    collections: List<CollectionRead>,
+    collections: List<LibCollection>,
     activeTab: Int?,
     onSelect: (Int?) -> Unit,
     onCreate: (String) -> Unit,
@@ -44,7 +44,7 @@ fun CollectionTabs(
 ) {
     var editing by remember { mutableStateOf<EditState?>(null) }
     var menuFor by remember { mutableStateOf<Int?>(null) }
-    var confirmDelete by remember { mutableStateOf<CollectionRead?>(null) }
+    var confirmDelete by remember { mutableStateOf<LibCollection?>(null) }
 
     Row(
         Modifier.horizontalScroll(rememberScrollState()).padding(horizontal = 12.dp, vertical = 6.dp),

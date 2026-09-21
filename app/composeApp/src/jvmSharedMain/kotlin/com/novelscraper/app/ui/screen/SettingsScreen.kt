@@ -39,6 +39,7 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import com.novelscraper.app.data.ReaderPrefs
+import com.novelscraper.app.net.Account
 import com.novelscraper.app.net.Net
 import com.novelscraper.app.platform.hasSystemTts
 import com.novelscraper.app.tts.KokoroDownloader
@@ -51,7 +52,8 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 
 @Composable
-fun SettingsScreen(username: String, onLogout: () -> Unit) {
+fun SettingsScreen(onSignIn: () -> Unit, onLogout: () -> Unit) {
+    val account by Account.state.collectAsState()
     val theme by ThemeController.theme.collectAsState()
     val rate by ReaderPrefs.ttsRate.collectAsState()
     val fontScale by ReaderPrefs.fontScale.collectAsState()
@@ -102,11 +104,24 @@ fun SettingsScreen(username: String, onLogout: () -> Unit) {
             OutlinedButton(onClick = { ReaderPrefs.increaseFont() }) { Text("A+") }
         }
 
-        Section("ACCOUNT")
-        Text(username, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
-        Text(Net.baseUrl, style = MaterialTheme.typography.bodySmall,
-            color = MaterialTheme.colorScheme.onSurfaceVariant)
-        Button(onClick = onLogout, modifier = Modifier.padding(top = 16.dp)) { Text("Sign out") }
+        Section("SERVER ACCOUNT")
+        when (val a = account) {
+            is Account.State.SignedIn -> {
+                Text(a.username.ifBlank { "Signed in" }, style = MaterialTheme.typography.titleMedium,
+                    fontWeight = FontWeight.SemiBold)
+                Text(Net.baseUrl + if (a.online) "" else " · not reached yet", style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant)
+                Button(onClick = onLogout, modifier = Modifier.padding(top = 16.dp)) { Text("Sign out") }
+            }
+            Account.State.SignedOut -> {
+                Text(
+                    "Optional. Signed in to a NovelScraper server, its library comes into yours and " +
+                        "stays in step, and Scrape, Progress and Stats work.",
+                    style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+                Button(onClick = onSignIn, modifier = Modifier.padding(top = 16.dp)) { Text("Sign in") }
+            }
+        }
     }
 }
 

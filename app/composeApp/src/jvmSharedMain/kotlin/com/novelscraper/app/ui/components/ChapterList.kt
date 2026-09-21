@@ -11,6 +11,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.CheckCircle
+import androidx.compose.material.icons.filled.DownloadDone
 import androidx.compose.material.icons.filled.ExpandMore
 import androidx.compose.material.icons.filled.RadioButtonUnchecked
 import androidx.compose.material3.Checkbox
@@ -25,17 +26,17 @@ import androidx.compose.ui.draw.rotate
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
-import com.novelscraper.app.data.ChapterListItem
+import com.novelscraper.app.library.LibChapter
 import com.novelscraper.app.ui.theme.Kicker
 
 /** A volume with its chapters, in reading order. */
-data class TocVolume(val number: Int, val chapters: List<ChapterListItem>)
+data class TocVolume(val number: Int, val chapters: List<LibChapter>)
 
 /** Group a flat chapter list into volumes, preserving order. */
-fun groupVolumes(chapters: List<ChapterListItem>): List<TocVolume> {
+fun groupVolumes(chapters: List<LibChapter>): List<TocVolume> {
     val out = ArrayList<TocVolume>()
     var num = Int.MIN_VALUE
-    var cur = ArrayList<ChapterListItem>()
+    var cur = ArrayList<LibChapter>()
     for (ch in chapters) {
         if (ch.volume != num) {
             if (cur.isNotEmpty()) out.add(TocVolume(num, cur))
@@ -89,7 +90,7 @@ fun VolumeHeaderRow(
 @OptIn(ExperimentalFoundationApi::class)
 @Composable
 fun ChapterRow(
-    ch: ChapterListItem,
+    ch: LibChapter,
     read: Boolean,
     current: Boolean,
     selectionMode: Boolean,
@@ -123,6 +124,10 @@ fun ChapterRow(
             else MaterialTheme.colorScheme.onSurface,
             maxLines = 2, overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f),
         )
+        if (ch.downloaded) {
+            Icon(Icons.Filled.DownloadDone, contentDescription = "Downloaded",
+                tint = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f), modifier = Modifier.size(16.dp))
+        }
         if (current) {
             Text("here", style = Kicker.copy(fontSize = MaterialTheme.typography.labelSmall.fontSize),
                 color = MaterialTheme.colorScheme.primary, modifier = Modifier.padding(end = 4.dp))

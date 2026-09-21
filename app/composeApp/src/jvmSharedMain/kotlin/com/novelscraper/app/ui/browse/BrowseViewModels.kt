@@ -2,14 +2,13 @@ package com.novelscraper.app.ui.browse
 
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
-import com.novelscraper.app.extensions.ChapterItem
 import com.novelscraper.app.extensions.Extensions
 import com.novelscraper.app.extensions.InstalledPlugin
 import com.novelscraper.app.extensions.NovelItem
 import com.novelscraper.app.extensions.PluginException
 import com.novelscraper.app.extensions.RepoPlugin
+import com.novelscraper.app.library.Library
 import com.novelscraper.app.extensions.SiteChallengeException
-import com.novelscraper.app.extensions.SourceNovel
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -19,10 +18,18 @@ import kotlinx.coroutines.launch
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.jsonPrimitive
 
-/** What to tell the user when a plugin call fails. */
+private const val OFFLINE = "Couldn't reach the site. Check your connection; downloaded chapters open without one."
+
+/** What to tell the user when a plugin (or server) call fails. */
 fun describe(e: Throwable): String = when (e) {
     is SiteChallengeException -> "This site asks for a browser check first, which the app can't pass yet."
-    is PluginException -> "The source failed: ${e.message}"
+    // The plugin host's fetch reports a failed connection this way.
+    is PluginException -> if (e.message?.contains("Network request failed") == true) OFFLINE
+                          else "The source failed: ${e.message}"
+    is java.io.IOException -> OFFLINE
+    // Server novels: their chapters come from the server until downloaded.
+    is retrofit2.HttpException -> if (e.code() == 401) "Sign in to your server (Settings) to read this."
+                                  else "The server answered ${e.code()}."
     is kotlinx.coroutines.TimeoutCancellationException -> "The source took too long to answer."
     else -> "Couldn't reach the source (${e.message ?: e.javaClass.simpleName})."
 }
@@ -98,6 +105,17 @@ class SourceViewModel(private val pluginId: String) : ViewModel() {
 
     init { show(SourceMode.Popular) }
 
+    /** Open a novel from the list: its local id (a row is made the first time). */
+    fun open(item: NovelItem, onReady: (Int) -> Unit) {
+        viewModelScope.launch {
+            try {
+                onReady(Library.store.openSource(pluginId, item.path, item.name, item.cover))
+            } catch (e: Exception) {
+                _ui.update { it.copy(error = describe(e)) }
+            }
+        }
+    }
+
     fun show(mode: SourceMode, query: String = _ui.value.query) {
         job?.cancel()
         _ui.update { it.copy(mode = mode, query = query, items = emptyList(), page = 0, endReached = false, error = null) }
@@ -128,128 +146,6 @@ class SourceViewModel(private val pluginId: String) : ViewModel() {
                         endReached = fresh.isEmpty(), imageHeaders = imageHeaders(rt.info.imageRequestInit),
                     )
                 }
-            } catch (e: kotlinx.coroutines.CancellationException) {
-                throw e
-            } catch (e: Exception) {
-                _ui.update { it.copy(loading = false, error = describe(e)) }
-            }
-        }
-    }
-}
-
-// --- A novel from a source ---------------------------------------------------------------
-
-/** The novel last opened from a source, so its reader can step through the same
- *  chapter list without fetching it again. */
-object SourceSession {
-    data class Key(val pluginId: String, val path: String)
-    private val chapters = HashMap<Key, List<ChapterItem>>()
-    fun put(pluginId: String, path: String, list: List<ChapterItem>) = synchronized(this) {
-        chapters.clear(); chapters[Key(pluginId, path)] = list
-    }
-    fun get(pluginId: String, path: String): List<ChapterItem>? = synchronized(this) { chapters[Key(pluginId, path)] }
-}
-
-data class SourceNovelUi(
-    val loading: Boolean = true,
-    val novel: SourceNovel? = null,
-    val chapters: List<ChapterItem> = emptyList(),
-    /** Pages of chapters loaded so far, for sources that page their chapter list. */
-    val pagesLoaded: Int = 0,
-    val loadingMore: Boolean = false,
-    val error: String? = null,
-    val webUrl: String? = null,
-    val imageHeaders: Map<String, String> = emptyMap(),
-)
-
-class SourceNovelViewModel(private val pluginId: String, private val path: String) : ViewModel() {
-    private val _ui = MutableStateFlow(SourceNovelUi())
-    val ui: StateFlow<SourceNovelUi> = _ui.asStateFlow()
-
-    init { load() }
-
-    fun load() {
-        _ui.value = SourceNovelUi(loading = true)
-        viewModelScope.launch {
-            try {
-                val rt = Extensions.runtime(pluginId)
-                val novel = rt.novel(path)
-                val web = if (rt.info.hasResolveUrl) runCatching { rt.resolveUrl(path, isNovel = true) }.getOrNull()
-                          else rt.info.site.trimEnd('/') + "/" + path.trimStart('/')
-                _ui.value = SourceNovelUi(
-                    loading = false, novel = novel, chapters = novel.chapters,
-                    pagesLoaded = if (novel.chapters.isEmpty()) 0 else 1, webUrl = web,
-                    imageHeaders = imageHeaders(rt.info.imageRequestInit),
-                )
-                SourceSession.put(pluginId, path, novel.chapters)
-                // Paged chapter lists: fetch the first page up front if none came.
-                if (novel.chapters.isEmpty() && (novel.totalPages ?: 0) > 0 && rt.info.hasParsePage) loadMoreChapters()
-            } catch (e: kotlinx.coroutines.CancellationException) {
-                throw e
-            } catch (e: Exception) {
-                _ui.value = SourceNovelUi(loading = false, error = describe(e))
-            }
-        }
-    }
-
-    val canLoadMore: Boolean
-        get() = _ui.value.let { s -> (s.novel?.totalPages ?: 0) > s.pagesLoaded }
-
-    fun loadMoreChapters() {
-        val s = _ui.value
-        if (s.loadingMore || !canLoadMore) return
-        _ui.update { it.copy(loadingMore = true) }
-        viewModelScope.launch {
-            try {
-                val next = s.pagesLoaded + 1
-                val page = Extensions.runtime(pluginId).page(path, next)
-                _ui.update { it.copy(chapters = it.chapters + page.chapters, pagesLoaded = next, loadingMore = false) }
-                SourceSession.put(pluginId, path, _ui.value.chapters)
-            } catch (e: kotlinx.coroutines.CancellationException) {
-                throw e
-            } catch (e: Exception) {
-                _ui.update { it.copy(loadingMore = false, error = describe(e)) }
-            }
-        }
-    }
-}
-
-// --- Reading a chapter straight from a source ------------------------------------------
-
-data class SourceReaderUi(
-    val index: Int,
-    val title: String = "",
-    val html: String? = null,
-    val loading: Boolean = true,
-    val error: String? = null,
-    val count: Int = 0,
-)
-
-class SourceReaderViewModel(
-    private val pluginId: String,
-    private val novelPath: String,
-    startIndex: Int,
-) : ViewModel() {
-    private var chapters: List<ChapterItem> = SourceSession.get(pluginId, novelPath).orEmpty()
-    private val _ui = MutableStateFlow(SourceReaderUi(index = startIndex, count = chapters.size))
-    val ui: StateFlow<SourceReaderUi> = _ui.asStateFlow()
-    private var job: Job? = null
-
-    init { open(startIndex) }
-
-    fun open(index: Int) {
-        job?.cancel()
-        _ui.update { it.copy(index = index, loading = true, error = null, html = null) }
-        job = viewModelScope.launch {
-            try {
-                val rt = Extensions.runtime(pluginId)
-                if (chapters.isEmpty()) {  // opened without the novel page (e.g. after a restart)
-                    chapters = rt.novel(novelPath).chapters
-                    SourceSession.put(pluginId, novelPath, chapters)
-                }
-                val ch = chapters.getOrNull(index) ?: error("No chapter ${index + 1}")
-                val html = rt.chapter(ch.path)
-                _ui.update { it.copy(title = ch.name, html = html, loading = false, count = chapters.size) }
             } catch (e: kotlinx.coroutines.CancellationException) {
                 throw e
             } catch (e: Exception) {

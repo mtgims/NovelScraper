@@ -65,6 +65,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.runtime.snapshotFlow
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.ContentScale
@@ -209,7 +210,10 @@ fun ReaderScreen(bookId: Int, position: Int, onBack: () -> Unit) {
             exit = slideOutVertically { -it } + fadeOut(),
         ) {
             TopAppBar(
-                title = { Text(data?.chapter?.title ?: "Loading…", maxLines = 1) },
+                title = {
+                    Text(data?.chapter?.title ?: meta?.chapters?.firstOrNull { it.position == pos }?.title ?: "",
+                        maxLines = 1, overflow = TextOverflow.Ellipsis)
+                },
                 navigationIcon = {
                     IconButton(onClick = exit) {
                         Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back")
@@ -388,7 +392,7 @@ private fun ChapterBody(
     // Restore the saved in-chapter scroll once content has laid out. `savedFrac` is
     // captured before the persist effect can overwrite it; `restored` gates writes
     // so we don't clobber the saved value with 0 during the pre-layout window.
-    val savedFrac = remember(bookId, pos) { ReaderPrefs.getScroll(bookId, pos) }
+    val savedFrac = remember(bookId, pos) { ReaderPrefs.getScroll(data.scrollKey, pos) }
     var restored by remember(bookId, pos) { mutableStateOf(false) }
     LaunchedEffect(bookId, pos) {
         snapshotFlow { scroll.maxValue }.first { it > 0 }
@@ -397,7 +401,7 @@ private fun ChapterBody(
     }
     LaunchedEffect(bookId, pos) {
         snapshotFlow { if (scroll.maxValue > 0) scroll.value.toFloat() / scroll.maxValue else 0f }
-            .collect { f -> if (restored) ReaderPrefs.setScroll(bookId, pos, f) }
+            .collect { f -> if (restored) ReaderPrefs.setScroll(data.scrollKey, pos, f) }
     }
     // Hide the bars once the reader actually starts scrolling (after the initial
     // restore, so opening a chapter doesn't immediately hide them). TTS auto-centring

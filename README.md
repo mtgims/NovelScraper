@@ -114,12 +114,21 @@ Extensions, Repositories, add
 `https://raw.githubusercontent.com/mtgims/novelscraper-extensions/master/index.json`
 (or LNReader's repository, or any in the same format), then install sources and
 browse, search and read them straight from the site, from your own connection.
+Add a novel to your library to keep it; Download keeps its chapters for reading
+(and listening) offline.
 Plugins run in QuickJS inside the app; the JavaScript host they run against lives
 in `app/composeApp/pluginHost/` (`npm install && npm run build` regenerates the
 bundled `host.js`).
 
+**The library lives on the device** (`library.db`, SQLite): novels, chapter
+lists, downloaded chapters, progress, ratings and collections. A NovelScraper
+server account is optional: signed in (Settings, Server account), the server's
+novels are brought into the library, and reading them there keeps the server's
+progress up to date, even when changes are made offline (they are sent later).
+Scraping by web address, EPUB import and stats still use the server.
+
 On Linux the app keeps its settings and login in `~/.config/novelscraper`,
-downloaded voices in `~/.local/share/novelscraper` and its image cache in
+the library and downloaded voices in `~/.local/share/novelscraper` and its image cache in
 `~/.cache/novelscraper`; volume downloads go to your Downloads folder. Narration
 uses the Kokoro or Piper voices (download one in Settings). Keys in the reader:
 ←/→ chapters, Space/Page Down and Shift+Space/Page Up to turn the page, P to play

@@ -62,22 +62,22 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.viewmodel.compose.viewModel
-import coil3.compose.AsyncImage
-import coil3.compose.LocalPlatformContext
-import coil3.request.ImageRequest
-import coil3.request.crossfade
 import com.novelscraper.app.data.BookRead
-import com.novelscraper.app.data.CollectionRead
-import com.novelscraper.app.data.ReadingProgressRead
+import com.novelscraper.app.library.LibBook
+import com.novelscraper.app.library.LibChapter
+import com.novelscraper.app.library.LibCollection
+import com.novelscraper.app.library.LibProgress
+import com.novelscraper.app.platform.openInBrowser
+import com.novelscraper.app.ui.DownloadChoice
+import com.novelscraper.app.ui.components.BookCover
+import androidx.compose.material.icons.filled.LibraryAdd
+import androidx.compose.material.icons.filled.OpenInBrowser
 import com.novelscraper.app.net.Downloads
 import com.novelscraper.app.platform.showToast
-import com.novelscraper.app.net.Net
-import com.novelscraper.app.ui.BookState
 import com.novelscraper.app.ui.BookViewModel
 import com.novelscraper.app.ui.components.ChapterRow
 import com.novelscraper.app.ui.components.StarRating
@@ -93,16 +93,20 @@ fun BookScreen(
     onOpenReader: (position: Int) -> Unit,
 ) {
     PlatformBackHandler(onBack = onBack)
-    val vm: BookViewModel = viewModel { BookViewModel() }
-    LaunchedEffect(bookId) { vm.ensureLoaded(bookId); vm.refreshProgress(bookId) }
-    val state by vm.state.collectAsState()
+    val vm: BookViewModel = viewModel(key = "book-$bookId") { BookViewModel(bookId) }
+    val book by vm.book.collectAsState()
+    val chapters by vm.chapters.collectAsState()
+    val progress by vm.progress.collectAsState()
     val collections by vm.collections.collectAsState()
+    val refreshing by vm.refreshing.collectAsState()
+    val error by vm.error.collectAsState()
 
     var menuOpen by remember { mutableStateOf(false) }
     var showDelete by remember { mutableStateOf(false) }
+    var showEpub by remember { mutableStateOf(false) }
     var showDownload by remember { mutableStateOf(false) }
 
-    // Surface delete/update results as a toast.
+    // Surface action results as a toast.
     val action by vm.action.collectAsState()
     LaunchedEffect(action) {
         action?.let { showToast(it, long = true); vm.clearAction() }
@@ -111,32 +115,42 @@ fun BookScreen(
     Scaffold(
         topBar = {
             TopAppBar(
-                title = {
-                    Text((state as? BookState.Data)?.book?.title ?: "Book",
-                        maxLines = 1, overflow = TextOverflow.Ellipsis)
-                },
+                title = { Text(book?.title ?: "", maxLines = 1, overflow = TextOverflow.Ellipsis) },
                 navigationIcon = {
                     IconButton(onClick = onBack) {
                         Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back")
                     }
                 },
                 actions = {
+                    val b = book ?: return@TopAppBar
+                    if (refreshing) CircularProgressIndicator(Modifier.size(22.dp))
+                    b.webUrl?.let { url ->
+                        IconButton(onClick = { openInBrowser(url) }) {
+                            Icon(Icons.Filled.OpenInBrowser, contentDescription = "Open website")
+                        }
+                    }
                     IconButton(onClick = { menuOpen = true }) {
                         Icon(Icons.Filled.MoreVert, contentDescription = "More")
                     }
                     DropdownMenu(expanded = menuOpen, onDismissRequest = { menuOpen = false }) {
-                        if ((state as? BookState.Data)?.book?.volumes?.isNotEmpty() == true) {
-                            DropdownMenuItem(
-                                text = { Text("Download") },
-                                onClick = { menuOpen = false; showDownload = true },
-                            )
-                        }
                         DropdownMenuItem(
                             text = { Text("Check for new chapters") },
-                            onClick = { menuOpen = false; vm.checkForNewChapters(bookId) },
+                            onClick = { menuOpen = false; vm.checkForNewChapters() },
                         )
-                        DropdownMenuItem(
+                        if (b.downloadedCountOf(chapters) > 0) DropdownMenuItem(
+                            text = { Text("Remove downloads") },
+                            onClick = { menuOpen = false; vm.removeDownloads() },
+                        )
+                        if (b.server?.volumes?.isNotEmpty() == true) DropdownMenuItem(
+                            text = { Text("Save as EPUB") },
+                            onClick = { menuOpen = false; showEpub = true },
+                        )
+                        if (b.isServer) DropdownMenuItem(
                             text = { Text("Delete novel") },
+                            onClick = { menuOpen = false; showDelete = true },
+                        )
+                        else if (b.inLibrary) DropdownMenuItem(
+                            text = { Text("Remove from library") },
                             onClick = { menuOpen = false; showDelete = true },
                         )
                     }
@@ -145,47 +159,72 @@ fun BookScreen(
         },
     ) { inner ->
         Box(Modifier.fillMaxSize().padding(inner)) {
-            when (val s = state) {
-                is BookState.Loading -> CircularProgressIndicator(Modifier.align(Alignment.Center))
-                is BookState.Error -> Text(s.message, Modifier.align(Alignment.Center).padding(24.dp),
-                    color = MaterialTheme.colorScheme.error)
-                is BookState.Data -> BookContent(s, collections, vm, bookId, onOpenReader)
+            val b = book
+            val list = chapters
+            when {
+                b == null || list == null -> CircularProgressIndicator(Modifier.align(Alignment.Center))
+                list.isEmpty() && refreshing -> CircularProgressIndicator(Modifier.align(Alignment.Center))
+                list.isEmpty() && error != null -> Column(
+                    Modifier.align(Alignment.Center).padding(24.dp),
+                    horizontalAlignment = Alignment.CenterHorizontally,
+                ) {
+                    Text(error!!, color = MaterialTheme.colorScheme.error)
+                    TextButton(onClick = vm::refresh) { Text("Try again") }
+                }
+                else -> BookContent(b, list, progress, collections, vm, onOpenReader,
+                    onDownload = { showDownload = true }, onRemove = { showDelete = true })
             }
         }
     }
 
-    val book = (state as? BookState.Data)?.book
-    if (showDownload && book != null) {
-        DownloadDialog(
-            book = book,
+    val b = book
+    if (showEpub && b?.server != null) {
+        val server = b.server
+        EpubDialog(
+            book = server,
             onVolume = { v ->
-                Downloads.volume(book.id, book.slug, v, book.title)
-                showToast("Downloading volume $v…")
+                Downloads.volume(server.id, server.slug, v, server.title)
+                showToast("Saving volume $v…")
             },
             onAll = {
-                Downloads.all(book.id, book.slug, book.title)
-                showToast("Downloading all volumes…")
+                Downloads.all(server.id, server.slug, server.title)
+                showToast("Saving all volumes…")
             },
+            onDismiss = { showEpub = false },
+        )
+    }
+
+    if (showDownload && b != null) {
+        DownloadDialog(
+            onChoice = { showDownload = false; vm.download(it) },
             onDismiss = { showDownload = false },
         )
     }
 
-    if (showDelete) {
-        val title = (state as? BookState.Data)?.book?.title ?: "this novel"
+    if (showDelete && b != null) {
         AlertDialog(
             onDismissRequest = { showDelete = false },
-            title = { Text("Delete novel?") },
-            text = { Text("Remove \"$title\" and all its chapters from your library? " +
-                "Your reading position is archived, so re-adding it later restores where you were.") },
+            title = { Text(if (b.isServer) "Delete novel?" else "Remove from library?") },
+            text = {
+                Text(
+                    if (b.isServer) "Remove \"${b.title}\" and all its chapters from your library, here and on " +
+                        "your server? Your reading position is archived, so re-adding it later restores where you were."
+                    else "Remove \"${b.title}\" from your library, with its downloaded chapters? " +
+                        "You can add it again from Browse."
+                )
+            },
             confirmButton = {
-                TextButton(onClick = { showDelete = false; vm.deleteBook(bookId, onBack) }) {
-                    Text("Delete")
-                }
+                TextButton(onClick = {
+                    showDelete = false
+                    if (b.isServer) vm.delete(onBack) else vm.removeFromLibrary()
+                }) { Text(if (b.isServer) "Delete" else "Remove") }
             },
             dismissButton = { TextButton(onClick = { showDelete = false }) { Text("Cancel") } },
         )
     }
 }
+
+private fun LibBook.downloadedCountOf(chapters: List<LibChapter>?) = chapters?.count { it.downloaded } ?: downloadedCount
 
 // Above this width the book screen shows details and chapters side by side.
 private val TWO_PANE_MIN_WIDTH = 900.dp
@@ -193,43 +232,56 @@ private val DETAILS_PANE_WIDTH = 420.dp
 
 @Composable
 private fun BookContent(
-    data: BookState.Data,
-    collections: List<CollectionRead>,
+    book: LibBook,
+    chapters: List<LibChapter>,
+    progress: LibProgress?,
+    collections: List<LibCollection>,
     vm: BookViewModel,
-    bookId: Int,
     onOpenReader: (Int) -> Unit,
+    onDownload: () -> Unit,
+    onRemove: () -> Unit,
 ) {
-    val readSet = data.progress?.read_positions?.toSet() ?: emptySet()
-    val resumePos = data.progress?.last_position?.takeIf { it > 0 } ?: 1
-    val hasProgress = (data.progress?.read_count ?: 0) > 0
-    val volumes = remember(data.chapters) { groupVolumes(data.chapters) }
+    val readSet = progress?.readPositions ?: emptySet()
+    val resumePos = progress?.lastPosition?.takeIf { p -> chapters.any { it.position == p } } ?: 1
+    val hasProgress = progress?.lastPosition != null || readSet.isNotEmpty()
+    val volumes = remember(chapters) { groupVolumes(chapters) }
+    // One volume (source novels): no volume headers, just the chapters.
+    val flat = volumes.size <= 1
+    val queued by vm.queued.collectAsState()
+    val downloads by vm.downloads.collectAsState()
 
     // Collapsible volumes — collapse all but the one you're currently reading so a
     // 30-volume book isn't 3000 rows to scroll.
-    var expanded by remember(data.chapters) {
+    var expanded by remember(chapters.size) {
         mutableStateOf(
-            setOf(data.chapters.firstOrNull { it.position == resumePos }?.volume
+            setOf(chapters.firstOrNull { it.position == resumePos }?.volume
                 ?: volumes.firstOrNull()?.number ?: 0),
         )
     }
-    var selection by remember(data.chapters) { mutableStateOf<Set<Int>>(emptySet()) }
+    var selection by remember(chapters.size) { mutableStateOf<Set<Int>>(emptySet()) }
     val selecting = selection.isNotEmpty()
     var showReset by remember { mutableStateOf(false) }
 
     val header: @Composable () -> Unit = {
         BookHeader(
-            data.book, data.progress, hasProgress, resumePos, collections,
+            book, chapters.size, progress, hasProgress, resumePos, collections,
+            queued = queued, downloadError = downloads.error,
             onToggleCollection = vm::toggleCollection,
             onRate = vm::setRating,
             onOpenReader = onOpenReader,
-            onMarkAll = { vm.markAllRead(bookId) },
+            onAdd = vm::addToLibrary,
+            onRemove = onRemove,
+            onDownload = onDownload,
+            onCancelDownloads = vm::cancelDownloads,
+            onResumeDownloads = vm::resumeDownloads,
+            onMarkAll = vm::markAllRead,
             onReset = { showReset = true },
         )
     }
     val chapters: LazyListScope.() -> Unit = {
         volumes.forEach { vol ->
-            val isOpen = vol.number in expanded
-            item(key = "vol-${vol.number}") {
+            val isOpen = flat || vol.number in expanded
+            if (!flat) item(key = "vol-${vol.number}") {
                 VolumeHeaderRow(
                     number = vol.number, chapterCount = vol.chapters.size, expanded = isOpen,
                     onClick = {
@@ -243,7 +295,7 @@ private fun BookContent(
                     val isSel = ch.position in selection
                     ChapterRow(
                         ch = ch,
-                        read = ch.position in readSet,
+                        read = ch.read,
                         current = ch.position == resumePos && hasProgress,
                         selectionMode = selecting,
                         selected = isSel,
@@ -254,7 +306,7 @@ private fun BookContent(
                         },
                         onLongClick = { selection = selection + ch.position },
                         onToggleRead = {
-                            vm.setChapterRead(bookId, ch.position, ch.position !in readSet)
+                            vm.setChapterRead(ch.position, ch.position !in readSet)
                         },
                     )
                 }
@@ -266,8 +318,8 @@ private fun BookContent(
         if (selecting) {
             SelectionBar(
                 count = selection.size,
-                onMarkRead = { vm.setPositionsRead(bookId, selection.toList(), true); selection = emptySet() },
-                onMarkUnread = { vm.setPositionsRead(bookId, selection.toList(), false); selection = emptySet() },
+                onMarkRead = { vm.setPositionsRead(selection.toList(), true); selection = emptySet() },
+                onMarkUnread = { vm.setPositionsRead(selection.toList(), false); selection = emptySet() },
                 onClear = { selection = emptySet() },
             )
         }
@@ -303,18 +355,38 @@ private fun BookContent(
             title = { Text("Reset reading progress?") },
             text = { Text("This clears every read mark and your resume point for this book.") },
             confirmButton = {
-                TextButton(onClick = { vm.resetProgress(bookId); showReset = false }) { Text("Reset") }
+                TextButton(onClick = { vm.resetProgress(); showReset = false }) { Text("Reset") }
             },
             dismissButton = { TextButton(onClick = { showReset = false }) { Text("Cancel") } },
         )
     }
 }
 
+/** Which chapters to download for reading offline. */
+@Composable
+private fun DownloadDialog(onChoice: (DownloadChoice) -> Unit, onDismiss: () -> Unit) {
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("Download chapters") },
+        text = {
+            Column {
+                Text("Downloaded chapters open without a connection.",
+                    style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.padding(bottom = 8.dp))
+                DownloadRow("Next 10 chapters", "from where you are", onClick = { onChoice(DownloadChoice.Next10) })
+                DownloadRow("Unread chapters", "everything not read yet", onClick = { onChoice(DownloadChoice.Unread) })
+                DownloadRow("All chapters", "the whole novel", onClick = { onChoice(DownloadChoice.All) })
+            }
+        },
+        confirmButton = { TextButton(onClick = onDismiss) { Text("Cancel") } },
+    )
+}
+
 /** Pick a volume to save as EPUB, or all of them as a zip. The dialog stays open
  *  so several volumes can be queued in one go; each lands in Downloads with a
  *  system notification. */
 @Composable
-private fun DownloadDialog(
+private fun EpubDialog(
     book: BookRead,
     onVolume: (Int) -> Unit,
     onAll: () -> Unit,
@@ -322,7 +394,7 @@ private fun DownloadDialog(
 ) {
     AlertDialog(
         onDismissRequest = onDismiss,
-        title = { Text("Download") },
+        title = { Text("Save as EPUB") },
         text = {
             LazyColumn(Modifier.fillMaxWidth()) {
                 if (book.volumes.size > 1) {
@@ -389,51 +461,53 @@ private fun SelectionBar(
 @OptIn(ExperimentalLayoutApi::class)
 @Composable
 private fun BookHeader(
-    book: BookRead,
-    progress: ReadingProgressRead?,
+    book: LibBook,
+    chapterCount: Int,
+    progress: LibProgress?,
     hasProgress: Boolean,
     resumePos: Int,
-    collections: List<CollectionRead>,
+    collections: List<LibCollection>,
+    queued: Long,
+    downloadError: String?,
     onToggleCollection: (Int) -> Unit,
     onRate: (Int) -> Unit,
     onOpenReader: (Int) -> Unit,
+    onAdd: () -> Unit,
+    onRemove: () -> Unit,
+    onDownload: () -> Unit,
+    onCancelDownloads: () -> Unit,
+    onResumeDownloads: () -> Unit,
     onMarkAll: () -> Unit,
     onReset: () -> Unit,
 ) {
+    var summaryOpen by remember { mutableStateOf(false) }
     Column(Modifier.fillMaxWidth().padding(20.dp)) {
         Row {
-            Box(
-                Modifier.width(120.dp).height(168.dp).clip(RoundedCornerShape(10.dp))
-                    .background(MaterialTheme.colorScheme.surfaceVariant),
-                contentAlignment = Alignment.Center,
-            ) {
-                if (book.has_cover) {
-                    AsyncImage(
-                        model = ImageRequest.Builder(LocalPlatformContext.current)
-                            .data(Net.coverUrl(book.id)).crossfade(true).build(),
-                        contentDescription = book.title, contentScale = ContentScale.Crop,
-                        modifier = Modifier.fillMaxSize(),
-                    )
-                } else {
-                    Text(book.title.take(2).uppercase(),
-                        style = MaterialTheme.typography.headlineSmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant)
-                }
-            }
+            BookCover(
+                book, Modifier.width(120.dp).height(168.dp).clip(RoundedCornerShape(10.dp)),
+                initialsStyle = MaterialTheme.typography.headlineSmall,
+            )
             Column(Modifier.padding(start = 16.dp)) {
                 Text(book.title, style = MaterialTheme.typography.titleLarge,
                     fontWeight = FontWeight.Bold, maxLines = 3, overflow = TextOverflow.Ellipsis)
-                Text(book.author, style = MaterialTheme.typography.bodyMedium,
+                if (book.author.isNotBlank()) Text(book.author, style = MaterialTheme.typography.bodyMedium,
                     color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.padding(top = 4.dp))
+                val line = listOfNotNull(
+                    book.site.takeIf { it.isNotBlank() },
+                    book.status.takeIf { it.isNotBlank() && !it.equals("Unknown", true) },
+                ).joinToString(" · ")
+                if (line.isNotEmpty()) Text(line.uppercase(),
+                    style = Kicker.copy(fontSize = MaterialTheme.typography.labelSmall.fontSize),
+                    color = MaterialTheme.colorScheme.primary, modifier = Modifier.padding(top = 6.dp))
                 StarRating(book.rating, size = 34.dp, onRate = onRate,
                     modifier = Modifier.padding(top = 6.dp).offset(x = (-4).dp))
-                if (progress != null && progress.total_chapters > 0) {
-                    Text("${progress.read_count} / ${progress.total_chapters} · ${progress.percent_read.toInt()}%",
+                if (progress != null && progress.total > 0) {
+                    Text("${progress.readCount} / ${progress.total} · ${progress.percent.toInt()}%",
                         style = MaterialTheme.typography.labelMedium.copy(fontFamily = Kicker.fontFamily),
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                         modifier = Modifier.padding(top = 10.dp))
                     LinearProgressIndicator(
-                        progress = { (progress.percent_read / 100f).coerceIn(0f, 1f) },
+                        progress = { (progress.percent / 100f).coerceIn(0f, 1f) },
                         modifier = Modifier.fillMaxWidth().padding(top = 6.dp),
                     )
                 }
@@ -442,6 +516,7 @@ private fun BookHeader(
 
         Button(
             onClick = { onOpenReader(resumePos) },
+            enabled = chapterCount > 0,
             modifier = Modifier.fillMaxWidth().padding(top = 18.dp),
         ) {
             Icon(Icons.Filled.PlayArrow, contentDescription = null,
@@ -449,7 +524,33 @@ private fun BookHeader(
             Text(if (hasProgress) "Continue · chapter $resumePos" else "Start reading")
         }
 
-        Row(Modifier.padding(top = 10.dp), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+        FlowRow(
+            Modifier.padding(top = 10.dp),
+            horizontalArrangement = Arrangement.spacedBy(10.dp),
+        ) {
+            if (!book.inLibrary) {
+                AssistChip(
+                    onClick = onAdd,
+                    label = { Text("Add to library") },
+                    leadingIcon = { Icon(Icons.Filled.LibraryAdd, contentDescription = null,
+                        modifier = Modifier.size(18.dp)) },
+                )
+            } else if (book.isSource) {
+                FilterChip(
+                    selected = true,
+                    onClick = onRemove,
+                    label = { Text("In library") },
+                    leadingIcon = { Icon(Icons.Filled.Check, contentDescription = null,
+                        modifier = Modifier.size(FilterChipDefaults.IconSize)) },
+                )
+            }
+            AssistChip(
+                onClick = onDownload,
+                enabled = chapterCount > 0,
+                label = { Text("Download") },
+                leadingIcon = { Icon(Icons.Filled.Download, contentDescription = null,
+                    modifier = Modifier.size(18.dp)) },
+            )
             AssistChip(
                 onClick = onMarkAll,
                 label = { Text("Mark all read") },
@@ -464,13 +565,42 @@ private fun BookHeader(
             )
         }
 
-        if (collections.isNotEmpty()) {
+        if (queued > 0) {
+            Row(Modifier.fillMaxWidth().padding(top = 10.dp), verticalAlignment = Alignment.CenterVertically) {
+                Text(
+                    downloadError ?: "Downloading · $queued chapter${if (queued == 1L) "" else "s"} to go",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = if (downloadError != null) MaterialTheme.colorScheme.error
+                    else MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.weight(1f),
+                )
+                if (downloadError != null) TextButton(onClick = onResumeDownloads) { Text("Retry") }
+                TextButton(onClick = onCancelDownloads) { Text("Cancel") }
+            }
+        }
+
+        if (book.genres.isNotBlank()) {
+            Text(book.genres, style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.padding(top = 16.dp))
+        }
+        if (book.summary.isNotBlank()) {
+            Text(
+                book.summary, style = MaterialTheme.typography.bodyMedium,
+                maxLines = if (summaryOpen) Int.MAX_VALUE else 5, overflow = TextOverflow.Ellipsis,
+                modifier = Modifier.padding(top = 10.dp),
+            )
+            TextButton(onClick = { summaryOpen = !summaryOpen }, modifier = Modifier.offset(x = (-12).dp)) {
+                Text(if (summaryOpen) "Less" else "More")
+            }
+        }
+
+        if (book.inLibrary && collections.isNotEmpty()) {
             Text("COLLECTIONS", style = Kicker.copy(fontSize = MaterialTheme.typography.labelSmall.fontSize),
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                 modifier = Modifier.padding(top = 22.dp, bottom = 8.dp))
             FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 collections.forEach { c ->
-                    val inIt = c.id in book.collection_ids
+                    val inIt = c.id in book.collectionIds
                     FilterChip(
                         selected = inIt,
                         onClick = { onToggleCollection(c.id) },

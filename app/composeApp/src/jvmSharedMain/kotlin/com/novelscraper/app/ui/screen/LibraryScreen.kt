@@ -36,14 +36,13 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.viewmodel.compose.viewModel
-import coil3.compose.AsyncImage
-import coil3.compose.LocalPlatformContext
-import coil3.request.ImageRequest
-import coil3.request.crossfade
-import com.novelscraper.app.data.BookRead
-import com.novelscraper.app.net.Net
+import com.novelscraper.app.library.LibBook
+import com.novelscraper.app.net.Account
+import com.novelscraper.app.ui.components.BookCover
+import androidx.compose.material.icons.filled.DownloadDone
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.size
 import com.novelscraper.app.ui.components.StarRating
-import com.novelscraper.app.ui.LibraryPhase
 import com.novelscraper.app.ui.LibraryViewModel
 import com.novelscraper.app.ui.components.CollectionTabs
 import com.novelscraper.app.ui.components.ScreenTitle
@@ -53,18 +52,23 @@ import sh.calvin.reorderable.rememberReorderableLazyGridState
 @Composable
 fun LibraryScreen(onOpenBook: (Int) -> Unit) {
     val vm: LibraryViewModel = viewModel { LibraryViewModel() }
-    // Loads on first entry and refreshes on return (e.g. after assigning a book to
-    // a collection), keeping current books visible (no loading flash). Deferred
-    // past the slide transition so the network result + grid recompose don't land
-    // mid-animation (which caused stutter).
-    LaunchedEffect(Unit) { kotlinx.coroutines.delay(300); vm.load() }
-    val phase by vm.phase.collectAsState()
-    val books by vm.books.collectAsState()
+    // New novels on the server (scraped or imported there) come in on entry,
+    // deferred past the slide transition so the grid doesn't recompose mid-animation.
+    LaunchedEffect(Unit) { kotlinx.coroutines.delay(300); vm.refresh() }
+    val loaded by vm.books.collectAsState()
+    val dragOrder by vm.dragOrder.collectAsState()
     val collections by vm.collections.collectAsState()
     val tab by vm.tab.collectAsState()
+    val refreshing by vm.refreshing.collectAsState()
+    val account by Account.state.collectAsState()
 
+    val books = loaded.orEmpty().let { list ->
+        val order = dragOrder ?: return@let list
+        val byId = list.associateBy { it.id }
+        order.mapNotNull { byId[it] }
+    }
     val activeTab = tab
-    val display = if (activeTab == null) books else books.filter { it.collection_ids.contains(activeTab) }
+    val display = if (activeTab == null) books else books.filter { it.collectionIds.contains(activeTab) }
     val canReorder = activeTab == null
 
     val gridState = rememberLazyGridState()
@@ -74,8 +78,11 @@ fun LibraryScreen(onOpenBook: (Int) -> Unit) {
 
     Column(Modifier.fillMaxSize()) {
         ScreenTitle("Library", action = {
-            IconButton(onClick = vm::load) {
-                Icon(Icons.Filled.Refresh, contentDescription = "Refresh")
+            if (account is Account.State.SignedIn) {
+                if (refreshing) CircularProgressIndicator(Modifier.size(24.dp).padding(2.dp))
+                else IconButton(onClick = vm::refresh) {
+                    Icon(Icons.Filled.Refresh, contentDescription = "Refresh from the server")
+                }
             }
         })
         CollectionTabs(
@@ -87,83 +94,78 @@ fun LibraryScreen(onOpenBook: (Int) -> Unit) {
                 onDelete = vm::deleteCollection,
             )
             Box(Modifier.fillMaxSize()) {
-                when (val p = phase) {
-                    is LibraryPhase.Loading ->
+                when {
+                    // Also while the server's library is being brought in for the first time.
+                    loaded == null || (books.isEmpty() && refreshing) ->
                         CircularProgressIndicator(Modifier.align(Alignment.Center))
-                    is LibraryPhase.Error ->
-                        Text(p.message, Modifier.align(Alignment.Center)
-                            .clickable { vm.load() }.padding(24.dp),
-                            color = MaterialTheme.colorScheme.error)
-                    is LibraryPhase.Ready ->
-                        if (display.isEmpty()) {
-                            Text(
-                                if (tab == null) "Your library is empty." else "Nothing in this collection yet.",
-                                Modifier.align(Alignment.Center), style = MaterialTheme.typography.bodyLarge,
-                            )
-                        } else {
-                            LazyVerticalGrid(
-                                state = gridState,
-                                columns = GridCells.Adaptive(minSize = 150.dp),
-                                contentPadding = PaddingValues(start = 12.dp, end = 12.dp, top = 6.dp, bottom = 104.dp),
-                                horizontalArrangement = Arrangement.spacedBy(12.dp),
-                                verticalArrangement = Arrangement.spacedBy(16.dp),
-                                modifier = Modifier.fillMaxSize(),
-                            ) {
-                                items(display, key = { it.id }) { book ->
-                                    ReorderableItem(reorderState, key = book.id) { dragging ->
-                                        BookCard(
-                                            book = book,
-                                            modifier = if (canReorder) Modifier.longPressDraggableHandle(
-                                                onDragStopped = { vm.commitOrder() },
-                                            ) else Modifier,
-                                            elevated = dragging,
-                                            onClick = { onOpenBook(book.id) },
-                                        )
-                                    }
-                                }
+                    display.isEmpty() -> Text(
+                        if (tab != null) "Nothing in this collection yet."
+                        else "Your library is empty. Find novels in Browse and add them here.",
+                        Modifier.align(Alignment.Center).padding(24.dp), style = MaterialTheme.typography.bodyLarge,
+                    )
+                    else -> LazyVerticalGrid(
+                        state = gridState,
+                        columns = GridCells.Adaptive(minSize = 150.dp),
+                        contentPadding = PaddingValues(start = 12.dp, end = 12.dp, top = 6.dp, bottom = 104.dp),
+                        horizontalArrangement = Arrangement.spacedBy(12.dp),
+                        verticalArrangement = Arrangement.spacedBy(16.dp),
+                        modifier = Modifier.fillMaxSize(),
+                    ) {
+                        items(display, key = { it.id }) { book ->
+                            ReorderableItem(reorderState, key = book.id) { dragging ->
+                                BookCard(
+                                    book = book,
+                                    modifier = if (canReorder) Modifier.longPressDraggableHandle(
+                                        onDragStopped = { vm.commitOrder() },
+                                    ) else Modifier,
+                                    elevated = dragging,
+                                    onClick = { onOpenBook(book.id) },
+                                )
                             }
                         }
+                    }
                 }
             }
         }
     }
+
 @Composable
 private fun BookCard(
-    book: BookRead,
+    book: LibBook,
     modifier: Modifier = Modifier,
     elevated: Boolean = false,
     onClick: () -> Unit,
 ) {
     Column(modifier = modifier.fillMaxWidth().scale(if (elevated) 1.03f else 1f).clickable(onClick = onClick)) {
-        Box(
-            modifier = Modifier
-                .fillMaxWidth()
-                .aspectRatio(3f / 4f)
-                .clip(RoundedCornerShape(10.dp))
-                .background(MaterialTheme.colorScheme.surfaceVariant),
-            contentAlignment = Alignment.Center,
-        ) {
-            if (book.has_cover) {
-                AsyncImage(
-                    model = ImageRequest.Builder(LocalPlatformContext.current)
-                        .data(Net.coverUrl(book.id)).crossfade(true).build(),
-                    contentDescription = book.title,
-                    contentScale = ContentScale.Crop,
-                    modifier = Modifier.fillMaxSize(),
-                )
-            } else {
-                Text(book.title.take(2).uppercase(),
-                    style = MaterialTheme.typography.headlineMedium,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant)
+        Box {
+            BookCover(book, Modifier.fillMaxWidth().aspectRatio(3f / 4f).clip(RoundedCornerShape(10.dp)))
+            // Unread chapters, and a mark when chapters are downloaded.
+            Row(Modifier.padding(6.dp), horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                if (book.unreadCount > 0) Badge(book.unreadCount.toString())
+                if (book.downloadedCount > 0) Badge(null)
             }
         }
         Text(book.title, style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.SemiBold,
             maxLines = 2, overflow = TextOverflow.Ellipsis, modifier = Modifier.padding(top = 6.dp))
-        Text(book.author, style = MaterialTheme.typography.bodySmall,
+        Text(book.author.ifBlank { book.site }, style = MaterialTheme.typography.bodySmall,
             color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 1, overflow = TextOverflow.Ellipsis)
         // Row always reserved, so rated and unrated cards keep the same height.
         Box(Modifier.height(16.dp).padding(top = 2.dp)) {
             if ((book.rating ?: 0) > 0) StarRating(book.rating, size = 13.dp)
         }
+    }
+}
+
+/** A small pill on a cover: a count, or (null) the downloaded mark. */
+@Composable
+private fun Badge(text: String?) {
+    Box(
+        Modifier.clip(RoundedCornerShape(6.dp)).background(
+            if (text != null) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.tertiary,
+        ).padding(horizontal = 6.dp, vertical = 2.dp),
+    ) {
+        if (text != null) Text(text, style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onPrimary)
+        else Icon(Icons.Filled.DownloadDone, contentDescription = "Downloaded", tint = MaterialTheme.colorScheme.onTertiary,
+            modifier = Modifier.size(14.dp))
     }
 }

@@ -8,7 +8,8 @@ import coil3.PlatformContext
 import coil3.SingletonImageLoader
 import com.novelscraper.app.data.ReaderPrefs
 import com.novelscraper.app.extensions.Extensions
-import com.novelscraper.app.net.AutoUpdate
+import com.novelscraper.app.library.Library
+import com.novelscraper.app.net.Account
 import com.novelscraper.app.net.Net
 import com.novelscraper.app.net.NuResolver
 import com.novelscraper.app.net.ScrapeRelay
@@ -23,7 +24,9 @@ class App : Application(), SingletonImageLoader.Factory {
         super.onCreate()
         initPlatform(this, BuildConfig.DEBUG)  // first: the shared code's settings/files/toasts need it
         Net.init()
+        Account.init()
         Extensions.init(Net.client)
+        Library.init()
         ReaderPrefs.init()
         ThemeController.init()
         TtsController.player = AndroidTtsPlayer(this)
@@ -39,12 +42,9 @@ class App : Application(), SingletonImageLoader.Factory {
     private object ForegroundRelay : ActivityLifecycleCallbacks {
         private var started = 0
         override fun onActivityStarted(activity: Activity) {
-            if (started++ == 0) {
-                ScrapeRelay.start()
-                // Coming to the foreground: check whether any books are due for an
-                // auto-update (runs once the relay is up so gated sources work).
-                AutoUpdate.trigger()
-            }
+            // Coming to the foreground: relay up, due server updates, and the
+            // server's library brought in (when signed in).
+            if (started++ == 0) Account.onForeground()
         }
         override fun onActivityStopped(activity: Activity) {
             if (--started <= 0) { started = 0; ScrapeRelay.stop() }

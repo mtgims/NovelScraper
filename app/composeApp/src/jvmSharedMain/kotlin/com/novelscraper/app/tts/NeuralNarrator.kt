@@ -1,10 +1,9 @@
 package com.novelscraper.app.tts
 
 import com.novelscraper.app.data.ChapterRead
-import com.novelscraper.app.data.ProgressUpdate
 import com.novelscraper.app.data.ReaderPrefs
 import com.novelscraper.app.data.Sentences
-import com.novelscraper.app.net.Net
+import com.novelscraper.app.library.Library
 import com.novelscraper.app.platform.Log
 import com.novelscraper.app.platform.showToast
 import kotlinx.coroutines.CoroutineScope
@@ -70,9 +69,9 @@ class NeuralNarrator(
     private val openSink: (sampleRate: Int) -> PcmSink,
     private val voice: NarratorVoice = KokoroVoice,
     private val fetchChapter: suspend (bookId: Int, position: Int) -> ChapterRead =
-        { b, p -> Net.api.chapter(b, p) },
+        { b, p -> Library.store.chapter(b, p) },
     private val markRead: suspend (bookId: Int, position: Int) -> Unit =
-        { b, p -> Net.api.putProgress(b, ProgressUpdate(last_position = p, mark_read = p)) },
+        { b, p -> Library.store.markOpened(b, p) },
 ) : TtsController.Player {
 
     private val state = Dispatchers.Default.limitedParallelism(1)

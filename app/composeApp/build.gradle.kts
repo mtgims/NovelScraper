@@ -10,6 +10,7 @@ plugins {
     id("org.jetbrains.kotlin.multiplatform")
     id("org.jetbrains.kotlin.plugin.compose")
     id("org.jetbrains.kotlin.plugin.serialization")
+    id("app.cash.sqldelight")
     id("org.jetbrains.compose")
 }
 
@@ -134,6 +135,10 @@ kotlin {
                 // Drag-to-reorder for the library grid.
                 implementation("sh.calvin.reorderable:reorderable:3.1.0")
 
+                // The local library database (see sqldelight {} below).
+                implementation("app.cash.sqldelight:runtime:2.4.0")
+                implementation("app.cash.sqldelight:coroutines-extensions:2.4.0")
+
                 // tar.bz2 extraction for downloaded TTS model packages.
                 implementation("org.apache.commons:commons-compress:1.27.1")
 
@@ -148,6 +153,7 @@ kotlin {
                 implementation("androidx.lifecycle:lifecycle-service:2.8.7")
                 // MediaSession + media-style notification for background/lock-screen TTS.
                 implementation("androidx.media:media:1.7.0")
+                implementation("app.cash.sqldelight:android-driver:2.4.0")
                 // On-device Kokoro/Piper TTS via sherpa-onnx (ONNX model + espeak-ng
                 // phonemizer + voices). compileOnly: a library can't bundle a local
                 // .aar, so androidApp packages it.
@@ -164,6 +170,8 @@ kotlin {
                 implementation("org.jetbrains.compose.ui:ui-backhandler:1.12.0")
                 // The HTML parser Android's Html.fromHtml uses; see platform/HtmlPlainText.kt.
                 implementation("org.ccil.cowan.tagsoup:tagsoup:1.2.1")
+                // SQLite over JDBC (bundles the native library) for the library database.
+                implementation("app.cash.sqldelight:sqlite-driver:2.4.0")
                 // sherpa-onnx for the Kokoro/Piper voices: the JVM binding plus the
                 // native library for Linux x64 (downloaded by sherpaJvm/sherpaNativeLinux).
                 implementation(files(sherpaJvm.flatMap { it.dest }, sherpaNativeLinux.flatMap { it.dest }))
@@ -181,6 +189,23 @@ kotlin {
                 // Runs the real Android framework (Html.fromHtml) on the JVM.
                 implementation("org.robolectric:robolectric:4.17")
             }
+        }
+    }
+}
+
+// The local library: novels, chapters, downloaded text, reading progress,
+// collections. Schema and queries are the .sq files under
+// src/jvmSharedMain/sqldelight; the Kotlin API is generated from them.
+// Android 8 (minSdk 26) ships SQLite 3.18, so the dialect is pinned there and
+// newer syntax (UPSERT, window functions) fails the build instead of the phone.
+sqldelight {
+    databases {
+        create("LibraryDb") {
+            packageName.set("com.novelscraper.app.db")
+            srcDirs.setFrom("src/jvmSharedMain/sqldelight")
+            dialect("app.cash.sqldelight:sqlite-3-18-dialect:2.4.0")
+            schemaOutputDirectory.set(file("src/jvmSharedMain/sqldelight/databases"))
+            verifyMigrations.set(true)
         }
     }
 }

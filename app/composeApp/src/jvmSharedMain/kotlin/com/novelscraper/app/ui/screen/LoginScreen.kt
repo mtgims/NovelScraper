@@ -1,5 +1,6 @@
 package com.novelscraper.app.ui.screen
 
+import com.novelscraper.app.platform.PlatformBackHandler
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxSize
@@ -37,7 +38,9 @@ fun LoginScreen(
     onLogin: (String, String) -> Unit,
     onSetBaseUrl: (String) -> Unit,
     onRegister: () -> Unit,
+    onBack: () -> Unit,
 ) {
+    PlatformBackHandler(onBack = onBack)
     var username by rememberSaveable { mutableStateOf("") }
     var password by rememberSaveable { mutableStateOf("") }
     var showServer by rememberSaveable { mutableStateOf(false) }
@@ -54,7 +57,7 @@ fun LoginScreen(
     ) {
         Text("NovelScraper", style = MaterialTheme.typography.headlineMedium)
         Text(
-            "Sign in to your library",
+            "Sign in to your NovelScraper server",
             style = MaterialTheme.typography.bodyMedium,
             modifier = Modifier.padding(top = 4.dp, bottom = 24.dp),
         )
@@ -115,6 +118,7 @@ fun LoginScreen(
             Text(if (showServer) "Hide server address" else "Server address")
         }
 
+
         if (showServer) {
             OutlinedTextField(
                 value = server,
@@ -135,5 +139,7 @@ fun LoginScreen(
                 Text("Use this server")
             }
         }
+
+        TextButton(onClick = onBack, modifier = Modifier.padding(top = 8.dp)) { Text("Not now") }
     }
 }

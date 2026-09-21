@@ -32,6 +32,29 @@ crash report is unreadable without the matching one.
 
 ---
 
+## 0.31.0, 2026-09-22 · `versionCode 55`
+Your library now lives on the device, and an account is optional.
+- **Read from sources without a server.** Opening a novel in Browse shows the
+  same novel page as the library (cover, summary, chapters, progress), with
+  **Add to library**. Its chapters stream from the site and are cached; the
+  reader is the full reader, so narration, fonts, resume and read marks all work
+  for source novels too.
+- **Download** keeps chapters for offline reading and listening: the next 10,
+  every unread one, or the whole novel. Downloads run one chapter at a time with
+  a pause between them, survive a restart, and show on the novel's page (with
+  Cancel) and on its library card. Remove downloads from the novel's menu.
+- **The library is local** (novels, chapters, text, progress, ratings,
+  collections), so it opens instantly and works offline. Library cards show the
+  unread count and a mark when chapters are downloaded.
+- **The server account is optional** and lives under Settings, Server account.
+  Signed in, the server's novels are brought into the library (with their
+  progress, ratings and collections) and kept in step: progress, ratings and
+  shelf changes made here are sent to the server, and ones made offline are
+  sent when it can be reached again. Without an account, Scrape, Progress and
+  Stats ask you to sign in. A saved sign-in no longer drops you at the login
+  screen when the server can't be reached.
+- Under the hood: SQLDelight, with the schema pinned to Android 8's SQLite.
+
 ## 0.30.2, 2026-09-22 · `versionCode 54`
 Nothing new to see; the build underneath changed. The app now builds with Kotlin
 2.4.20, Compose Multiplatform 1.12.0, Android Gradle Plugin 9.4.1, Gradle 9.7.1

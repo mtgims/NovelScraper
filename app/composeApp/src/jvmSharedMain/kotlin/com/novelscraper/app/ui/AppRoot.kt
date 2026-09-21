@@ -4,7 +4,17 @@ import androidx.compose.animation.AnimatedContentTransitionScope
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
-import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.padding
+import androidx.compose.material3.Button
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.Text
+import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.unit.dp
+import com.novelscraper.app.net.Account
+import kotlinx.coroutines.launch
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
@@ -22,8 +32,6 @@ import androidx.savedstate.read
 import com.novelscraper.app.platform.encodeRouteArg
 import com.novelscraper.app.ui.browse.BrowseScreen
 import com.novelscraper.app.ui.browse.ExtensionsScreen
-import com.novelscraper.app.ui.browse.SourceNovelScreen
-import com.novelscraper.app.ui.browse.SourceReaderScreen
 import com.novelscraper.app.ui.browse.SourceScreen
 import com.novelscraper.app.ui.components.PillNavBar
 import com.novelscraper.app.ui.components.isTopLevelRoute
@@ -38,45 +46,27 @@ import com.novelscraper.app.ui.screen.RegisterScreen
 import com.novelscraper.app.ui.screen.SettingsScreen
 import com.novelscraper.app.ui.screen.StatsScreen
 
-/** The whole app: sign-in flow, or the signed-in tabs and detail screens. */
+/** The whole app: the tabs and detail screens. A server account is optional;
+ *  sign-in lives under Settings. */
 @Composable
-fun AppRoot() {
-    val vm: AuthViewModel = viewModel { AuthViewModel() }
-    val state by vm.state.collectAsState()
+fun AppRoot() = MainApp()
 
-    when (val s = state) {
-        is AuthState.Loading ->
-            Box(Modifier.fillMaxSize()) { CircularProgressIndicator(Modifier.align(Alignment.Center)) }
-        is AuthState.SignedOut -> AuthFlow(vm)
-        is AuthState.SignedIn -> AuthedApp(username = s.user.username, onLogout = vm::logout)
+/** Stands in for a screen that needs the server while signed out. */
+@Composable
+private fun NeedsServer(what: String, onSignIn: () -> Unit, content: @Composable () -> Unit) {
+    val account by Account.state.collectAsState()
+    if (account is Account.State.SignedIn) { content(); return }
+    Column(
+        Modifier.fillMaxSize().padding(32.dp),
+        verticalArrangement = Arrangement.Center,
+        horizontalAlignment = Alignment.CenterHorizontally,
+    ) {
+        Text(what, style = MaterialTheme.typography.bodyLarge, textAlign = TextAlign.Center)
+        Button(onClick = onSignIn, modifier = Modifier.padding(top = 16.dp)) { Text("Sign in") }
     }
 }
 
-@Composable
-private fun AuthFlow(vm: AuthViewModel) {
-    val nav = rememberNavController()
-    val busy by vm.busy.collectAsState()
-    val error by vm.error.collectAsState()
-    NavHost(nav, startDestination = "login") {
-        composable("login") {
-            LoginScreen(
-                baseUrl = vm.baseUrl, busy = busy, error = error,
-                onLogin = vm::login, onSetBaseUrl = vm::setBaseUrl,
-                onRegister = { vm.clearError(); vm.loadAuthConfig(); nav.navigate("register") },
-            )
-        }
-        composable("register") {
-            val openSignup by vm.openSignup.collectAsState()
-            RegisterScreen(
-                busy = busy, error = error, openSignup = openSignup,
-                onRegister = vm::register,
-                onBack = { vm.clearError(); nav.popBackStack() },
-            )
-        }
-    }
-}
-
-private val TAB_ORDER = listOf("library", "browse", "new", "jobs", "stats", "settings")
+private val TAB_ORDER = listOf("library", "browse", "new", "jobs", "stats", "settings", "login", "register")
 // Tab rank drives slide direction; detail screens (book/reader) rank high so
 // opening them slides forward (left), and back-navigation slides right.
 private fun routeRank(route: String?): Int {
@@ -86,8 +76,11 @@ private fun routeRank(route: String?): Int {
 }
 
 @Composable
-private fun AuthedApp(username: String, onLogout: () -> Unit) {
+private fun MainApp() {
     val nav = rememberNavController()
+    val auth: AuthViewModel = viewModel { AuthViewModel() }
+    val scope = rememberCoroutineScope()
+    val signIn = { nav.navigate("login") { launchSingleTop = true } }
     val entry by nav.currentBackStackEntryAsState()
     val route = entry?.destination?.route
     val slideSpec = tween<IntOffset>(260)
@@ -122,7 +115,30 @@ private fun AuthedApp(username: String, onLogout: () -> Unit) {
             composable("library") {
                 LibraryScreen(onOpenBook = { id -> nav.navigate("book/$id") })
             }
+            composable("login") {
+                val busy by auth.busy.collectAsState()
+                val error by auth.error.collectAsState()
+                LoginScreen(
+                    baseUrl = auth.baseUrl, busy = busy, error = error,
+                    onLogin = { u, p -> auth.login(u, p) { nav.popBackStack("login", inclusive = true) } },
+                    onSetBaseUrl = auth::setBaseUrl,
+                    onRegister = { auth.clearError(); auth.loadAuthConfig(); nav.navigate("register") },
+                    onBack = { auth.clearError(); nav.popBackStack() },
+                )
+            }
+            composable("register") {
+                val busy by auth.busy.collectAsState()
+                val error by auth.error.collectAsState()
+                val openSignup by auth.openSignup.collectAsState()
+                RegisterScreen(
+                    busy = busy, error = error, openSignup = openSignup,
+                    onRegister = { u, p, i -> auth.register(u, p, i) { nav.popBackStack("login", inclusive = true) } },
+                    onBack = { auth.clearError(); nav.popBackStack() },
+                )
+            }
             composable("new") {
+                NeedsServer("Scraping a novel by its web address and importing EPUBs happen on your " +
+                    "NovelScraper server. Novels from sources need no account: see Browse.", signIn) {
                 NewScrapeScreen(
                     onScraped = {
                         nav.navigate("jobs") {
@@ -141,6 +157,7 @@ private fun AuthedApp(username: String, onLogout: () -> Unit) {
                         nav.navigate(if (url != null) "nu?url=${encodeRouteArg(url)}" else "nu")
                     },
                 )
+                }
             }
             composable(
                 "nu?url={url}",
@@ -172,38 +189,18 @@ private fun AuthedApp(username: String, onLogout: () -> Unit) {
                 SourceScreen(
                     pluginId = plugin,
                     onBack = { nav.popBackStack() },
-                    onOpenNovel = { path -> nav.navigate("source-novel/${encodeRouteArg(plugin)}?path=${encodeRouteArg(path)}") },
+                    onOpenNovel = { id -> nav.navigate("book/$id") },
                 )
             }
-            composable(
-                "source-novel/{plugin}?path={path}",
-                arguments = listOf(navArgument("path") { type = NavType.StringType; defaultValue = "" }),
-            ) { e ->
-                val plugin = e.arguments!!.read { getString("plugin") }
-                val path = e.arguments!!.read { getString("path") }
-                SourceNovelScreen(
-                    pluginId = plugin, path = path,
-                    onBack = { nav.popBackStack() },
-                    onRead = { i -> nav.navigate("source-read/${encodeRouteArg(plugin)}/$i?path=${encodeRouteArg(path)}") },
-                )
+            composable("jobs") {
+                NeedsServer("Scrapes running on your NovelScraper server show here.", signIn) { ProgressScreen() }
             }
-            composable(
-                "source-read/{plugin}/{index}?path={path}",
-                arguments = listOf(
-                    navArgument("index") { type = NavType.IntType },
-                    navArgument("path") { type = NavType.StringType; defaultValue = "" },
-                ),
-            ) { e ->
-                SourceReaderScreen(
-                    pluginId = e.arguments!!.read { getString("plugin") },
-                    novelPath = e.arguments!!.read { getString("path") },
-                    index = e.arguments!!.read { getInt("index") },
-                    onBack = { nav.popBackStack() },
-                )
+            composable("stats") {
+                NeedsServer("Reading stats come from your NovelScraper server for now.", signIn) { StatsScreen() }
             }
-            composable("jobs") { ProgressScreen() }
-            composable("stats") { StatsScreen() }
-            composable("settings") { SettingsScreen(username = username, onLogout = onLogout) }
+            composable("settings") {
+                SettingsScreen(onSignIn = signIn, onLogout = { scope.launch { Account.logout() } })
+            }
             composable(
                 "book/{id}",
                 arguments = listOf(navArgument("id") { type = NavType.IntType }),
