@@ -28,6 +28,12 @@ crash report is unreadable without the matching one.
 
 ---
 
+## 0.27.0, 2026-09-21 · `versionCode 46`
+Download volumes from the book screen: ⋮ → Download lists every volume, each
+saved as an EPUB, plus all of them as one zip when there's more than one. Files
+go through the system download manager, so they get a notification, keep going
+if you leave the app, and land in Downloads.
+
 ## 0.26.2, 2026-09-20 · `versionCode 45`
 Covers are requested at the size they're drawn (`?w=800`), instead of at
 whatever resolution the source site published. 80% fewer bytes over mobile data

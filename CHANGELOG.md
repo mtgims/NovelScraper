@@ -8,6 +8,11 @@ what's in that APK, so you can tell what's on your phone.
 
 ---
 
+## 2026-09-21
+
+- **Android: download volumes.** ⋮ → Download on a book saves any volume as an
+  EPUB, or every volume as one zip, into Downloads.
+
 ## 2026-09-20
 
 **Performance pass across the whole app**, measured before and after rather than

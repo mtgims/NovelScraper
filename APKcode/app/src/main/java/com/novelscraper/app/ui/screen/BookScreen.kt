@@ -23,6 +23,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.Close
+import androidx.compose.material.icons.filled.Download
 import androidx.compose.material.icons.filled.DoneAll
 import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material.icons.filled.PlayArrow
@@ -66,6 +67,7 @@ import coil.request.ImageRequest
 import com.novelscraper.app.data.BookRead
 import com.novelscraper.app.data.CollectionRead
 import com.novelscraper.app.data.ReadingProgressRead
+import com.novelscraper.app.net.Downloads
 import com.novelscraper.app.net.Net
 import com.novelscraper.app.ui.BookState
 import com.novelscraper.app.ui.BookViewModel
@@ -90,6 +92,7 @@ fun BookScreen(
 
     var menuOpen by remember { mutableStateOf(false) }
     var showDelete by remember { mutableStateOf(false) }
+    var showDownload by remember { mutableStateOf(false) }
 
     // Surface delete/update results as a toast.
     val action by vm.action.collectAsState()
@@ -114,6 +117,12 @@ fun BookScreen(
                         Icon(Icons.Filled.MoreVert, contentDescription = "More")
                     }
                     DropdownMenu(expanded = menuOpen, onDismissRequest = { menuOpen = false }) {
+                        if ((state as? BookState.Data)?.book?.volumes?.isNotEmpty() == true) {
+                            DropdownMenuItem(
+                                text = { Text("Download") },
+                                onClick = { menuOpen = false; showDownload = true },
+                            )
+                        }
                         DropdownMenuItem(
                             text = { Text("Check for new chapters") },
                             onClick = { menuOpen = false; vm.checkForNewChapters(bookId) },
@@ -135,6 +144,22 @@ fun BookScreen(
                 is BookState.Data -> BookContent(s, collections, vm, bookId, onOpenReader)
             }
         }
+    }
+
+    val book = (state as? BookState.Data)?.book
+    if (showDownload && book != null) {
+        DownloadDialog(
+            book = book,
+            onVolume = { v ->
+                Downloads.volume(ctx, book.id, book.slug, v, book.title)
+                Toast.makeText(ctx, "Downloading volume $v…", Toast.LENGTH_SHORT).show()
+            },
+            onAll = {
+                Downloads.all(ctx, book.id, book.slug, book.title)
+                Toast.makeText(ctx, "Downloading all volumes…", Toast.LENGTH_SHORT).show()
+            },
+            onDismiss = { showDownload = false },
+        )
     }
 
     if (showDelete) {
@@ -245,6 +270,60 @@ private fun BookContent(
             },
             dismissButton = { TextButton(onClick = { showReset = false }) { Text("Cancel") } },
         )
+    }
+}
+
+/** Pick a volume to save as EPUB, or all of them as a zip. The dialog stays open
+ *  so several volumes can be queued in one go; each lands in Downloads with a
+ *  system notification. */
+@Composable
+private fun DownloadDialog(
+    book: BookRead,
+    onVolume: (Int) -> Unit,
+    onAll: () -> Unit,
+    onDismiss: () -> Unit,
+) {
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("Download") },
+        text = {
+            LazyColumn(Modifier.fillMaxWidth()) {
+                if (book.volumes.size > 1) {
+                    item {
+                        DownloadRow(
+                            label = "All volumes",
+                            detail = "${book.volumes.size} EPUBs in one zip",
+                            onClick = onAll,
+                        )
+                        HorizontalDivider(color = MaterialTheme.colorScheme.outline.copy(alpha = 0.3f))
+                    }
+                }
+                items(book.volumes.sortedBy { it.number }, key = { it.number }) { v ->
+                    DownloadRow(
+                        label = "Volume ${v.number}",
+                        detail = if (v.chapter_count == 1) "1 chapter" else "${v.chapter_count} chapters",
+                        onClick = { onVolume(v.number) },
+                    )
+                }
+            }
+        },
+        confirmButton = { TextButton(onClick = onDismiss) { Text("Done") } },
+    )
+}
+
+@Composable
+private fun DownloadRow(label: String, detail: String, onClick: () -> Unit) {
+    Row(
+        Modifier.fillMaxWidth().clickable(onClick = onClick).padding(vertical = 12.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Column(Modifier.weight(1f)) {
+            Text(label, style = MaterialTheme.typography.bodyLarge)
+            Text(detail, style = MaterialTheme.typography.labelMedium.copy(fontFamily = Kicker.fontFamily),
+                color = MaterialTheme.colorScheme.onSurfaceVariant)
+        }
+        Icon(Icons.Filled.Download, contentDescription = "Download $label",
+            tint = MaterialTheme.colorScheme.primary)
     }
 }
 

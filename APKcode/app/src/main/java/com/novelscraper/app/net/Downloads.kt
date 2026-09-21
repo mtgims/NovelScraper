@@ -1,0 +1,60 @@
+package com.novelscraper.app.net
+
+import android.app.DownloadManager
+import android.content.Context
+import android.net.Uri
+import android.os.Build
+import android.os.Environment
+import okhttp3.HttpUrl.Companion.toHttpUrl
+
+/**
+ * Volume downloads, handed to the system DownloadManager so they get a progress
+ * notification, survive the app being backgrounded, and land somewhere the user
+ * can open them from.
+ *
+ * The download endpoints need the session cookie, which DownloadManager knows
+ * nothing about, so it is copied onto the request from our own cookie jar.
+ */
+object Downloads {
+
+    /** One volume as an EPUB. */
+    fun volume(ctx: Context, bookId: Int, slug: String, volume: Int, title: String) =
+        enqueue(
+            ctx,
+            url = "${Net.baseUrl}api/books/$bookId/download?volume=$volume",
+            fileName = "${safe(slug)}-volume-$volume.epub",
+            title = "$title · volume $volume",
+        )
+
+    /** Every volume, zipped. */
+    fun all(ctx: Context, bookId: Int, slug: String, title: String) =
+        enqueue(
+            ctx,
+            url = "${Net.baseUrl}api/books/$bookId/download-all",
+            fileName = "${safe(slug)}.zip",
+            title = "$title · all volumes",
+        )
+
+    private fun enqueue(ctx: Context, url: String, fileName: String, title: String) {
+        val cookie = Net.cookieJar.loadForRequest(url.toHttpUrl())
+            .joinToString("; ") { "${it.name}=${it.value}" }
+        val req = DownloadManager.Request(Uri.parse(url))
+            .setTitle(title)
+            .setDescription(fileName)
+            .setNotificationVisibility(DownloadManager.Request.VISIBILITY_VISIBLE_NOTIFY_COMPLETED)
+            .apply { if (cookie.isNotEmpty()) addRequestHeader("Cookie", cookie) }
+        // The public Downloads folder needs no permission from Android 10 on. Before
+        // that it would need WRITE_EXTERNAL_STORAGE, so older versions get the app's
+        // own folder instead (still reachable from the download notification).
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+            req.setDestinationInExternalPublicDir(Environment.DIRECTORY_DOWNLOADS, fileName)
+        } else {
+            req.setDestinationInExternalFilesDir(ctx, Environment.DIRECTORY_DOWNLOADS, fileName)
+        }
+        (ctx.getSystemService(Context.DOWNLOAD_SERVICE) as DownloadManager).enqueue(req)
+    }
+
+    /** Same rule as the server's filenames, so what you get matches what the web gives. */
+    private fun safe(name: String): String =
+        name.replace(Regex("[^A-Za-z0-9._-]"), "_").trim('_').ifEmpty { "book" }
+}
