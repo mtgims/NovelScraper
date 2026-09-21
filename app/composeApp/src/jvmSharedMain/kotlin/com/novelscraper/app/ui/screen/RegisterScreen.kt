@@ -60,7 +60,7 @@ fun RegisterScreen(
             modifier = Modifier.padding(top = 4.dp, bottom = 24.dp),
         )
 
-        val w = Modifier.fillMaxWidth().widthIn(max = 420.dp)
+        val w = Modifier.widthIn(max = 420.dp).fillMaxWidth()
         OutlinedTextField(
             value = username, onValueChange = { username = it },
             label = { Text("Username") }, singleLine = true, enabled = !busy,

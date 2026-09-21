@@ -40,6 +40,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import com.novelscraper.app.data.ReaderPrefs
 import com.novelscraper.app.net.Net
+import com.novelscraper.app.platform.hasSystemTts
 import com.novelscraper.app.tts.KokoroDownloader
 import com.novelscraper.app.tts.TtsModels
 import com.novelscraper.app.ui.components.KokoroVoicePicker
@@ -121,8 +122,10 @@ private fun NarrationEngine() {
     Text("Engine", style = MaterialTheme.typography.bodyMedium,
         modifier = Modifier.padding(top = 14.dp, bottom = 6.dp))
     Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-        EngineChip("Device", engine == ReaderPrefs.ENGINE_DEVICE) {
-            ReaderPrefs.setTtsEngine(ReaderPrefs.ENGINE_DEVICE)
+        if (hasSystemTts) {
+            EngineChip("Device", engine == ReaderPrefs.ENGINE_DEVICE) {
+                ReaderPrefs.setTtsEngine(ReaderPrefs.ENGINE_DEVICE)
+            }
         }
         EngineChip("Kokoro", engine == ReaderPrefs.ENGINE_KOKORO) {
             ReaderPrefs.setTtsEngine(ReaderPrefs.ENGINE_KOKORO)

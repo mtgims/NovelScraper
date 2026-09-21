@@ -1,4 +1,4 @@
-# NovelScraper for Android, changelog
+# NovelScraper for Android and Linux, changelog
 
 Newest first. One entry per change that shipped; `versionCode` increments by one
 each time, so it doubles as the build number.
@@ -17,6 +17,10 @@ to install it over the previous one. Both fields live in
 cd app && mise exec -- ./gradlew :composeApp:assembleRelease
 ```
 
+The Linux app: `./gradlew :composeApp:packageLinuxAppImage` writes
+**`novelscraper-x86_64.AppImage` in the project root**; `./gradlew :composeApp:run`
+starts it from source. Both apps share this version.
+
 The phone build is copied to **`novelscraper.apk` in the project root** on every
 release build, overwriting the previous one: that is the file to install or
 send. The emulator's x86_64 build stays at
@@ -27,6 +31,29 @@ Since 0.25.0 the release is minified by R8. **Archive
 crash report is unreadable without the matching one.
 
 ---
+
+## 0.29.0, 2026-09-21 · `versionCode 51`
+**The Linux app.** The same app as on the phone, as a desktop window, against the
+same server: sign in, library, collections, book page, reader, ratings, volume
+downloads, EPUB import, progress export, and narration with the Kokoro and Piper
+voices (downloaded in Settings; there is no system voice on Linux, so those two
+are the engines). Built as one AppImage file.
+- Made for a wide window: the book page shows details and the chapter list side
+  by side above ~900 dp, the reader keeps a comfortable text column, and the
+  reader takes keys: ←/→ chapters, Space/Page Down and Shift+Space/Page Up turn
+  the page, P plays or pauses, Ctrl +/- font size, Esc goes back.
+- Scrapes relay through your computer's connection, as they do through the phone.
+  The NovelUpdates browser needs Android's web view, so it isn't offered on Linux
+  yet; paste the translator's link instead.
+- Sentence splitting is byte-for-byte the phone's (a port of Android's HTML
+  converter, checked against the real one on test pages and real chapters), so
+  reading positions and narration line up across devices.
+
+On the phone:
+- In landscape and on tablets, the reader's text column, the narration player
+  and the sign-in form now keep their intended widths instead of stretching edge
+  to edge.
+- Tablets wider than ~900 dp get the side-by-side book page too.
 
 ## 0.28.3, 2026-09-21 · `versionCode 50`
 Importing an EPUB the app itself downloaded works. Android lists a download by

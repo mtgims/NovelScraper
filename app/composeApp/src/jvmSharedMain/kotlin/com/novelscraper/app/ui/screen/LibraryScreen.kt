@@ -52,7 +52,7 @@ import sh.calvin.reorderable.rememberReorderableLazyGridState
 
 @Composable
 fun LibraryScreen(onOpenBook: (Int) -> Unit) {
-    val vm: LibraryViewModel = viewModel()
+    val vm: LibraryViewModel = viewModel { LibraryViewModel() }
     // Loads on first entry and refreshes on return (e.g. after assigning a book to
     // a collection), keeping current books visible (no loading flash). Deferred
     // past the slide transition so the network result + grid recompose don't land

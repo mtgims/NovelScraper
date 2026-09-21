@@ -36,7 +36,7 @@ import com.novelscraper.app.ui.screen.StatsScreen
 /** The whole app: sign-in flow, or the signed-in tabs and detail screens. */
 @Composable
 fun AppRoot() {
-    val vm: AuthViewModel = viewModel()
+    val vm: AuthViewModel = viewModel { AuthViewModel() }
     val state by vm.state.collectAsState()
 
     when (val s = state) {

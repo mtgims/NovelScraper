@@ -77,7 +77,7 @@ fun ReaderTtsBar(
             ListenPill(onClick = startListen)
         } else {
             Surface(
-                modifier = Modifier.fillMaxWidth().widthIn(max = 480.dp),
+                modifier = Modifier.widthIn(max = 480.dp).fillMaxWidth(),
                 shape = RoundedCornerShape(20.dp),
                 color = MaterialTheme.colorScheme.surface.copy(alpha = 0.96f),
                 border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline),

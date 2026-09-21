@@ -1,0 +1,6 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="512" height="512" viewBox="0 0 108 108">
+  <!-- The Android launcher icon (res/drawable/ic_launcher_foreground.xml on
+       ic_launcher_background) as a rounded square for desktop. -->
+  <rect x="4" y="4" width="100" height="100" rx="22" fill="#1B1B2F"/>
+  <path fill="#FFFFFF" d="M54,38 C46,33 38,33 30,36 L30,74 C38,71 46,71 54,76 C62,71 70,71 78,74 L78,36 C70,33 62,33 54,38 Z M52,44 L52,72 C46,69 40,69 35,70 L35,40 C41,38 47,39 52,44 Z M56,44 C61,39 67,38 73,40 L73,70 C68,69 62,69 56,72 Z"/>
+</svg>

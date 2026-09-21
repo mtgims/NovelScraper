@@ -1,34 +1,24 @@
 package com.novelscraper.app.tts
 
-import android.util.Log
-import com.k2fsa.sherpa.onnx.OfflineTts
-import com.k2fsa.sherpa.onnx.OfflineTtsConfig
-import com.k2fsa.sherpa.onnx.OfflineTtsKokoroModelConfig
-import com.k2fsa.sherpa.onnx.OfflineTtsModelConfig
-import com.k2fsa.sherpa.onnx.OfflineTtsVitsModelConfig
+import com.novelscraper.app.platform.Log
 
 /**
  * On-device neural TTS via sherpa-onnx, running one of the models in
- * [TtsModels] (Kokoro or a Piper voice).
+ * [TtsModels] (Kokoro or a Piper voice). Each platform builds the native model
+ * with its own sherpa-onnx binding ([buildOfflineTts]); the rest is shared.
  *
  * Only one model is loaded at a time (switching rebuilds). Not thread-safe:
  * generate() is serialized with load/release via the object monitor.
  */
 object KokoroEngine {
     private const val TAG = "KokoroEngine"
-    @Volatile private var tts: OfflineTts? = null
+    @Volatile private var tts: TtsModel? = null
     @Volatile private var loadedId: String? = null
 
-    val sampleRate: Int get() = tts?.sampleRate() ?: 24000
-    val numSpeakers: Int get() = tts?.numSpeakers() ?: 0
+    val sampleRate: Int get() = tts?.sampleRate ?: 24000
+    val numSpeakers: Int get() = tts?.numSpeakers ?: 0
 
-    /**
-     * Cap synthesis threads at 4. On big.LITTLE phones an ONNX op finishes only
-     * when its slowest thread does, so spilling onto slow cores makes generation
-     * *slower*. 4 keeps work on the fast cores.
-     */
-    private fun defaultThreads(): Int =
-        Runtime.getRuntime().availableProcessors().coerceIn(2, 4)
+    private fun defaultThreads(): Int = defaultTtsThreads()
 
     /**
      * Load [modelId] ("kokoro" or a Piper voice id), rebuilding if a different one
@@ -48,32 +38,9 @@ object KokoroEngine {
         return true
     }
 
-    private fun tryBuild(modelId: String, threads: Int): OfflineTts? {
+    private fun tryBuild(modelId: String, threads: Int): TtsModel? {
         return try {
-            val s = TtsModels.spec(modelId)
-            val d = TtsModels.modelDir(modelId).absolutePath
-            val modelConfig = OfflineTtsModelConfig().apply {
-                if (s.kind == "vits") {
-                    this.vits = OfflineTtsVitsModelConfig().apply {
-                        model = "$d/${s.onnx}"
-                        tokens = "$d/tokens.txt"
-                        dataDir = "$d/espeak-ng-data"
-                    }
-                } else {
-                    this.kokoro = OfflineTtsKokoroModelConfig().apply {
-                        model = "$d/${s.onnx}"
-                        voices = "$d/voices.bin"
-                        tokens = "$d/tokens.txt"
-                        dataDir = "$d/espeak-ng-data"
-                        lexicon = "$d/lexicon-us-en.txt"
-                        lang = "en"
-                    }
-                }
-                this.numThreads = threads
-                provider = "cpu"
-                debug = false
-            }
-            OfflineTts(null, OfflineTtsConfig().apply { this.model = modelConfig })
+            buildOfflineTts(TtsModels.spec(modelId), TtsModels.modelDir(modelId).absolutePath, threads)
         } catch (t: Throwable) {
             Log.w(TAG, "build failed (id=$modelId): ${t.message}")
             null
@@ -96,11 +63,10 @@ object KokoroEngine {
         val sid = speaker.coerceIn(0, (numSpeakers - 1).coerceAtLeast(0))
         return try {
             val t0 = System.nanoTime()
-            val out = engine.generate(t, sid, speed.coerceIn(0.5f, 2.5f))
-            val samples = out.samples
+            val samples = engine.generate(t, sid, speed.coerceIn(0.5f, 2.5f))
             condition(samples)
             val inferMs = (System.nanoTime() - t0) / 1_000_000.0
-            val audioSec = samples.size.toDouble() / out.sampleRate.coerceAtLeast(1)
+            val audioSec = samples.size.toDouble() / engine.sampleRate.coerceAtLeast(1)
             if (audioSec > 0) {
                 Log.i(TAG, "gen chars=${t.length} infer=${inferMs.toInt()}ms " +
                     "audio=${"%.2f".format(audioSec)}s RTF=${"%.2f".format(inferMs / 1000.0 / audioSec)}")

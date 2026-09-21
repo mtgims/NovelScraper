@@ -1,0 +1,3 @@
+Keep
+var x = 1;p{color:red}
+Also keep

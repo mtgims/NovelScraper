@@ -37,6 +37,8 @@ node_modules/
 # root so it is always in one predictable place to send to a phone.
 /novelscraper.apk
 /novelscraper-*.apk
+# The Linux desktop app, dropped here by packageLinuxAppImage (~117MB).
+/novelscraper-x86_64.AppImage
 
 # Session handoff notes. Holds the server address, its SSH public key and
 # operational detail that has no business in a shared repo — and `git add -A`

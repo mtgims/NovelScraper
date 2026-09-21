@@ -1,0 +1,4 @@
+Quoted para.
+Second quoted.
+Plain after quote.
+Bare quote

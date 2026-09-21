@@ -1,0 +1,3 @@
+First paragraph. It has two sentences.
+Second paragraph spans lines. 
+After an empty one.

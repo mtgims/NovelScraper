@@ -32,6 +32,14 @@ interface KeyValueStore {
 
 expect fun settingsStore(name: String): KeyValueStore
 
+/** An embedded browser is available (Android WebView): the NovelUpdates browser
+ *  and rendering JS-only pages for the scrape relay. */
+expect val hasWebView: Boolean
+
+/** The platform has its own speech engine with installed voices (Android
+ *  TextToSpeech). Without one, narration uses the downloadable Kokoro/Piper models. */
+expect val hasSystemTts: Boolean
+
 /** True in debug builds (gates request logging). */
 expect val isDebugBuild: Boolean
 

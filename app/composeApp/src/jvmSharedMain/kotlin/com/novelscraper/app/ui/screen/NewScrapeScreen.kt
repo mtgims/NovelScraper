@@ -28,6 +28,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.viewmodel.compose.viewModel
+import com.novelscraper.app.platform.hasWebView
 import com.novelscraper.app.platform.rememberEpubPicker
 import com.novelscraper.app.ui.ImportUi
 import com.novelscraper.app.ui.ImportViewModel
@@ -40,9 +41,9 @@ fun NewScrapeScreen(
     onImported: () -> Unit,
     onAddFromNu: (String?) -> Unit = {},
 ) {
-    val vm: NewScrapeViewModel = viewModel()
+    val vm: NewScrapeViewModel = viewModel { NewScrapeViewModel() }
     val ui by vm.ui.collectAsState()
-    val importVm: ImportViewModel = viewModel()
+    val importVm: ImportViewModel = viewModel { ImportViewModel() }
     val importUi by importVm.ui.collectAsState()
     val pickEpubs = rememberEpubPicker { files -> importVm.importEpubs(files) }
 
@@ -128,19 +129,22 @@ fun NewScrapeScreen(
             Text("Scrape")
         }
 
-        OutlinedButton(
-            onClick = { onAddFromNu(null) },
-            enabled = !submitting,
-            modifier = Modifier.fillMaxWidth().padding(top = 10.dp),
-        ) {
-            Text("Browse NovelUpdates")
+        // Browsing NovelUpdates needs an embedded browser (Android only for now).
+        if (hasWebView) {
+            OutlinedButton(
+                onClick = { onAddFromNu(null) },
+                enabled = !submitting,
+                modifier = Modifier.fillMaxWidth().padding(top = 10.dp),
+            ) {
+                Text("Browse NovelUpdates")
+            }
+            Text(
+                "Or just paste a NovelUpdates link above — you'll pick the translation group.",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                modifier = Modifier.padding(top = 4.dp),
+            )
         }
-        Text(
-            "Or just paste a NovelUpdates link above — you'll pick the translation group.",
-            style = MaterialTheme.typography.bodySmall,
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
-            modifier = Modifier.padding(top = 4.dp),
-        )
 
         HorizontalDivider(Modifier.padding(vertical = 24.dp))
 

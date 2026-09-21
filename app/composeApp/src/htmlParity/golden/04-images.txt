@@ -1,0 +1,6 @@
+Before image.
+￼
+Inline ￼ image in text.
+￼
+￼
+End.

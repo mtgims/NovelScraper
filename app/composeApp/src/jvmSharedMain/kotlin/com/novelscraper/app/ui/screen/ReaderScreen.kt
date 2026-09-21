@@ -8,6 +8,23 @@ import androidx.compose.animation.fadeOut
 import androidx.compose.animation.slideInVertically
 import androidx.compose.animation.slideOutVertically
 import androidx.compose.foundation.ScrollState
+import kotlinx.coroutines.launch
+import com.novelscraper.app.platform.rememberNarrationPermission
+import androidx.compose.ui.input.key.type
+import androidx.compose.ui.input.key.onPreviewKeyEvent
+import androidx.compose.ui.input.key.key
+import androidx.compose.ui.input.key.isShiftPressed
+import androidx.compose.ui.input.key.isMetaPressed
+import androidx.compose.ui.input.key.isCtrlPressed
+import androidx.compose.ui.input.key.isAltPressed
+import androidx.compose.ui.input.key.KeyEventType
+import androidx.compose.ui.input.key.KeyEvent
+import androidx.compose.ui.input.key.Key
+import androidx.compose.ui.focus.focusRequester
+import androidx.compose.ui.focus.FocusRequester
+import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.foundation.gestures.animateScrollBy
+import androidx.compose.foundation.focusable
 import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -88,7 +105,7 @@ fun ReaderScreen(bookId: Int, position: Int, onBack: () -> Unit) {
         onBack()
     }
     PlatformBackHandler(onBack = exit)
-    val vm: ReaderViewModel = viewModel()
+    val vm: ReaderViewModel = viewModel { ReaderViewModel() }
     var pos by rememberSaveable { mutableIntStateOf(position) }
     LaunchedEffect(pos) { vm.load(bookId, pos) }
     LaunchedEffect(bookId) { vm.ensureMeta(bookId) }
@@ -132,7 +149,42 @@ fun ReaderScreen(bookId: Int, position: Int, onBack: () -> Unit) {
     val tts by TtsController.state.collectAsState()
     val ttsActiveHere = tts.active && tts.bookId == bookId && tts.position == pos
 
-    Box(Modifier.fillMaxSize()) {
+    // Keyboard (desktop, or a keyboard on a tablet): arrows change chapter, Space /
+    // Page Down and Shift+Space / Page Up turn the page, P plays or pauses
+    // narration, Ctrl +/- change the font size. Esc (back) is handled above.
+    val keyScope = rememberCoroutineScope()
+    val focus = remember { FocusRequester() }
+    val startListen = rememberNarrationPermission {
+        TtsController.play(bookId, pos, meta?.book?.title ?: "", currentStartIndex())
+    }
+    LaunchedEffect(Unit) { runCatching { focus.requestFocus() } }
+    fun page(down: Boolean) {
+        val step = (scroll.viewportSize * 0.9f).coerceAtLeast(1f)
+        keyScope.launch { scroll.animateScrollBy(if (down) step else -step) }
+    }
+    val onKey: (KeyEvent) -> Boolean = { e ->
+        if (e.type != KeyEventType.KeyDown) false
+        else when {
+            e.isCtrlPressed && (e.key == Key.Equals || e.key == Key.Plus || e.key == Key.NumPadAdd) -> {
+                ReaderPrefs.increaseFont(); true
+            }
+            e.isCtrlPressed && (e.key == Key.Minus || e.key == Key.NumPadSubtract) -> {
+                ReaderPrefs.decreaseFont(); true
+            }
+            e.isCtrlPressed || e.isAltPressed || e.isMetaPressed -> false
+            e.key == Key.DirectionRight && data?.chapter?.has_next == true -> { pos += 1; true }
+            e.key == Key.DirectionLeft && data?.chapter?.has_prev == true -> { pos -= 1; true }
+            e.key == Key.PageDown || (e.key == Key.Spacebar && !e.isShiftPressed) -> { page(down = true); true }
+            e.key == Key.PageUp || (e.key == Key.Spacebar && e.isShiftPressed) -> { page(down = false); true }
+            e.key == Key.P -> {
+                if (ttsActiveHere) TtsController.toggle() else if (data != null) startListen()
+                true
+            }
+            else -> false
+        }
+    }
+
+    Box(Modifier.fillMaxSize().onPreviewKeyEvent(onKey).focusRequester(focus).focusable()) {
         // Full-screen chapter content — its geometry is independent of the bars.
         val s = state
         when {
@@ -399,7 +451,7 @@ private fun ChapterBody(
             .padding(horizontal = 22.dp, vertical = 16.dp),
         horizontalAlignment = Alignment.CenterHorizontally,
     ) {
-        val measure = Modifier.fillMaxWidth().widthIn(max = 620.dp)
+        val measure = Modifier.widthIn(max = 620.dp).fillMaxWidth()
         Text(
             data.chapter.title,
             style = MaterialTheme.typography.headlineSmall,

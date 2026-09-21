@@ -59,7 +59,7 @@ private const val NU_HOME = "https://www.novelupdates.com/"
 @Composable
 actual fun NuBrowserScreen(onBack: () -> Unit, onScraped: () -> Unit, startUrl: String?) {
     val ctx = LocalContext.current
-    val scrapeVm: NewScrapeViewModel = viewModel()
+    val scrapeVm: NewScrapeViewModel = viewModel { NewScrapeViewModel() }
     val scrapeUi by scrapeVm.ui.collectAsState()
 
     val start = startUrl?.takeIf { it.isNotBlank() } ?: NU_HOME

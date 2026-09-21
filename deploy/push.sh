@@ -22,6 +22,7 @@ rsync -avz --delete \
   --exclude '/app/' \
   --exclude 'WebCode' \
   --exclude '*.apk' \
+  --exclude '*.AppImage' \
   --exclude 'CHAT-HANDOFF.md' \
   --exclude 'backend/data' \
   --exclude 'backend/.venv' \

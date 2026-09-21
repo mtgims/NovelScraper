@@ -47,7 +47,7 @@ import java.time.LocalDate
 
 @Composable
 fun StatsScreen() {
-    val vm: StatsViewModel = viewModel()
+    val vm: StatsViewModel = viewModel { StatsViewModel() }
     val ui by vm.ui.collectAsState()
     val scope = rememberCoroutineScope()
     var chooser by remember { mutableStateOf(false) }

@@ -10,6 +10,11 @@ what's in that APK, so you can tell what's on your phone.
 
 ## 2026-09-21
 
+- **The Linux app (0.29.0).** The phone app as a desktop app: library, reader,
+  ratings, downloads, EPUB import, export and Kokoro/Piper narration, laid out for
+  a wide window with reader keyboard shortcuts. One AppImage file
+  (`novelscraper-x86_64.AppImage`). On the phone, the reader keeps its text width
+  in landscape and on tablets.
 - **Android: importing a downloaded volume (0.28.3).** An EPUB saved with
   ⋮ → Download can be imported again; it was rejected as "not an .epub file".
 - **Fix: exporting reading progress** (Stats → Export) failed with a server

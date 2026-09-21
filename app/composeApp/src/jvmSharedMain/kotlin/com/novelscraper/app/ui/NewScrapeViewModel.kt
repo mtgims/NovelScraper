@@ -10,6 +10,7 @@ import com.novelscraper.app.net.NuGroup
 import com.novelscraper.app.net.NuResolver
 import com.novelscraper.app.net.NuSeries
 import com.novelscraper.app.net.ScrapeRelay
+import com.novelscraper.app.platform.hasWebView
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -41,6 +42,13 @@ class NewScrapeViewModel : ViewModel() {
         // A NovelUpdates series link isn't scrapeable directly — resolve it to a
         // translator via the groups on the page (offscreen if we're logged in).
         if (NuExtract.isSeriesUrl(u)) {
+            if (!hasWebView) {
+                _ui.value = ScrapeUi.Error(
+                    "NovelUpdates links need the Android app for now. Open the novel on the " +
+                        "translator's site and paste that link instead.",
+                )
+                return
+            }
             _ui.value = ScrapeUi.Submitting
             viewModelScope.launch {
                 val series = NuResolver.extractSeries(u)

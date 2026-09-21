@@ -59,7 +59,7 @@ fun LoginScreen(
             modifier = Modifier.padding(top = 4.dp, bottom = 24.dp),
         )
 
-        val fieldWidth = Modifier.fillMaxWidth().widthIn(max = 420.dp)
+        val fieldWidth = Modifier.widthIn(max = 420.dp).fillMaxWidth()
 
         OutlinedTextField(
             value = username,

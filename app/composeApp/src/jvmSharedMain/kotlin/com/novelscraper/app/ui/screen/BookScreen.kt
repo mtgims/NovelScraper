@@ -2,6 +2,12 @@ package com.novelscraper.app.ui.screen
 
 import com.novelscraper.app.platform.PlatformBackHandler
 import androidx.compose.foundation.background
+import androidx.compose.material3.VerticalDivider
+import androidx.compose.foundation.verticalScroll
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.lazy.LazyListScope
+import androidx.compose.foundation.layout.fillMaxHeight
+import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -87,7 +93,7 @@ fun BookScreen(
     onOpenReader: (position: Int) -> Unit,
 ) {
     PlatformBackHandler(onBack = onBack)
-    val vm: BookViewModel = viewModel()
+    val vm: BookViewModel = viewModel { BookViewModel() }
     LaunchedEffect(bookId) { vm.ensureLoaded(bookId); vm.refreshProgress(bookId) }
     val state by vm.state.collectAsState()
     val collections by vm.collections.collectAsState()
@@ -181,6 +187,10 @@ fun BookScreen(
     }
 }
 
+// Above this width the book screen shows details and chapters side by side.
+private val TWO_PANE_MIN_WIDTH = 900.dp
+private val DETAILS_PANE_WIDTH = 420.dp
+
 @Composable
 private fun BookContent(
     data: BookState.Data,
@@ -206,7 +216,53 @@ private fun BookContent(
     val selecting = selection.isNotEmpty()
     var showReset by remember { mutableStateOf(false) }
 
-    Column(Modifier.fillMaxSize()) {
+    val header: @Composable () -> Unit = {
+        BookHeader(
+            data.book, data.progress, hasProgress, resumePos, collections,
+            onToggleCollection = vm::toggleCollection,
+            onRate = vm::setRating,
+            onOpenReader = onOpenReader,
+            onMarkAll = { vm.markAllRead(bookId) },
+            onReset = { showReset = true },
+        )
+    }
+    val chapters: LazyListScope.() -> Unit = {
+        volumes.forEach { vol ->
+            val isOpen = vol.number in expanded
+            item(key = "vol-${vol.number}") {
+                VolumeHeaderRow(
+                    number = vol.number, chapterCount = vol.chapters.size, expanded = isOpen,
+                    onClick = {
+                        expanded = if (isOpen) expanded - vol.number else expanded + vol.number
+                    },
+                )
+                HorizontalDivider(color = MaterialTheme.colorScheme.outline.copy(alpha = 0.3f))
+            }
+            if (isOpen) {
+                items(vol.chapters, key = { "ch-${it.position}" }) { ch ->
+                    val isSel = ch.position in selection
+                    ChapterRow(
+                        ch = ch,
+                        read = ch.position in readSet,
+                        current = ch.position == resumePos && hasProgress,
+                        selectionMode = selecting,
+                        selected = isSel,
+                        onClick = {
+                            if (selecting) {
+                                selection = if (isSel) selection - ch.position else selection + ch.position
+                            } else onOpenReader(ch.position)
+                        },
+                        onLongClick = { selection = selection + ch.position },
+                        onToggleRead = {
+                            vm.setChapterRead(bookId, ch.position, ch.position !in readSet)
+                        },
+                    )
+                }
+            }
+        }
+        item { Box(Modifier.height(24.dp)) }
+    }
+    val selectionBar: @Composable () -> Unit = {
         if (selecting) {
             SelectionBar(
                 count = selection.size,
@@ -215,51 +271,29 @@ private fun BookContent(
                 onClear = { selection = emptySet() },
             )
         }
-        LazyColumn(Modifier.fillMaxSize()) {
-            item {
-                BookHeader(
-                    data.book, data.progress, hasProgress, resumePos, collections,
-                    onToggleCollection = vm::toggleCollection,
-                    onRate = vm::setRating,
-                    onOpenReader = onOpenReader,
-                    onMarkAll = { vm.markAllRead(bookId) },
-                    onReset = { showReset = true },
-                )
-            }
-            volumes.forEach { vol ->
-                val isOpen = vol.number in expanded
-                item(key = "vol-${vol.number}") {
-                    VolumeHeaderRow(
-                        number = vol.number, chapterCount = vol.chapters.size, expanded = isOpen,
-                        onClick = {
-                            expanded = if (isOpen) expanded - vol.number else expanded + vol.number
-                        },
-                    )
-                    HorizontalDivider(color = MaterialTheme.colorScheme.outline.copy(alpha = 0.3f))
+    }
+
+    BoxWithConstraints(Modifier.fillMaxSize()) {
+        if (maxWidth >= TWO_PANE_MIN_WIDTH) {
+            // Wide window: details on the left, the chapter list beside them.
+            Row(Modifier.fillMaxSize()) {
+                Column(Modifier.width(DETAILS_PANE_WIDTH).fillMaxHeight().verticalScroll(rememberScrollState())) {
+                    header()
                 }
-                if (isOpen) {
-                    items(vol.chapters, key = { "ch-${it.position}" }) { ch ->
-                        val isSel = ch.position in selection
-                        ChapterRow(
-                            ch = ch,
-                            read = ch.position in readSet,
-                            current = ch.position == resumePos && hasProgress,
-                            selectionMode = selecting,
-                            selected = isSel,
-                            onClick = {
-                                if (selecting) {
-                                    selection = if (isSel) selection - ch.position else selection + ch.position
-                                } else onOpenReader(ch.position)
-                            },
-                            onLongClick = { selection = selection + ch.position },
-                            onToggleRead = {
-                                vm.setChapterRead(bookId, ch.position, ch.position !in readSet)
-                            },
-                        )
-                    }
+                VerticalDivider(color = MaterialTheme.colorScheme.outline.copy(alpha = 0.3f))
+                Column(Modifier.weight(1f).fillMaxHeight()) {
+                    selectionBar()
+                    LazyColumn(Modifier.fillMaxSize(), content = chapters)
                 }
             }
-            item { Box(Modifier.height(24.dp)) }
+        } else {
+            Column(Modifier.fillMaxSize()) {
+                selectionBar()
+                LazyColumn(Modifier.fillMaxSize()) {
+                    item { header() }
+                    chapters()
+                }
+            }
         }
     }
 

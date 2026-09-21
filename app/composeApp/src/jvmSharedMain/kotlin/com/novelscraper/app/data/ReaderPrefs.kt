@@ -1,6 +1,7 @@
 package com.novelscraper.app.data
 
 import com.novelscraper.app.platform.KeyValueStore
+import com.novelscraper.app.platform.hasSystemTts
 import com.novelscraper.app.platform.settingsStore
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -54,7 +55,7 @@ object ReaderPrefs {
         _fontScale.value = prefs.getFloat("font_scale", 1.0f)
         _ttsRate.value = prefs.getFloat("tts_rate", 1.0f)
         _ttsVoice.value = prefs.getString("tts_voice", "") ?: ""
-        _ttsEngine.value = prefs.getString("tts_engine", ENGINE_DEVICE) ?: ENGINE_DEVICE
+        _ttsEngine.value = normalizeEngine(prefs.getString("tts_engine", ENGINE_DEVICE) ?: ENGINE_DEVICE)
         _kokoroSpeaker.value = prefs.getInt("kokoro_speaker", 0)
         _piperVoice.value = prefs.getString("piper_voice", "en_US-amy-medium") ?: "en_US-amy-medium"
         _ttsAutoNext.value = prefs.getBoolean("tts_auto_next", true)
@@ -71,13 +72,17 @@ object ReaderPrefs {
     }
 
     fun setTtsEngine(engine: String) {
-        val e = when (engine) {
-            ENGINE_KOKORO -> ENGINE_KOKORO
-            ENGINE_PIPER -> ENGINE_PIPER
-            else -> ENGINE_DEVICE
-        }
+        val e = normalizeEngine(engine)
         _ttsEngine.value = e
         prefs.putString("tts_engine", e)
+    }
+
+    /** A known engine id; without a platform speech engine (desktop), "device"
+     *  (the default) means Piper, the fast downloadable voice. */
+    private fun normalizeEngine(engine: String): String = when (engine) {
+        ENGINE_KOKORO -> ENGINE_KOKORO
+        ENGINE_PIPER -> ENGINE_PIPER
+        else -> if (hasSystemTts) ENGINE_DEVICE else ENGINE_PIPER
     }
 
     fun setKokoroSpeaker(id: Int) {

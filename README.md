@@ -90,18 +90,29 @@ wrong:
 `backend/data` is a Docker volume, not a directory in the tree: it is the only
 irreplaceable thing here. Everything else rebuilds.
 
-## The Android app
+## The apps: Android and Linux
 
 Native Kotlin and Compose Multiplatform, in `app/`. Not a WebView wrapper: it has
-its own reader and its own on-device TTS. The screens, networking and reader live
-in shared JVM code so the same app can run on Linux and Windows too.
+its own reader and its own on-device TTS. The screens, networking and reader are
+shared code, so the Android and Linux apps are the same app (Windows comes next).
 
 ```bash
-cd app && mise exec -- ./gradlew :composeApp:assembleRelease
+cd app && mise exec -- ./gradlew :composeApp:assembleRelease        # Android
+cd app && mise exec -- ./gradlew :composeApp:packageLinuxAppImage   # Linux
+cd app && mise exec -- ./gradlew :composeApp:run                    # Linux, from source
 ```
 
-The phone build lands at `novelscraper.apk` in the repo root. `app/CHANGELOG.md`
+The phone build lands at `novelscraper.apk` in the repo root and the Linux one at
+`novelscraper-x86_64.AppImage` (one file with its own Java runtime: make it
+executable and run it; it needs FUSE 2, `fuse2` on Arch). `app/CHANGELOG.md`
 tracks every version.
+
+On Linux the app keeps its settings and login in `~/.config/novelscraper`,
+downloaded voices in `~/.local/share/novelscraper` and its image cache in
+`~/.cache/novelscraper`; volume downloads go to your Downloads folder. Narration
+uses the Kokoro or Piper voices (download one in Settings). Keys in the reader:
+←/→ chapters, Space/Page Down and Shift+Space/Page Up to turn the page, P to play
+or pause, Ctrl +/- font size, Esc back.
 
 ## A thing you'll hit: Cloudflare
 

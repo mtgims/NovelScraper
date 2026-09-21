@@ -22,7 +22,7 @@ actual object Downloads {
     actual fun volume(bookId: Int, slug: String, volume: Int, title: String) =
         enqueue(
             url = "${Net.baseUrl}api/books/$bookId/download?volume=$volume",
-            fileName = "${safe(slug)}-volume-$volume.epub",
+            fileName = downloadFileName(slug, volume),
             title = "$title · volume $volume",
         )
 
@@ -30,7 +30,7 @@ actual object Downloads {
     actual fun all(bookId: Int, slug: String, title: String) =
         enqueue(
             url = "${Net.baseUrl}api/books/$bookId/download-all",
-            fileName = "${safe(slug)}.zip",
+            fileName = downloadFileName(slug),
             title = "$title · all volumes",
         )
 
@@ -53,8 +53,4 @@ actual object Downloads {
         }
         (ctx.getSystemService(Context.DOWNLOAD_SERVICE) as DownloadManager).enqueue(req)
     }
-
-    /** Same rule as the server's filenames, so what you get matches what the web gives. */
-    private fun safe(name: String): String =
-        name.replace(Regex("[^A-Za-z0-9._-]"), "_").trim('_').ifEmpty { "book" }
 }

@@ -28,6 +28,13 @@ expect object NuResolver {
     suspend fun resolveExtnu(extnu: String): String?
 }
 
+/** Download file names: the same rule as the server's, so what you get matches
+ *  what the web gives. */
+fun downloadFileName(slug: String, volume: Int? = null): String {
+    val safe = slug.replace(Regex("[^A-Za-z0-9._-]"), "_").trim('_').ifEmpty { "book" }
+    return if (volume != null) "$safe-volume-$volume.epub" else "$safe.zip"
+}
+
 /** Volume downloads (EPUB), saved where the user can open them. */
 expect object Downloads {
     /** One volume as an EPUB. */

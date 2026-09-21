@@ -33,7 +33,7 @@ import kotlinx.coroutines.delay
 
 @Composable
 fun ProgressScreen() {
-    val vm: ProgressViewModel = viewModel()
+    val vm: ProgressViewModel = viewModel { ProgressViewModel() }
     val jobs by vm.jobs.collectAsState()
     val loaded by vm.loaded.collectAsState()
 

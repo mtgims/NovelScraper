@@ -60,6 +60,10 @@ private class PrefsStore(private val p: SharedPreferences) : KeyValueStore {
 actual fun settingsStore(name: String): KeyValueStore =
     PrefsStore(appContext.getSharedPreferences(name, Context.MODE_PRIVATE))
 
+actual val hasWebView: Boolean = true
+
+actual val hasSystemTts: Boolean = true
+
 actual val isDebugBuild: Boolean = BuildConfig.DEBUG
 
 actual fun appFilesDir(): File = appContext.filesDir
