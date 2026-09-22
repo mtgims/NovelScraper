@@ -1,0 +1,85 @@
+-- Library sync (see LibrarySync). sync_meta holds every record this device
+-- knows, its own and other devices', with the clock that wrote it: it is how
+-- an incoming change is judged newer or older, and it keeps records about
+-- chapters or novels not on this device yet until they arrive.
+CREATE TABLE sync_meta (
+    kind TEXT NOT NULL,
+    key TEXT NOT NULL,
+    value TEXT NOT NULL,
+    ts INTEGER NOT NULL,
+    device TEXT NOT NULL,
+    PRIMARY KEY (kind, key)
+);
+
+-- Records changed here and not yet accepted by the server.
+CREATE TABLE sync_pending (
+    kind TEXT NOT NULL,
+    key TEXT NOT NULL,
+    PRIMARY KEY (kind, key)
+);
+
+-- One row: this device's id, the server's cursor, the hybrid clock, and
+-- whether this device's library was sent in full once (enrolled).
+CREATE TABLE sync_state (
+    id INTEGER PRIMARY KEY CHECK (id = 1),
+    device TEXT NOT NULL,
+    cursor INTEGER NOT NULL DEFAULT 0,
+    clock INTEGER NOT NULL DEFAULT 0,
+    enrolled INTEGER NOT NULL DEFAULT 0
+);
+
+state:
+SELECT * FROM sync_state WHERE id = 1;
+
+initState:
+INSERT OR IGNORE INTO sync_state (id, device) VALUES (1, ?);
+
+setCursor:
+UPDATE sync_state SET cursor = ? WHERE id = 1;
+
+setClock:
+UPDATE sync_state SET clock = ? WHERE id = 1;
+
+setEnrolled:
+UPDATE sync_state SET enrolled = ? WHERE id = 1;
+
+-- Another account: start over (the device id stays).
+reset {
+    UPDATE sync_state SET cursor = 0, enrolled = 0 WHERE id = 1;
+    DELETE FROM sync_meta;
+    DELETE FROM sync_pending;
+}
+
+meta:
+SELECT * FROM sync_meta WHERE kind = ? AND key = ?;
+
+putMeta:
+INSERT OR REPLACE INTO sync_meta (kind, key, value, ts, device) VALUES (?, ?, ?, ?, ?);
+
+markPending:
+INSERT OR IGNORE INTO sync_pending (kind, key) VALUES (?, ?);
+
+-- The next changes to send, with their current value and clock.
+pending:
+SELECT m.kind, m.key, m.value, m.ts, m.device
+FROM sync_pending p JOIN sync_meta m ON m.kind = p.kind AND m.key = p.key
+LIMIT ?;
+
+-- Sent: no longer pending, unless it changed again since (a newer clock).
+sent:
+DELETE FROM sync_pending
+WHERE kind = :kind AND key = :key
+  AND (SELECT ts FROM sync_meta m WHERE m.kind = :kind AND m.key = :key) <= :ts;
+
+pendingCount:
+SELECT count(*) FROM sync_pending;
+
+-- Records about one novel (order, rating, progress) and its chapters (read).
+aboutNovel:
+SELECT * FROM sync_meta
+WHERE (kind IN ('order', 'rating', 'progress') AND key = :novel)
+   OR (kind = 'read' AND substr(key, 1, length(:novel) + 1) = :novel || char(9));
+
+-- All shelf records (a few per novel; filtered by key in LibrarySync).
+shelves:
+SELECT * FROM sync_meta WHERE kind = 'shelf';

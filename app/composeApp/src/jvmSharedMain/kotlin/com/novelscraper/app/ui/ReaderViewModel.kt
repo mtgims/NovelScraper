@@ -17,8 +17,10 @@ import kotlinx.coroutines.launch
 sealed interface ReaderState {
     data object Loading : ReaderState
     data class Error(val message: String) : ReaderState
-    /** [scrollKey] names the novel for the per-chapter scroll positions. */
-    data class Data(val chapter: ChapterRead, val scrollKey: String) : ReaderState
+    /** [scrollKey] names the novel for the per-chapter scroll positions;
+     *  [anchor] is the sentence to open at, when this chapter is the novel's
+     *  resume point (set here or on another device). */
+    data class Data(val chapter: ChapterRead, val scrollKey: String, val anchor: Int? = null) : ReaderState
 }
 
 /** The novel and its chapter list, for the reader's chapters sheet. */
@@ -53,11 +55,13 @@ class ReaderViewModel : ViewModel() {
             _state.value = try {
                 val book = lib.book(bookId) ?: error("This novel is no longer in your library.")
                 val chapter = lib.chapter(bookId, position)
+                val resume = lib.progress(bookId)
+                val anchor = resume.sentence?.takeIf { resume.lastPosition == position }
                 lib.markOpened(bookId, position)
                 // Fetch the next chapter ahead, so turning the page (or narration
                 // rolling on) doesn't wait on the site.
                 if (chapter.has_next) launch { runCatching { lib.chapter(bookId, position + 1) } }
-                ReaderState.Data(chapter, scrollKey(book))
+                ReaderState.Data(chapter, scrollKey(book), anchor)
             } catch (e: kotlinx.coroutines.CancellationException) {
                 throw e
             } catch (e: IllegalStateException) {
@@ -84,9 +88,9 @@ class ReaderViewModel : ViewModel() {
     }
 
     /** Save the resume point's scroll (how far down this chapter). */
-    fun saveScroll(bookId: Int, position: Int, fraction: Float) {
+    fun saveScroll(bookId: Int, position: Int, fraction: Float, sentence: Int?) {
         // Outlives the screen: this runs as the reader closes.
-        lib.scope.launch { runCatching { lib.saveScroll(bookId, position, fraction) } }
+        lib.scope.launch { runCatching { lib.saveProgress(bookId, position, fraction, sentence) } }
     }
 
     companion object {

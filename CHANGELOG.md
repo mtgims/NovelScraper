@@ -10,6 +10,12 @@ what's in that APK, so you can tell what's on your phone.
 
 ## 2026-09-22
 
+- **Devices sync their libraries (0.32.0).** Library, order, ratings,
+  collections, read chapters and the reading position (to the sentence) sync
+  between a user's devices through their account, metadata only, with offline
+  changes sent later and later-change-wins on conflicts. Server side:
+  `POST /api/sync`, which seeds from the existing tables on first use and keeps
+  them in step for novels stored on the server.
 - **Linux app starts again (0.31.1).** The 0.31.0 AppImage closed on startup
   (its bundled Java runtime was missing the database module).
 - **Local library and streaming (0.31.0).** The apps keep the library on the

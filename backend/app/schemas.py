@@ -232,3 +232,25 @@ class ChapterRead(BaseModel):
     content: str
     has_prev: bool
     has_next: bool
+
+
+# --- sync (app.services.sync) ------------------------------------------------
+
+class SyncChange(BaseModel):
+    kind: str
+    key: str
+    value: str            # the record's JSON, opaque to transport
+    ts: int               # the writer's hybrid clock, ms
+    device: str = ""
+
+
+class SyncRequest(BaseModel):
+    cursor: int = 0       # the highest seq this device has seen
+    device: str
+    changes: List[SyncChange] = []
+
+
+class SyncResponse(BaseModel):
+    cursor: int
+    changes: List[SyncChange]
+    more: bool            # more changes past `cursor`: call again

@@ -392,7 +392,13 @@ private fun ChapterBody(
     // Restore the saved in-chapter scroll once content has laid out. `savedFrac` is
     // captured before the persist effect can overwrite it; `restored` gates writes
     // so we don't clobber the saved value with 0 during the pre-layout window.
-    val savedFrac = remember(bookId, pos) { ReaderPrefs.getScroll(data.scrollKey, pos) }
+    // The resume point's sentence places it the same on any device or screen;
+    // otherwise this device's own scroll for the chapter.
+    val savedFrac = remember(bookId, pos) {
+        data.anchor?.let { i -> ranges.getOrNull(i)?.first }?.takeIf { plain.isNotEmpty() }
+            ?.let { it.toFloat() / plain.length }
+            ?: ReaderPrefs.getScroll(data.scrollKey, pos)
+    }
     var restored by remember(bookId, pos) { mutableStateOf(false) }
     LaunchedEffect(bookId, pos) {
         snapshotFlow { scroll.maxValue }.first { it > 0 }
@@ -414,7 +420,14 @@ private fun ChapterBody(
         if (scroll.maxValue > 0) scroll.value.toFloat() / scroll.maxValue else 0f
     )
     DisposableEffect(bookId, pos) {
-        onDispose { if (restored) vm.saveScroll(bookId, pos, fracNow.value) }
+        onDispose {
+            if (restored) {
+                // The sentence at that scroll, the same mapping narration starts from.
+                val off = (fracNow.value * plain.length).roundToInt()
+                val sentence = ranges.indexOfFirst { off <= it.last }.takeIf { it >= 0 }
+                vm.saveScroll(bookId, pos, fracNow.value, sentence)
+            }
+        }
     }
 
     // Keep the spoken sentence centred in the viewport (so the floating Listen pill

@@ -13,6 +13,8 @@ import com.novelscraper.app.data.CollectionUpdate
 import com.novelscraper.app.data.JobCreate
 import com.novelscraper.app.data.JobRead
 import com.novelscraper.app.data.StatsRead
+import com.novelscraper.app.data.SyncRequest
+import com.novelscraper.app.data.SyncResponse
 import com.novelscraper.app.data.LoginRequest
 import com.novelscraper.app.data.ProgressUpdate
 import com.novelscraper.app.data.ReadingProgressRead
@@ -127,6 +129,10 @@ interface Api {
 
     @PUT("api/books/{id}/progress")
     suspend fun putProgress(@Path("id") id: Int, @Body body: ProgressUpdate): ReadingProgressRead
+
+    // Library sync: send this device's changes, get the other devices'.
+    @POST("api/sync")
+    suspend fun sync(@Body body: SyncRequest): SyncResponse
 
     @Multipart
     @POST("api/import")

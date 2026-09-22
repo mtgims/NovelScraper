@@ -31,6 +31,7 @@ from ..models import (
 from ..services.images import THUMB_WIDTHS, ensure_thumb, image_response
 from ..services.library import book_read, books_read, has_cover
 from ..services.reading import ensure_word_counts, progress_payload
+from ..services import sync as sync_svc
 from ..settings import settings
 from ..tts import (
     DEFAULT_VOICE,
@@ -505,5 +506,10 @@ def delete_book(book_id: int, user: User = Depends(get_current_user),
     for extra in (settings.audio_dir / str(book_id), settings.image_dir / str(book_id)):
         if extra.exists():
             shutil.rmtree(extra, ignore_errors=True)
+    # The user's other devices take it out of their libraries too.
+    sync_svc.server_write(session, book.user_id, "novel", f"srv:{book.id}", {
+        "plugin": None, "path": None, "server_id": book.id, "title": book.title,
+        "author": book.author, "cover": None, "site": book.site, "in_library": False,
+    })
     session.delete(book)
     session.commit()

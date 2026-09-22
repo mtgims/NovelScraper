@@ -8,6 +8,7 @@ import com.novelscraper.app.library.LibChapter
 import com.novelscraper.app.library.LibCollection
 import com.novelscraper.app.library.LibProgress
 import com.novelscraper.app.library.Library
+import com.novelscraper.app.extensions.PluginNotInstalledException
 import com.novelscraper.app.net.Account
 import com.novelscraper.app.net.Net
 import com.novelscraper.app.net.ScrapeRelay
@@ -67,6 +68,11 @@ class BookViewModel(private val bookId: Int) : ViewModel() {
                 lib.refresh(bookId)
             } catch (e: kotlinx.coroutines.CancellationException) {
                 throw e
+            } catch (e: PluginNotInstalledException) {
+                // Name the source as this novel knows it ("Royal Road", not its plugin id).
+                val name = book.value?.site?.takeIf { it.isNotBlank() }
+                _error.value = if (name != null) "The $name source isn't installed on this device. " +
+                    "Install it under Browse, Extensions." else describe(e)
             } catch (e: Exception) {
                 _error.value = describe(e)
             } finally {

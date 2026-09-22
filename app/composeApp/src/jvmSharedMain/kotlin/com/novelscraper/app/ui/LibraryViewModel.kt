@@ -5,6 +5,7 @@ import androidx.lifecycle.viewModelScope
 import com.novelscraper.app.library.LibBook
 import com.novelscraper.app.library.LibCollection
 import com.novelscraper.app.library.Library
+import com.novelscraper.app.library.LibrarySyncRunner
 import com.novelscraper.app.net.Account
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
@@ -40,7 +41,13 @@ class LibraryViewModel : ViewModel() {
         if (_refreshing.value || !Account.signedIn) return
         _refreshing.value = true
         viewModelScope.launch {
-            try { lib.pullServer() } catch (_: Exception) { } finally { _refreshing.value = false }
+            try {
+                lib.pullServer()
+                LibrarySyncRunner.now()
+            } catch (_: Exception) {
+            } finally {
+                _refreshing.value = false
+            }
         }
     }
 

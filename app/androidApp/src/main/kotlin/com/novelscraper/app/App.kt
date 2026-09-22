@@ -47,7 +47,7 @@ class App : Application(), SingletonImageLoader.Factory {
             if (started++ == 0) Account.onForeground()
         }
         override fun onActivityStopped(activity: Activity) {
-            if (--started <= 0) { started = 0; ScrapeRelay.stop() }
+            if (--started <= 0) { started = 0; ScrapeRelay.stop(); Account.onBackground() }
         }
         override fun onActivityCreated(activity: Activity, savedInstanceState: Bundle?) {}
         override fun onActivityResumed(activity: Activity) {}

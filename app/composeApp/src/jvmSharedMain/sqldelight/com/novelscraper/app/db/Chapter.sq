@@ -124,3 +124,12 @@ SELECT count(*) FROM download_queue q JOIN chapter c ON c.id = q.chapter_id WHER
 
 clearQueueForBook:
 DELETE FROM download_queue WHERE chapter_id IN (SELECT id FROM chapter WHERE book_id = ?);
+
+setReadById:
+UPDATE chapter SET read = ? WHERE id = ?;
+
+selectReadState:
+SELECT position, path, read FROM chapter WHERE book_id = ? ORDER BY position;
+
+selectByPath:
+SELECT id FROM chapter WHERE book_id = ? AND path = ?;

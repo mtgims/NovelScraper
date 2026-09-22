@@ -32,6 +32,24 @@ crash report is unreadable without the matching one.
 
 ---
 
+## 0.32.0, 2026-09-22 · `versionCode 57`
+Your devices now keep the same library.
+- **Sync.** Signed in to your server, the phone and the desktop share the novels
+  in your library, their order, ratings, collections, which chapters you have
+  read, and where you are in the one you are reading. A novel added on one
+  device appears on the other (with its source; install that source there to
+  read it). The server stores this metadata only, never chapter text.
+- **Where you left off, to the sentence.** Stopping mid-chapter on one device
+  and continuing on the other opens at the same line, whatever the screen size,
+  and narration counts as reading: pausing it sets the resume point too.
+- **Offline changes are kept.** What you read, rate or shelve without a
+  connection is sent when there is one again. When two devices changed the same
+  thing while apart, the later change wins, chapter by chapter, so marks made on
+  both sides all arrive.
+- Settings, Server account shows when the library last synced, with a Sync now
+  button; the library's refresh does both.
+- A novel whose source isn't installed here says so, instead of a fetch error.
+
 ## 0.31.1, 2026-09-22 · `versionCode 56`
 The Linux app starts again: 0.31.0's AppImage closed at once on startup, as its
 bundled Java runtime lacked the database module (`java.sql`) the new library

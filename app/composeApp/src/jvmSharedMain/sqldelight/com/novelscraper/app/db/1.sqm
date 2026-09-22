@@ -1,0 +1,36 @@
+-- 1 -> 2: library sync (0.32.0).
+ALTER TABLE book ADD COLUMN sync_key TEXT;
+ALTER TABLE book ADD COLUMN sentence INTEGER;
+UPDATE book SET sync_key = 'srv:' || server_id WHERE server_id IS NOT NULL;
+UPDATE book SET sync_key = 'src:' || plugin_id || char(9) || path WHERE plugin_id IS NOT NULL AND server_id IS NULL;
+CREATE UNIQUE INDEX book_sync_key ON book(sync_key);
+
+ALTER TABLE collection ADD COLUMN sync_key TEXT;
+UPDATE collection SET sync_key = CASE
+    WHEN server_id IS NOT NULL THEN 'srv:' || server_id
+    ELSE lower(hex(randomblob(8)))
+END;
+CREATE UNIQUE INDEX collection_sync_key ON collection(sync_key);
+
+CREATE TABLE sync_meta (
+    kind TEXT NOT NULL,
+    key TEXT NOT NULL,
+    value TEXT NOT NULL,
+    ts INTEGER NOT NULL,
+    device TEXT NOT NULL,
+    PRIMARY KEY (kind, key)
+);
+
+CREATE TABLE sync_pending (
+    kind TEXT NOT NULL,
+    key TEXT NOT NULL,
+    PRIMARY KEY (kind, key)
+);
+
+CREATE TABLE sync_state (
+    id INTEGER PRIMARY KEY CHECK (id = 1),
+    device TEXT NOT NULL,
+    cursor INTEGER NOT NULL DEFAULT 0,
+    clock INTEGER NOT NULL DEFAULT 0,
+    enrolled INTEGER NOT NULL DEFAULT 0
+);

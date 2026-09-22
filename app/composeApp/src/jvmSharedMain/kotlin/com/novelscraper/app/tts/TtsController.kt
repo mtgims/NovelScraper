@@ -1,6 +1,8 @@
 package com.novelscraper.app.tts
 
+import com.novelscraper.app.library.Library
 import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 
@@ -42,8 +44,38 @@ object TtsController {
     private val _state = MutableStateFlow(State())
     val state: StateFlow<State> = _state.asStateFlow()
 
-    internal fun update(s: State) { _state.value = s }
-    internal fun clear() { _state.value = State() }
+    internal fun update(s: State) {
+        val before = _state.value
+        _state.value = s
+        saveNarrationPoint(before, s)
+    }
+
+    internal fun clear() {
+        saveNarrationPoint(_state.value, State())
+        _state.value = State()
+    }
+
+    // Where narration is becomes the novel's resume point (so another device, or
+    // the reader, continues at that sentence): on pause and stop, and every
+    // [SAVE_EVERY_MS] while playing. A new chapter records itself (markOpened),
+    // so the old one's last sentence is not saved over it.
+    private const val SAVE_EVERY_MS = 20_000L
+    private var lastSaved = 0L
+
+    private fun saveNarrationPoint(before: State, after: State) {
+        if (!before.active || before.bookId == 0 || !Library.ready) return
+        val t = System.currentTimeMillis()
+        val moved = after.active && (after.bookId != before.bookId || after.position != before.position)
+        if (moved) return
+        val paused = before.playing && !after.playing
+        if (!paused && t - lastSaved < SAVE_EVERY_MS) return
+        if (!paused && after.sentenceIndex == before.sentenceIndex) return
+        lastSaved = t
+        val lib = Library.store
+        lib.scope.launch {
+            runCatching { lib.saveProgress(before.bookId, before.position, null, before.sentenceIndex) }
+        }
+    }
 
     fun play(bookId: Int, position: Int, bookTitle: String, startIndex: Int = 0) =
         player?.play(bookId, position, bookTitle, startIndex)

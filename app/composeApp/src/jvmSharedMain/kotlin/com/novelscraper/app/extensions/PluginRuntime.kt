@@ -264,6 +264,10 @@ class SiteChallengeException(val pluginId: String, val url: String) :
     Exception("The site asks for a browser check: $url")
 
 /** A plugin threw (its message, often with a JavaScript stack). */
+/** The source this novel comes from is not installed on this device. */
+class PluginNotInstalledException(val source: String) :
+    Exception("The $source source isn't installed on this device.")
+
 class PluginException(val pluginId: String, message: String) : Exception(message.lineSequence().first()) {
     val details: String = message
 }

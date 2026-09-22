@@ -183,7 +183,14 @@ object Extensions {
     /** The installed plugin, running (loaded on first use, a few kept warm). */
     suspend fun runtime(id: String): PluginRuntime = mutex.withLock {
         running[id]?.let { return@withLock it }
-        val code = withContext(Dispatchers.IO) { codeFile(id).readText() }
+        val file = codeFile(id)
+        if (!withContext(Dispatchers.IO) { file.exists() }) {
+            // Usually a novel synced from another device, whose source this one
+            // hasn't installed.
+            val name = _installed.value.firstOrNull { it.id == id }?.name ?: id
+            throw PluginNotInstalledException(name)
+        }
+        val code = withContext(Dispatchers.IO) { file.readText() }
         val rt = PluginRuntime.load(id, code, environment())
         running[id] = rt
         // Plugins installed before image headers were recorded get them now.

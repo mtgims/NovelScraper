@@ -224,3 +224,28 @@ class Invite(SQLModel, table=True):
     used_by: Optional[int] = Field(default=None, foreign_key="user.id")
     expires_at: datetime
     created_at: datetime = Field(default_factory=utcnow)
+
+
+class SyncRecord(SQLModel, table=True):
+    """One piece of a user's library metadata, as the apps sync it: a novel in the
+    library, its order, rating, reading position, one chapter's read mark, a
+    collection, or a novel's membership in one. Never chapter text.
+
+    (kind, key) names the record (see app.services.sync for the kinds). value is
+    the record's JSON as the app sent it. Conflicts resolve last-writer-wins on
+    (ts, device): ts is the writing device's hybrid clock (ms), device its id.
+    seq orders writes for the "what changed since" cursor; it is global and only
+    ever grows."""
+    __table_args__ = (
+        Index("ix_syncrecord_user_kind_key", "user_id", "kind", "key", unique=True),
+        Index("ix_syncrecord_user_seq", "user_id", "seq"),
+    )
+
+    id: Optional[int] = Field(default=None, primary_key=True)
+    user_id: int = Field(foreign_key="user.id")
+    kind: str
+    key: str
+    value: str
+    ts: int
+    device: str
+    seq: int

@@ -54,6 +54,8 @@ data class LibProgress(
     val scroll: Float,
     val readPositions: Set<Int>,
     val total: Int,
+    /** The sentence the reader or narration was at in that chapter, if known. */
+    val sentence: Int? = null,
 ) {
     val readCount: Int get() = readPositions.size
     val percent: Float get() = if (total == 0) 0f else readCount * 100f / total

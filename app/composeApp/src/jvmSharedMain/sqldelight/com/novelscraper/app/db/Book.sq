@@ -30,8 +30,15 @@ CREATE TABLE book (
     scroll REAL NOT NULL DEFAULT 0,
     -- When the chapter list was last fetched from the source or server (0 = never).
     checked_at INTEGER NOT NULL DEFAULT 0,
+    -- The novel's name in sync: srv:<server id>, or src:<plugin id><TAB><path>.
+    sync_key TEXT,
+    -- The resume point's sentence (in the chapter's sentence split), which
+    -- places it the same on every device and screen; null if not known.
+    sentence INTEGER,
     UNIQUE (plugin_id, path)
 );
+
+CREATE UNIQUE INDEX book_sync_key ON book(sync_key);
 
 selectById:
 SELECT * FROM book WHERE id = ?;
@@ -57,12 +64,22 @@ WHERE b.in_library = 1
 ORDER BY b.sort_order, b.id;
 
 insertSource:
-INSERT INTO book (plugin_id, path, title, author, cover, site, web_url, opened_at)
-VALUES (?, ?, ?, ?, ?, ?, ?, ?);
+INSERT INTO book (plugin_id, path, title, author, cover, site, web_url, opened_at, sync_key)
+VALUES (:plugin_id, :path, :title, :author, :cover, :site, :web_url, :opened_at, 'src:' || :plugin_id || char(9) || :path);
 
 insertServer:
-INSERT INTO book (server_id, server_meta, title, author, site, rating, in_library, sort_order, added_at)
-VALUES (?, ?, ?, ?, ?, ?, 1, ?, ?);
+INSERT INTO book (server_id, server_meta, title, author, site, rating, in_library, sort_order, added_at, sync_key)
+VALUES (:server_id, :server_meta, :title, :author, :site, :rating, 1, :sort_order, :added_at, 'srv:' || :server_id);
+
+selectBySyncKey:
+SELECT * FROM book WHERE sync_key = ?;
+
+-- What sync shares: novels in the library, and every server novel.
+selectSyncable:
+SELECT id FROM book WHERE sync_key IS NOT NULL AND (in_library = 1 OR server_id IS NOT NULL);
+
+setSentence:
+UPDATE book SET sentence = ? WHERE id = ?;
 
 lastInsertId:
 SELECT last_insert_rowid();
@@ -72,7 +89,7 @@ UPDATE book SET title = ?, author = ?, cover = ?, summary = ?, genres = ?, statu
 WHERE id = ?;
 
 updateServerMeta:
-UPDATE book SET server_meta = ?, title = ?, author = ?, site = ?, rating = ?
+UPDATE book SET server_meta = ?, title = ?, author = ?, site = ?
 WHERE id = ?;
 
 setInLibrary:
@@ -108,4 +125,4 @@ WHERE in_library = 0 AND opened_at < ?
 
 -- The resume point as a chapter position.
 resume:
-SELECT b.scroll, c.position FROM book b LEFT JOIN chapter c ON c.id = b.last_chapter_id WHERE b.id = ?;
+SELECT b.scroll, b.sentence, c.position, c.path FROM book b LEFT JOIN chapter c ON c.id = b.last_chapter_id WHERE b.id = ?;

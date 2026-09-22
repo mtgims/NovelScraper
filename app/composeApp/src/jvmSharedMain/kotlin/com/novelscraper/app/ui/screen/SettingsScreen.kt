@@ -27,6 +27,8 @@ import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Slider
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.material3.TextButton
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -39,6 +41,7 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import com.novelscraper.app.data.ReaderPrefs
+import com.novelscraper.app.library.LibrarySyncRunner
 import com.novelscraper.app.net.Account
 import com.novelscraper.app.net.Net
 import com.novelscraper.app.platform.hasSystemTts
@@ -111,6 +114,7 @@ fun SettingsScreen(onSignIn: () -> Unit, onLogout: () -> Unit) {
                     fontWeight = FontWeight.SemiBold)
                 Text(Net.baseUrl + if (a.online) "" else " · not reached yet", style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant)
+                SyncStatus()
                 Button(onClick = onLogout, modifier = Modifier.padding(top = 16.dp)) { Text("Sign out") }
             }
             Account.State.SignedOut -> {
@@ -329,4 +333,30 @@ private fun Section(title: String) {
         color = MaterialTheme.colorScheme.onSurfaceVariant,
         modifier = Modifier.padding(top = 28.dp, bottom = 10.dp),
     )
+}
+
+/** When the library last synced with the other devices, and a way to sync now. */
+@Composable
+private fun SyncStatus() {
+    val sync by LibrarySyncRunner.state.collectAsState()
+    val scope = rememberCoroutineScope()
+    var now by remember { mutableStateOf(System.currentTimeMillis()) }
+    LaunchedEffect(sync.lastSync) {
+        while (true) { now = System.currentTimeMillis(); kotlinx.coroutines.delay(30_000) }
+    }
+    val text = when {
+        sync.syncing -> "Syncing…"
+        sync.error -> "Not synced: can't reach the server. Changes are kept and sent later."
+        sync.lastSync == 0L -> "Library sync: waiting for the first sync."
+        else -> {
+            val mins = ((now - sync.lastSync) / 60_000).toInt()
+            "Library synced " + when (mins) { 0 -> "just now"; 1 -> "a minute ago"; else -> "$mins minutes ago" } + "."
+        }
+    }
+    Row(Modifier.padding(top = 12.dp), verticalAlignment = Alignment.CenterVertically) {
+        Text(text, style = MaterialTheme.typography.bodyMedium,
+            color = if (sync.error) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurfaceVariant,
+            modifier = Modifier.weight(1f))
+        TextButton(onClick = { scope.launch { LibrarySyncRunner.now() } }, enabled = !sync.syncing) { Text("Sync now") }
+    }
 }

@@ -123,9 +123,14 @@ bundled `host.js`).
 **The library lives on the device** (`library.db`, SQLite): novels, chapter
 lists, downloaded chapters, progress, ratings and collections. A NovelScraper
 server account is optional: signed in (Settings, Server account), the server's
-novels are brought into the library, and reading them there keeps the server's
-progress up to date, even when changes are made offline (they are sent later).
-Scraping by web address, EPUB import and stats still use the server.
+novels are brought into the library, and **your devices sync**: the novels in
+your library, their order, ratings, collections, read chapters and where you are
+in the one you are reading (to the sentence, so you carry on at the same line on
+the phone and on the desktop). Only that metadata is synced, never chapter text;
+each device fetches text from the source itself. Changes made offline are sent
+when the server can be reached, and when two devices change the same thing the
+later change wins. Scraping by web address, EPUB import and stats still use the
+server.
 
 On Linux the app keeps its settings and login in `~/.config/novelscraper`,
 the library and downloaded voices in `~/.local/share/novelscraper` and its image cache in

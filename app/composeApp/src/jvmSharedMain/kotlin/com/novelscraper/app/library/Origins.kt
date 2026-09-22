@@ -8,6 +8,8 @@ import com.novelscraper.app.data.CollectionRead
 import com.novelscraper.app.data.CollectionUpdate
 import com.novelscraper.app.data.ProgressUpdate
 import com.novelscraper.app.data.ReadingProgressRead
+import com.novelscraper.app.data.SyncRequest
+import com.novelscraper.app.data.SyncResponse
 import com.novelscraper.app.extensions.Extensions
 import com.novelscraper.app.extensions.SourceNovel
 import com.novelscraper.app.net.Net
@@ -39,6 +41,7 @@ interface ServerOrigin {
     suspend fun updateCollection(id: Int, update: CollectionUpdate)
     suspend fun deleteCollection(id: Int)
     suspend fun deleteBook(id: Int)
+    suspend fun sync(request: SyncRequest): SyncResponse
 }
 
 /** Paged chapter lists are fetched to the end, up to this many pages. */
@@ -86,4 +89,5 @@ class NetServer(private val signedIn: () -> Boolean) : ServerOrigin {
     override suspend fun updateCollection(id: Int, update: CollectionUpdate) { Net.api.updateCollection(id, update) }
     override suspend fun deleteCollection(id: Int) = Net.api.deleteCollection(id)
     override suspend fun deleteBook(id: Int) = Net.api.deleteBook(id)
+    override suspend fun sync(request: SyncRequest) = Net.api.sync(request)
 }

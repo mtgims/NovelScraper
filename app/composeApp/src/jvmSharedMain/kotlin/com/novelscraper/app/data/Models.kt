@@ -167,3 +167,20 @@ data class ReadingProgressRead(
     val hours_total: Float,
     val hours_left: Float,
 )
+
+// Library sync (POST /api/sync, backend app/services/sync.py).
+
+@Serializable
+data class SyncChange(
+    val kind: String,
+    val key: String,
+    val value: String,
+    val ts: Long,
+    val device: String = "",
+)
+
+@Serializable
+data class SyncRequest(val cursor: Long, val device: String, val changes: List<SyncChange>)
+
+@Serializable
+data class SyncResponse(val cursor: Long, val changes: List<SyncChange> = emptyList(), val more: Boolean = false)

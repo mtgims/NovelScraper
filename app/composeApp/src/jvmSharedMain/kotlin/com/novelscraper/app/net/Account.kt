@@ -2,6 +2,7 @@ package com.novelscraper.app.net
 
 import com.novelscraper.app.data.UserRead
 import com.novelscraper.app.library.Library
+import com.novelscraper.app.library.LibrarySyncRunner
 import com.novelscraper.app.platform.KeyValueStore
 import com.novelscraper.app.platform.settingsStore
 import kotlinx.coroutines.CoroutineScope
@@ -71,7 +72,13 @@ object Account {
         if (!signedIn) return
         ScrapeRelay.start()
         AutoUpdate.trigger()
+        LibrarySyncRunner.start()
         scope.launch { if (check()) Library.pullServerSoon() }
+    }
+
+    /** The app left the foreground (Android): send what changed here. */
+    fun onBackground() {
+        if (signedIn) LibrarySyncRunner.stop()
     }
 
     /** A sign-in or registration succeeded. */
@@ -79,6 +86,7 @@ object Account {
         prefs.putString(KEY_USER, user.username)
         _state.value = State.SignedIn(user.username, online = true)
         ScrapeRelay.start()
+        LibrarySyncRunner.start()
     }
 
     suspend fun logout() {
@@ -94,6 +102,9 @@ object Account {
 
     private fun forget() {
         ScrapeRelay.stop()
+        LibrarySyncRunner.stop()
+        // The next account syncs from scratch; this one's records aren't its.
+        scope.launch { runCatching { Library.store.resetSync() } }
         Net.cookieJar.clear()
         prefs.remove(KEY_USER)
         _state.value = State.SignedOut
