@@ -10,6 +10,10 @@ what's in that APK, so you can tell what's on your phone.
 
 ## 2026-09-22
 
+- **Narration rebuilt (0.33.0).** Gapless chapters, asides skipped, a
+  pronunciation dictionary, a sleep timer, saving chapters as audio files, and
+  media keys on Linux (MPRIS). Android's neural narration now runs the shared
+  narrator, the same code the desktop uses.
 - **Devices sync their libraries (0.32.0).** Library, order, ratings,
   collections, read chapters and the reading position (to the sentence) sync
   between a user's devices through their account, metadata only, with offline

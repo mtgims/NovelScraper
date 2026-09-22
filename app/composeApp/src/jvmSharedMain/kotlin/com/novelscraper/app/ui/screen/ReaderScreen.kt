@@ -149,6 +149,11 @@ fun ReaderScreen(bookId: Int, position: Int, onBack: () -> Unit) {
 
     val tts by TtsController.state.collectAsState()
     val ttsActiveHere = tts.active && tts.bookId == bookId && tts.position == pos
+    // Narration rolls into the next chapter on its own: the reader follows it, so
+    // the text on screen is what is being read.
+    LaunchedEffect(tts.active, tts.bookId, tts.position) {
+        if (tts.active && tts.bookId == bookId && tts.position != pos) pos = tts.position
+    }
 
     // Keyboard (desktop, or a keyboard on a tablet): arrows change chapter, Space /
     // Page Down and Shift+Space / Page Up turn the page, P plays or pauses

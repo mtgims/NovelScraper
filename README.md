@@ -135,7 +135,12 @@ server.
 On Linux the app keeps its settings and login in `~/.config/novelscraper`,
 the library and downloaded voices in `~/.local/share/novelscraper` and its image cache in
 `~/.cache/novelscraper`; volume downloads go to your Downloads folder. Narration
-uses the Kokoro or Piper voices (download one in Settings). Keys in the reader:
+uses the Kokoro or Piper voices (download one in Settings), plays through
+chapters without a gap, and answers the keyboard's media keys (MPRIS, so
+playerctl and the desktop's media widget work too). Under Settings, Narration:
+which asides to skip and how words should sound; in the reader's narration
+panel: the sleep timer. A novel's menu has "Save as audio", which reads
+chapters out to WAV files in your Downloads. Keys in the reader:
 ←/→ chapters, Space/Page Down and Shift+Space/Page Up to turn the page, P to play
 or pause, Ctrl +/- font size, Esc back.
 

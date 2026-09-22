@@ -16,14 +16,14 @@ import org.freedesktop.dbus.types.Variant
 
 /** The desktop's media controls: org.mpris.MediaPlayer2. */
 @DBusInterfaceName("org.mpris.MediaPlayer2")
-private interface MediaPlayer2 : DBusInterface {
+interface MediaPlayer2 : DBusInterface {
     fun Raise()
     fun Quit()
 }
 
 /** Its transport: what the media keys and players like playerctl call. */
 @DBusInterfaceName("org.mpris.MediaPlayer2.Player")
-private interface MediaPlayer2Player : DBusInterface {
+interface MediaPlayer2Player : DBusInterface {
     fun Next()
     fun Previous()
     fun Pause()
@@ -57,7 +57,7 @@ object MprisPlayer {
                 conn.requestBusName(BUS_NAME)
                 conn.exportObject(PATH, Exported(onRaise, onQuit))
                 connection = conn
-                Log.i(TAG, "media keys ready (MPRIS)")
+                Log.i(TAG, "media keys ready: $BUS_NAME")
                 // Keep the desktop's widget in step with what is being narrated.
                 var last: TtsController.State? = null
                 TtsController.state.collectLatest { s ->
@@ -69,7 +69,7 @@ object MprisPlayer {
                 }
             } catch (e: Exception) {
                 // No session bus, or another instance already owns the name.
-                Log.d(TAG, "no media keys: ${e.message}")
+                Log.w(TAG, "no media keys: $e")
             }
         }
     }
@@ -116,7 +116,7 @@ object MprisPlayer {
 
     /** The object on the bus: the media keys' commands and the properties a
      *  desktop widget reads. */
-    private class Exported(
+    class Exported(
         private val onRaise: () -> Unit,
         private val onQuit: () -> Unit,
     ) : MediaPlayer2, MediaPlayer2Player, Properties {

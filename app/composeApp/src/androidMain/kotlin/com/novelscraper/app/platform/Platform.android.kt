@@ -249,6 +249,17 @@ actual suspend fun saveToDownloads(
     mimeType: String,
     write: suspend (java.io.OutputStream) -> Unit,
 ): String? = withContext(Dispatchers.IO) {
+    // The Downloads collection is Android 10 and up; before that, the app's own
+    // external files folder (no permission needed, still reachable by a file
+    // manager).
+    if (Build.VERSION.SDK_INT < Build.VERSION_CODES.Q) {
+        val dir = appContext.getExternalFilesDir(android.os.Environment.DIRECTORY_DOWNLOADS)
+            ?: return@withContext null
+        dir.mkdirs()
+        val file = java.io.File(dir, fileName)
+        file.outputStream().buffered().use { write(it) }
+        return@withContext file.name
+    }
     val resolver = appContext.contentResolver
     val values = ContentValues().apply {
         put(MediaStore.Downloads.DISPLAY_NAME, fileName)

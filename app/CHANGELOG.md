@@ -32,6 +32,29 @@ crash report is unreadable without the matching one.
 
 ---
 
+## 0.33.0, 2026-09-22 · `versionCode 58`
+Narration, the way it should have been.
+- **No gap between chapters.** A novel now plays straight through: the next
+  chapter is fetched and its first sentences are made while the current one is
+  still being heard, into the same audio stream. The reader follows what is
+  being read, chapter by chapter.
+- **Asides are passed over.** Site plugs, patron and chat links and translator
+  notes aren't read aloud, and you can add your own lines to skip (Settings,
+  Narration). Nothing is hidden from the page: only narration skips them.
+- **Pronunciation.** Tell the app how a word should sound ("Xianxia" →
+  "shyen shya") and every voice says it that way.
+- **Sleep timer.** 15, 30, 45 or 60 minutes, or "end of chapter", in the
+  narration panel.
+- **Save as audio.** A chapter, the next ten or a whole novel read out to WAV
+  files in Downloads, with the same voice and settings, so they play in a car or
+  on any player. About 3 MB a minute, and slower than listening: it runs in the
+  background with progress and a cancel.
+- **Media keys on Linux.** Play/pause, next and previous work from the keyboard
+  and from the desktop's media widget (MPRIS), with the chapter's title showing.
+- Under the hood, Android's narration now runs the same code as the desktop's
+  for the on-device voices, so both get all of this at once. Chapters count as
+  read when they are heard, in order.
+
 ## 0.32.0, 2026-09-22 · `versionCode 57`
 Your devices now keep the same library.
 - **Sync.** Signed in to your server, the phone and the desktop share the novels
