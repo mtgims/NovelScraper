@@ -3,6 +3,7 @@ package com.novelscraper.app.tts
 import com.novelscraper.app.data.ChapterRead
 import com.novelscraper.app.data.ReaderPrefs
 import java.util.concurrent.CopyOnWriteArrayList
+import kotlin.test.AfterTest
 import kotlin.test.BeforeTest
 import kotlin.test.Test
 import kotlin.test.assertEquals
@@ -68,13 +69,39 @@ class NeuralNarratorTest {
         ReaderPrefs.init()
         ReaderPrefs.setTtsEngine(ReaderPrefs.ENGINE_PIPER)
         ReaderPrefs.setTtsAutoNext(true)
+        ReaderPrefs.setTtsSkipJunk(true)
+        ReaderPrefs.setTtsJunkPatterns(emptyList())
+        ReaderPrefs.setTtsDictionary(emptyList())
+        SleepTimer.cancel()
     }
 
-    @Test fun playsInOrderAndRollsIntoTheNextChapters() {
+    @AfterTest fun stop() {
+        narrator.stop()
+        SleepTimer.cancel()
+    }
+
+    @Test fun playsInOrderAndRollsIntoTheNextChaptersWithoutAGap() {
         narrator.play(bookId = 5, position = 1, bookTitle = "B", startIndex = 0)
         eventually("the book to finish") { marked.size == 3 && !TtsController.state.value.active }
-        assertEquals(listOf(1, 2, 3), marked.toList())
+        assertEquals(listOf(1, 2, 3), marked.toList(), "each chapter counts as read as it is heard")
+        assertEquals(1, sinks.size, "one open output for the whole novel: no gap at a chapter")
         assertEquals(listOf(10, 11, 12, 20, 21, 22, 30, 31, 32), sinks.flatMap { it.ids })
+    }
+
+    @Test fun passesOverSentencesTheReaderDoesNotWantSpoken() {
+        ReaderPrefs.setTtsJunkPatterns(listOf("S11"))   // the second sentence of chapter 1
+        ReaderPrefs.setTtsAutoNext(false)
+        narrator.play(5, 1, "B", 0)
+        eventually("the chapter to finish") { sinks.isNotEmpty() && !TtsController.state.value.active }
+        assertEquals(listOf(10, 12), sinks.flatMap { it.ids })
+    }
+
+    @Test fun theSleepTimerStopsAtTheChapterEnd() {
+        SleepTimer.setChapterEnd()
+        narrator.play(5, 1, "B", 0)
+        eventually("the chapter to finish") { sinks.isNotEmpty() && !TtsController.state.value.active }
+        assertEquals(listOf(10, 11, 12), sinks.flatMap { it.ids }, "it didn't roll into chapter 2")
+        assertEquals(SleepTimer.Mode.Off, SleepTimer.mode.value, "the timer is spent")
     }
 
     @Test fun stopsAtTheChapterEndWithoutAutoNext() {
@@ -82,6 +109,7 @@ class NeuralNarratorTest {
         narrator.play(5, 2, "B", 1)
         eventually("the chapter to finish") { sinks.isNotEmpty() && !TtsController.state.value.active }
         assertEquals(listOf(21, 22), sinks.flatMap { it.ids })
+        assertEquals(1, sinks.size)
         assertEquals(listOf(2), marked.toList())
     }
 
@@ -119,9 +147,9 @@ class NeuralNarratorTest {
     @Test fun missingVoiceStopsWithoutOpeningAudio() {
         voice.problem = "Download a voice first"
         narrator.play(5, 1, "B", 0)
-        eventually("the chapter load") { marked.isNotEmpty() }
+        eventually("narration to give up") { !TtsController.state.value.active }
         Thread.sleep(200)
-        assertFalse(TtsController.state.value.active)
-        assertTrue(sinks.isEmpty())
+        assertTrue(sinks.isEmpty(), "no audio output was opened")
+        assertTrue(marked.isEmpty(), "nothing was heard, so nothing was marked read")
     }
 }

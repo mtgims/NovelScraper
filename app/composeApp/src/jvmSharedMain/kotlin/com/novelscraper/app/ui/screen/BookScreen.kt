@@ -72,6 +72,8 @@ import com.novelscraper.app.library.LibChapter
 import com.novelscraper.app.library.LibCollection
 import com.novelscraper.app.library.LibProgress
 import com.novelscraper.app.platform.openInBrowser
+import com.novelscraper.app.tts.AudiobookExport
+import com.novelscraper.app.ui.AudioRange
 import com.novelscraper.app.ui.DownloadChoice
 import com.novelscraper.app.ui.components.BookCover
 import androidx.compose.material.icons.filled.LibraryAdd
@@ -105,6 +107,7 @@ fun BookScreen(
     var showDelete by remember { mutableStateOf(false) }
     var showEpub by remember { mutableStateOf(false) }
     var showDownload by remember { mutableStateOf(false) }
+    var showAudio by remember { mutableStateOf(false) }
 
     // Surface action results as a toast.
     val action by vm.action.collectAsState()
@@ -140,6 +143,10 @@ fun BookScreen(
                         if (b.downloadedCountOf(chapters) > 0) DropdownMenuItem(
                             text = { Text("Remove downloads") },
                             onClick = { menuOpen = false; vm.removeDownloads() },
+                        )
+                        DropdownMenuItem(
+                            text = { Text("Save as audio") },
+                            onClick = { menuOpen = false; showAudio = true },
                         )
                         if (b.server?.volumes?.isNotEmpty() == true) DropdownMenuItem(
                             text = { Text("Save as EPUB") },
@@ -191,6 +198,13 @@ fun BookScreen(
                 showToast("Saving all volumes…")
             },
             onDismiss = { showEpub = false },
+        )
+    }
+
+    if (showAudio && b != null) {
+        AudioExportDialog(
+            onChoice = { showAudio = false; vm.exportAudio(it) },
+            onDismiss = { showAudio = false },
         )
     }
 
@@ -360,6 +374,47 @@ private fun BookContent(
             dismissButton = { TextButton(onClick = { showReset = false }) { Text("Cancel") } },
         )
     }
+}
+
+/** Progress while this novel is being read out to files. */
+@Composable
+private fun AudioExportRow(bookId: Int) {
+    val export by AudiobookExport.state.collectAsState()
+    if (!export.running || export.bookId != bookId) return
+    Row(Modifier.fillMaxWidth().padding(top = 10.dp), verticalAlignment = Alignment.CenterVertically) {
+        Column(Modifier.weight(1f)) {
+            Text("Saving audio · ${export.done + 1} of ${export.total}",
+                style = MaterialTheme.typography.bodySmall)
+            if (export.chapter.isNotBlank()) {
+                Text(export.chapter, style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    maxLines = 1, overflow = TextOverflow.Ellipsis)
+            }
+        }
+        TextButton(onClick = { AudiobookExport.cancel() }) { Text("Cancel") }
+    }
+}
+
+/** Which chapters to read out into audio files. */
+@Composable
+private fun AudioExportDialog(onChoice: (AudioRange) -> Unit, onDismiss: () -> Unit) {
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("Save as audio") },
+        text = {
+            Column {
+                Text("Chapters are read by the on-device voice and saved to Downloads as WAV " +
+                    "files, about 3 MB a minute. It takes a while: reading is faster than the " +
+                    "voice can be made.",
+                    style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.padding(bottom = 8.dp))
+                DownloadRow("This chapter", "where you are now", onClick = { onChoice(AudioRange.ThisChapter) })
+                DownloadRow("Next 10 chapters", "from where you are", onClick = { onChoice(AudioRange.Next10) })
+                DownloadRow("All chapters", "the whole novel", onClick = { onChoice(AudioRange.All) })
+            }
+        },
+        confirmButton = { TextButton(onClick = onDismiss) { Text("Cancel") } },
+    )
 }
 
 /** Which chapters to download for reading offline. */
@@ -578,6 +633,8 @@ private fun BookHeader(
                 TextButton(onClick = onCancelDownloads) { Text("Cancel") }
             }
         }
+
+        AudioExportRow(book.id)
 
         if (book.genres.isNotBlank()) {
             Text(book.genres, style = MaterialTheme.typography.bodySmall,

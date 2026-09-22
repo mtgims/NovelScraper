@@ -6,6 +6,8 @@ import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.ui.ExperimentalComposeUiApi
 import androidx.compose.ui.backhandler.BackHandler
 import java.awt.FileDialog
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
 import java.io.File
 import java.net.URLEncoder
 import java.util.concurrent.ConcurrentHashMap
@@ -124,3 +126,15 @@ actual fun rememberNarrationPermission(action: () -> Unit): () -> Unit {
 /** No platform speech engine on desktop (see [hasSystemTts]). */
 @Composable
 actual fun rememberSystemVoices(): List<SystemVoice> = emptyList()
+
+/** Desktop: the user's Downloads folder, with a unique name. */
+actual suspend fun saveToDownloads(
+    fileName: String,
+    mimeType: String,
+    write: suspend (java.io.OutputStream) -> Unit,
+): String? = withContext(Dispatchers.IO) {
+    val dir = DesktopDirs.downloads.apply { mkdirs() }
+    val file = com.novelscraper.app.net.Downloads.reserve(dir, fileName)
+    file.outputStream().buffered().use { write(it) }
+    file.name
+}

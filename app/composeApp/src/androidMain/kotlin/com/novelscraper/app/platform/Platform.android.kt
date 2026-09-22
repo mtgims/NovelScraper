@@ -2,6 +2,10 @@ package com.novelscraper.app.platform
 
 import android.Manifest
 import android.app.Activity
+import android.content.ContentValues
+import android.provider.MediaStore
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
 import android.content.Context
 import android.content.ContextWrapper
 import android.content.SharedPreferences
@@ -236,4 +240,31 @@ actual fun rememberSystemVoices(): List<SystemVoice> {
         onDispose { engine.shutdown() }
     }
     return voices
+}
+
+/** Android: the public Downloads collection, so the file shows up in Files and
+ *  in the notification shade's download list. */
+actual suspend fun saveToDownloads(
+    fileName: String,
+    mimeType: String,
+    write: suspend (java.io.OutputStream) -> Unit,
+): String? = withContext(Dispatchers.IO) {
+    val resolver = appContext.contentResolver
+    val values = ContentValues().apply {
+        put(MediaStore.Downloads.DISPLAY_NAME, fileName)
+        put(MediaStore.Downloads.MIME_TYPE, mimeType)
+        put(MediaStore.Downloads.IS_PENDING, 1)
+    }
+    val uri = resolver.insert(MediaStore.Downloads.EXTERNAL_CONTENT_URI, values) ?: return@withContext null
+    try {
+        val stream = resolver.openOutputStream(uri) ?: return@withContext null
+        stream.use { write(it) }
+        values.clear()
+        values.put(MediaStore.Downloads.IS_PENDING, 0)
+        resolver.update(uri, values, null, null)
+        fileName
+    } catch (e: Exception) {
+        runCatching { resolver.delete(uri, null, null) }
+        throw e
+    }
 }

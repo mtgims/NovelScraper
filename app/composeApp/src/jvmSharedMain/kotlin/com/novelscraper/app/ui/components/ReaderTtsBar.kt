@@ -25,6 +25,9 @@ import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.Icon
+import androidx.compose.foundation.layout.ExperimentalLayoutApi
+import androidx.compose.foundation.layout.FlowRow
+import androidx.compose.material3.FilterChip
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Slider
@@ -45,6 +48,7 @@ import androidx.compose.ui.unit.dp
 import com.novelscraper.app.data.ReaderPrefs
 import com.novelscraper.app.platform.rememberNarrationPermission
 import com.novelscraper.app.platform.rememberSystemVoices
+import com.novelscraper.app.tts.SleepTimer
 import com.novelscraper.app.tts.TtsController
 import com.novelscraper.app.tts.TtsModels
 
@@ -219,6 +223,47 @@ private fun SettingsPanel() {
                 modifier = Modifier.weight(1f))
             Switch(checked = autoNext, onCheckedChange = { ReaderPrefs.setTtsAutoNext(it) })
         }
+
+        SleepTimerRow()
+    }
+}
+
+/** Stop narrating after a while: for listening in bed. */
+@OptIn(ExperimentalLayoutApi::class)
+@Composable
+private fun SleepTimerRow() {
+    val mode by SleepTimer.mode.collectAsState()
+    val left by SleepTimer.remainingSec.collectAsState()
+
+    Text(
+        when (val m = mode) {
+            SleepTimer.Mode.Off -> "Sleep timer"
+            SleepTimer.Mode.ChapterEnd -> "Sleep timer · stops at the end of this chapter"
+            is SleepTimer.Mode.Minutes -> "Sleep timer · ${fmt(left)} left of ${m.total} min"
+        },
+        style = MaterialTheme.typography.labelMedium,
+        color = if (mode == SleepTimer.Mode.Off) MaterialTheme.colorScheme.onSurfaceVariant
+        else MaterialTheme.colorScheme.primary,
+        modifier = Modifier.padding(top = 6.dp),
+    )
+    FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+        listOf(15, 30, 45, 60).forEach { minutes ->
+            FilterChip(
+                selected = (mode as? SleepTimer.Mode.Minutes)?.total == minutes,
+                onClick = {
+                    if ((mode as? SleepTimer.Mode.Minutes)?.total == minutes) SleepTimer.cancel()
+                    else SleepTimer.setMinutes(minutes)
+                },
+                label = { Text("$minutes min") },
+            )
+        }
+        FilterChip(
+            selected = mode == SleepTimer.Mode.ChapterEnd,
+            onClick = {
+                if (mode == SleepTimer.Mode.ChapterEnd) SleepTimer.cancel() else SleepTimer.setChapterEnd()
+            },
+            label = { Text("End of chapter") },
+        )
     }
 }
 

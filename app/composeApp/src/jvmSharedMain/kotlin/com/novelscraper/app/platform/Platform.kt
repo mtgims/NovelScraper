@@ -99,6 +99,18 @@ fun interface SaveTarget {
     fun write(bytes: ByteArray): Boolean
 }
 
+/**
+ * Write a file into the device's Downloads, as the app's other downloads go
+ * (Android: the Downloads collection, so it shows in Files; desktop: the
+ * Downloads folder). [write] is called on a background thread with the file's
+ * output; returns the name it landed under, or null if it couldn't be written.
+ */
+expect suspend fun saveToDownloads(
+    fileName: String,
+    mimeType: String,
+    write: suspend (java.io.OutputStream) -> Unit,
+): String?
+
 /** Returns a launcher for a "save as" dialog, taking the suggested file name.
  *  [onTarget] gets null if the user cancels. */
 @Composable

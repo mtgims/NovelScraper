@@ -10,6 +10,7 @@ import com.novelscraper.app.library.LibProgress
 import com.novelscraper.app.library.Library
 import com.novelscraper.app.extensions.PluginNotInstalledException
 import com.novelscraper.app.net.Account
+import com.novelscraper.app.tts.AudiobookExport
 import com.novelscraper.app.net.Net
 import com.novelscraper.app.net.ScrapeRelay
 import com.novelscraper.app.net.detail
@@ -24,6 +25,9 @@ import retrofit2.HttpException
 
 /** Which chapters "Download" takes. */
 enum class DownloadChoice { All, Unread, Next10 }
+
+/** Which chapters "Save as audio" reads out. */
+enum class AudioRange { ThisChapter, Next10, All }
 
 /** A novel's page: details, chapters and progress from the local library, kept
  *  up to date from its source or the server. */
@@ -195,4 +199,24 @@ class BookViewModel(private val bookId: Int) : ViewModel() {
     }
 
     fun resumeDownloads() = ChapterDownloads.resume()
+
+    // --- audiobook ----------------------------------------------------------------
+
+    val audioExport = AudiobookExport.state
+
+    /** Read chapters out to audio files in Downloads. */
+    fun exportAudio(range: AudioRange) {
+        val list = chapters.value ?: return
+        val book = book.value ?: return
+        val from = progress.value?.lastPosition ?: 1
+        val positions = when (range) {
+            AudioRange.ThisChapter -> listOf(from)
+            AudioRange.Next10 -> list.filter { it.position >= from }.take(10).map { it.position }
+            AudioRange.All -> list.map { it.position }
+        }
+        if (positions.isEmpty()) { _action.value = "Nothing to save."; return }
+        AudiobookExport.start(bookId, book.title, positions)
+    }
+
+    fun cancelAudioExport() = AudiobookExport.cancel()
 }

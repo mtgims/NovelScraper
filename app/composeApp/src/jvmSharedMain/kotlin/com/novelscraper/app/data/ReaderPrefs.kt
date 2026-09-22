@@ -3,6 +3,10 @@ package com.novelscraper.app.data
 import com.novelscraper.app.platform.KeyValueStore
 import com.novelscraper.app.platform.hasSystemTts
 import com.novelscraper.app.platform.settingsStore
+import com.novelscraper.app.tts.NarrationText
+import kotlinx.serialization.builtins.ListSerializer
+import kotlinx.serialization.builtins.serializer
+import kotlinx.serialization.json.Json
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -22,6 +26,7 @@ object ReaderPrefs {
     const val ENGINE_PIPER = "piper"
 
     private lateinit var prefs: KeyValueStore
+    private val json = Json { ignoreUnknownKeys = true; encodeDefaults = true }
     private val _fontScale = MutableStateFlow(1.0f)
     val fontScale: StateFlow<Float> = _fontScale.asStateFlow()
 
@@ -50,6 +55,18 @@ object ReaderPrefs {
     private val _ttsAutoNext = MutableStateFlow(true)
     val ttsAutoNext: StateFlow<Boolean> = _ttsAutoNext.asStateFlow()
 
+    // Pass over site plugs, patron links and translator notes while narrating
+    // (see NarrationText), plus the reader's own lines to skip.
+    private val _ttsSkipJunk = MutableStateFlow(true)
+    val ttsSkipJunk: StateFlow<Boolean> = _ttsSkipJunk.asStateFlow()
+
+    private val _ttsJunkPatterns = MutableStateFlow<List<String>>(emptyList())
+    val ttsJunkPatterns: StateFlow<List<String>> = _ttsJunkPatterns.asStateFlow()
+
+    // How words should sound ("Xianxia" -> "shyen-shya").
+    private val _ttsDictionary = MutableStateFlow<List<NarrationText.Term>>(emptyList())
+    val ttsDictionary: StateFlow<List<NarrationText.Term>> = _ttsDictionary.asStateFlow()
+
     fun init() {
         prefs = settingsStore("reader")
         _fontScale.value = prefs.getFloat("font_scale", 1.0f)
@@ -59,6 +76,31 @@ object ReaderPrefs {
         _kokoroSpeaker.value = prefs.getInt("kokoro_speaker", 0)
         _piperVoice.value = prefs.getString("piper_voice", "en_US-amy-medium") ?: "en_US-amy-medium"
         _ttsAutoNext.value = prefs.getBoolean("tts_auto_next", true)
+        _ttsSkipJunk.value = prefs.getBoolean("tts_skip_junk", true)
+        _ttsJunkPatterns.value = prefs.getString("tts_junk_patterns", null)
+            ?.let { runCatching { json.decodeFromString(ListSerializer(String.serializer()), it) }.getOrNull() }
+            .orEmpty()
+        _ttsDictionary.value = prefs.getString("tts_dictionary", null)
+            ?.let { runCatching { json.decodeFromString(ListSerializer(NarrationText.Term.serializer()), it) }.getOrNull() }
+            .orEmpty()
+    }
+
+    fun setTtsSkipJunk(on: Boolean) {
+        _ttsSkipJunk.value = on
+        prefs.putBoolean("tts_skip_junk", on)
+    }
+
+    /** The reader's own lines to pass over (matched anywhere in a sentence). */
+    fun setTtsJunkPatterns(patterns: List<String>) {
+        val clean = patterns.map { it.trim() }.filter { it.isNotEmpty() }.distinct()
+        _ttsJunkPatterns.value = clean
+        prefs.putString("tts_junk_patterns", json.encodeToString(ListSerializer(String.serializer()), clean))
+    }
+
+    fun setTtsDictionary(terms: List<NarrationText.Term>) {
+        val clean = terms.filter { it.from.isNotBlank() }.distinctBy { it.from.lowercase() }
+        _ttsDictionary.value = clean
+        prefs.putString("tts_dictionary", json.encodeToString(ListSerializer(NarrationText.Term.serializer()), clean))
     }
 
     fun setPiperVoice(id: String) {

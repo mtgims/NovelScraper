@@ -31,6 +31,7 @@ import com.novelscraper.app.platform.PropertiesStore
 import com.novelscraper.app.platform.ToastHost
 import com.novelscraper.app.platform.settingsStore
 import com.novelscraper.app.tts.DesktopTtsPlayer
+import com.novelscraper.app.tts.MprisPlayer
 import com.novelscraper.app.tts.TtsController
 import com.novelscraper.app.ui.AppRoot
 import com.novelscraper.app.ui.theme.NovelScraperTheme
@@ -74,6 +75,8 @@ fun main() {
     // scrapes go through this computer's connection, check for due updates and
     // bring in the server's library (when signed in).
     Account.onForeground()
+    // Media keys and the desktop's media widget drive narration (MPRIS).
+    MprisPlayer.start(onQuit = { shutdown(); kotlin.system.exitProcess(0) })
 
     application {
         val windowPrefs = settingsStore("window")
@@ -125,6 +128,7 @@ fun AppContent() {
 
 private fun shutdown() {
     TtsController.stop()
+    MprisPlayer.stop()
     ScrapeRelay.stop()
     DesktopTtsPlayer.release()
     PropertiesStore.flush()

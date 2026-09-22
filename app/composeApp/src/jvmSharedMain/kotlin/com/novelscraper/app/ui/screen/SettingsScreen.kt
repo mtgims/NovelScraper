@@ -26,6 +26,15 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Slider
 import androidx.compose.material3.Text
+import androidx.compose.foundation.layout.ExperimentalLayoutApi
+import androidx.compose.foundation.layout.FlowRow
+import androidx.compose.material3.InputChip
+import androidx.compose.material3.AssistChip
+import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material.icons.filled.Close
+import com.novelscraper.app.tts.NarrationText
+import androidx.compose.material3.Switch
 import androidx.compose.runtime.Composable
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.LaunchedEffect
@@ -97,6 +106,7 @@ fun SettingsScreen(onSignIn: () -> Unit, onLogout: () -> Unit) {
             modifier = Modifier.fillMaxWidth(),
         )
         NarrationEngine()
+        NarrationWords()
 
         Section("READING")
         Row(verticalAlignment = Alignment.CenterVertically) {
@@ -359,4 +369,142 @@ private fun SyncStatus() {
             modifier = Modifier.weight(1f))
         TextButton(onClick = { scope.launch { LibrarySyncRunner.now() } }, enabled = !sync.syncing) { Text("Sync now") }
     }
+}
+
+/**
+ * What narration says: the asides it passes over (site plugs, patron links,
+ * translator notes, plus the reader's own lines) and how particular words should
+ * sound.
+ */
+@OptIn(ExperimentalLayoutApi::class)
+@Composable
+private fun NarrationWords() {
+    val skipJunk by ReaderPrefs.ttsSkipJunk.collectAsState()
+    val patterns by ReaderPrefs.ttsJunkPatterns.collectAsState()
+    val terms by ReaderPrefs.ttsDictionary.collectAsState()
+    var addPattern by remember { mutableStateOf(false) }
+    var addTerm by remember { mutableStateOf<NarrationText.Term?>(null) }
+
+    Row(Modifier.padding(top = 12.dp), verticalAlignment = Alignment.CenterVertically) {
+        Column(Modifier.weight(1f)) {
+            Text("Skip asides", style = MaterialTheme.typography.bodyMedium)
+            Text("Site plugs, patron links and translator notes aren't read aloud.",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant)
+        }
+        Switch(checked = skipJunk, onCheckedChange = { ReaderPrefs.setTtsSkipJunk(it) })
+    }
+
+    if (skipJunk) {
+        FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.padding(top = 4.dp)) {
+            patterns.forEach { p ->
+                InputChip(
+                    selected = false,
+                    onClick = { ReaderPrefs.setTtsJunkPatterns(patterns - p) },
+                    label = { Text(p) },
+                    trailingIcon = { Icon(Icons.Filled.Close, "Remove", Modifier.size(16.dp)) },
+                )
+            }
+            AssistChip(onClick = { addPattern = true }, label = { Text("Add a line to skip") })
+        }
+    }
+
+    Text("Pronunciation", style = MaterialTheme.typography.bodyMedium,
+        modifier = Modifier.padding(top = 16.dp))
+    Text("Say a word the way you want to hear it.", style = MaterialTheme.typography.bodySmall,
+        color = MaterialTheme.colorScheme.onSurfaceVariant)
+    FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.padding(top = 4.dp)) {
+        terms.forEach { t ->
+            InputChip(
+                selected = false,
+                onClick = { addTerm = t },
+                label = { Text("${t.from} → ${t.to}") },
+                trailingIcon = {
+                    Icon(Icons.Filled.Close, "Remove", Modifier.size(16.dp).clickable {
+                        ReaderPrefs.setTtsDictionary(terms - t)
+                    })
+                },
+            )
+        }
+        AssistChip(onClick = { addTerm = NarrationText.Term("", "") }, label = { Text("Add a word") })
+    }
+
+    if (addPattern) {
+        TextPrompt(
+            title = "Skip lines containing",
+            label = "Text",
+            initial = "",
+            onDone = { text ->
+                if (text.isNotBlank()) ReaderPrefs.setTtsJunkPatterns(patterns + text.trim())
+                addPattern = false
+            },
+            onDismiss = { addPattern = false },
+        )
+    }
+    addTerm?.let { editing ->
+        TermPrompt(
+            term = editing,
+            onDone = { t ->
+                ReaderPrefs.setTtsDictionary(terms.filter { it.from != editing.from && it.from != t.from } + t)
+                addTerm = null
+            },
+            onDismiss = { addTerm = null },
+        )
+    }
+}
+
+@Composable
+private fun TextPrompt(
+    title: String,
+    label: String,
+    initial: String,
+    onDone: (String) -> Unit,
+    onDismiss: () -> Unit,
+) {
+    var text by remember { mutableStateOf(initial) }
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text(title) },
+        text = {
+            OutlinedTextField(value = text, onValueChange = { text = it }, singleLine = true,
+                label = { Text(label) })
+        },
+        confirmButton = { TextButton(onClick = { onDone(text) }) { Text("Add") } },
+        dismissButton = { TextButton(onClick = onDismiss) { Text("Cancel") } },
+    )
+}
+
+@Composable
+private fun TermPrompt(
+    term: NarrationText.Term,
+    onDone: (NarrationText.Term) -> Unit,
+    onDismiss: () -> Unit,
+) {
+    var from by remember { mutableStateOf(term.from) }
+    var to by remember { mutableStateOf(term.to) }
+    var whole by remember { mutableStateOf(term.wholeWord) }
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("How to say a word") },
+        text = {
+            Column {
+                OutlinedTextField(value = from, onValueChange = { from = it }, singleLine = true,
+                    label = { Text("Written") })
+                OutlinedTextField(value = to, onValueChange = { to = it }, singleLine = true,
+                    label = { Text("Said as") }, modifier = Modifier.padding(top = 8.dp))
+                Row(Modifier.padding(top = 8.dp), verticalAlignment = Alignment.CenterVertically) {
+                    Text("Whole word only", style = MaterialTheme.typography.bodyMedium,
+                        modifier = Modifier.weight(1f))
+                    Switch(checked = whole, onCheckedChange = { whole = it })
+                }
+            }
+        },
+        confirmButton = {
+            TextButton(
+                onClick = { onDone(NarrationText.Term(from.trim(), to.trim(), whole)) },
+                enabled = from.isNotBlank() && to.isNotBlank(),
+            ) { Text("Save") }
+        },
+        dismissButton = { TextButton(onClick = onDismiss) { Text("Cancel") } },
+    )
 }

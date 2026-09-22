@@ -81,6 +81,9 @@ object TtsController {
         player?.play(bookId, position, bookTitle, startIndex)
 
     fun toggle() = player?.toggle()
+
+    /** Pause if it is playing (the sleep timer, an incoming call). */
+    fun pause() { if (_state.value.playing) player?.toggle() }
     fun nextChapter() = player?.nextChapter()
     fun prevChapter() = player?.prevChapter()
     fun stop() = player?.stop()

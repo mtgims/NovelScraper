@@ -16,6 +16,7 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import kotlin.coroutines.coroutineContext
 
 /** The synthesizer the narrator speaks with ([KokoroEngine] in the app). */
 interface NarratorVoice {
@@ -52,17 +53,23 @@ interface PcmSink {
 }
 
 /**
- * Narration with the on-device Kokoro/Piper models ([KokoroVoice]), for platforms
- * without an Android foreground service (the desktop app). Mirrors the neural path
- * of Android's TtsService: fetch the chapter, split it with the shared [Sentences]
- * rules, synthesize a few sentences ahead into a bounded queue, stream to a
- * [PcmSink], and move the reader's highlight by what has actually been heard.
- * Listening marks the chapter read, and a finished chapter rolls into the next when
- * "Auto next chapter" is on.
+ * Narration with the on-device Kokoro/Piper models ([KokoroVoice]).
  *
- * Every state change runs on one thread ([state]); audio writing and synthesis run
- * on their own. Each (re)start of playback bumps [epoch], so a superseded playback
- * that is still winding down never acts on the new one's state.
+ * One run of playback streams sentence after sentence and **chapter after
+ * chapter** into a single open [PcmSink]: while the end of a chapter is still
+ * being heard, the next one is already fetched and synthesized, so a novel plays
+ * without a gap at the chapter line. Sentences the reader does not want spoken
+ * (site plugs, translator notes; see [NarrationText]) are passed over.
+ *
+ * What is heard, not what has been generated, drives the UI: every piece of audio
+ * is written with a mark (frame, chapter, sentence), and a ticker maps the sink's
+ * playback head back to those marks, so the reader's highlight, the media
+ * notification and the resume point follow the voice. A chapter counts as read
+ * when its first audio is heard.
+ *
+ * Every state change runs on one thread ([state]); synthesis and writing run on
+ * their own. Each (re)start bumps [epoch], so a superseded run that is still
+ * winding down never acts on the new one's state.
  */
 @OptIn(ExperimentalCoroutinesApi::class)
 class NeuralNarrator(
@@ -77,27 +84,47 @@ class NeuralNarrator(
     private val state = Dispatchers.Default.limitedParallelism(1)
     private val scope = CoroutineScope(SupervisorJob() + state)
 
+    /** A chapter ready to be spoken. */
+    private class Loaded(
+        val position: Int,
+        val title: String,
+        val sentences: List<String>,
+        /** Per sentence: what to say, or null to pass over it. */
+        val spoken: List<String?>,
+        val hasPrev: Boolean,
+        val hasNext: Boolean,
+    ) {
+        val cumChars = IntArray(sentences.size).also {
+            var acc = 0
+            for (i in sentences.indices) { it[i] = acc; acc += sentences[i].length }
+        }
+        val totalChars = sentences.sumOf { it.length }
+    }
+
+    /** Where the listener is: used by the ticker to move the UI. */
+    private class Mark(val frame: Long, val chapter: Loaded, val sentence: Int)
+
     private var bookId = 0
-    private var position = 0
-    private var chapterTitle = ""
-    private var sentences: List<String> = emptyList()
-    private var cumChars = IntArray(0)   // chars before sentence i (for the time estimate)
-    private var totalChars = 0
+    private var current: Loaded? = null
     private var index = 0
-    private var hasNext = false
-    private var hasPrev = false
     private var playing = false
     private var engine = ReaderPrefs.ENGINE_PIPER
 
     private var epoch = 0
-    private var loadJob: Job? = null
     private var playJob: Job? = null
     private var sink: PcmSink? = null
+
+    // Chapters are marked read in the order they are heard: the last one marked
+    // is the resume point, so this must not run in parallel.
+    private val heard = Channel<Int>(Channel.UNLIMITED)
+    private val marker = scope.launch(Dispatchers.IO) {
+        for (position in heard) runCatching { markRead(bookId, position) }
+    }
 
     override fun play(bookId: Int, position: Int, bookTitle: String, startIndex: Int) {
         scope.launch {
             this@NeuralNarrator.bookId = bookId
-            load(position, startIndex)
+            start(position, startIndex)
         }
     }
 
@@ -110,11 +137,11 @@ class NeuralNarrator(
     override fun stop() { scope.launch { stopNow() } }
 
     override fun seek(index: Int) {
-        scope.launch { if (sentences.isNotEmpty()) speakFrom(index) }
+        scope.launch { current?.let { start(it.position, index) } }
     }
 
     override fun applySettings() {
-        scope.launch { if (playing) speakFrom(index) }
+        scope.launch { if (playing) current?.let { start(it.position, index) } }
     }
 
     /** Stop and free the model (the app is closing). */
@@ -125,123 +152,151 @@ class NeuralNarrator(
 
     // --- playback (all on `state`) ---------------------------------------
 
-    private fun load(pos: Int, startIndex: Int) {
+    /** Play from [position], sentence [from], until the novel ends or it is stopped. */
+    private fun start(position: Int, from: Int) {
         stopAudio()
-        loadJob?.cancel()
-        loadJob = scope.launch {
-            val chapter = try {
-                withContext(Dispatchers.IO) { fetchChapter(bookId, pos) }
-            } catch (e: Exception) {
-                showToast("Couldn't load the chapter to narrate.")
-                stopNow(); return@launch
-            }
-            position = pos
-            chapterTitle = chapter.title
-            hasNext = chapter.has_next
-            hasPrev = chapter.has_prev
-            val plain = Sentences.plain(chapter.content)
-            sentences = Sentences.ranges(plain).map { plain.substring(it.first, it.last + 1) }
-            cumChars = IntArray(sentences.size)
-            var acc = 0
-            for (i in sentences.indices) { cumChars[i] = acc; acc += sentences[i].length }
-            totalChars = acc
-            index = 0
-            // Listening marks the chapter read + moves the resume point.
-            scope.launch(Dispatchers.IO) {
-                runCatching { markRead(bookId, pos) }
-            }
-            if (sentences.isEmpty()) { skip(+1); return@launch }
+        val my = ++epoch
+        playing = true
+        playJob = scope.launch {
+            val first = load(position) ?: return@launch
+            if (my != epoch) return@launch
+            current = first
+            index = from.coerceIn(0, maxOf(first.sentences.size - 1, 0))
+            publish()
 
-            engine = ReaderPrefs.ttsEngine.value
-            val modelId = if (engine == ReaderPrefs.ENGINE_KOKORO) TtsModels.KOKORO else ReaderPrefs.piperVoice.value
-            val problem = withContext(Dispatchers.Default) { voice.prepare(modelId) }
+            val problem = withContext(Dispatchers.Default) { voice.prepare(modelId()) }
             if (problem != null) {
                 showToast(problem, long = true)
                 stopNow(); return@launch
             }
-            speakFrom(startIndex)
-        }
-    }
-
-    private fun speakFrom(from: Int) {
-        stopAudio()
-        index = from.coerceIn(0, sentences.size)
-        if (index >= sentences.size) { onChapterFinished(); return }
-        val out = try {
-            openSink(voice.sampleRate)
-        } catch (e: Exception) {
-            Log.w(TAG, "no audio output: ${e.message}")
-            showToast("No audio output available: ${e.message ?: "unknown error"}", long = true)
-            stopNow(); return
-        }
-        sink = out
-        playing = true
-        publish()
-
-        val my = ++epoch
-        // Piper voices are single-speaker; Kokoro uses the picked speaker id.
-        val speaker = if (engine == ReaderPrefs.ENGINE_KOKORO) ReaderPrefs.kokoroSpeaker.value else 0
-        val speed = ReaderPrefs.ttsRate.value.coerceIn(0.5f, 2.5f)
-        val start = index
-        val lines = sentences
-        val frameStarts = LongArray(lines.size) { -1L }  // audible start frame per sentence
-
-        playJob = scope.launch {
-            // Synthesize several sentences ahead so one slow sentence doesn't starve
-            // the output.
-            val queue = Channel<Pair<Int, FloatArray>>(capacity = 6)
-            val producer = launch(Dispatchers.Default) {
-                for (i in start until lines.size) {
-                    if (!isActive) break
-                    queue.send(i to voice.generate(lines[i], speaker, speed))
-                }
-                queue.close()
-            }
-            // Highlight: the sentence under the playback head.
-            val ticker = launch {
-                var shown = -1
-                while (isActive) {
-                    val head = out.framesPlayed
-                    var cur = shown
-                    for (i in start until lines.size) {
-                        val s = frameStarts[i]
-                        if (s < 0) break
-                        if (s <= head) cur = i else break
-                    }
-                    if (cur >= 0 && cur != shown && my == epoch) { shown = cur; index = cur; publish() }
-                    delay(120)
-                }
-            }
-            try {
-                val written = withContext(Dispatchers.IO) {
-                    var frames = 0L
-                    for ((i, pcm) in queue) {
-                        if (!isActive) break
-                        frameStarts[i] = frames
-                        out.write(pcm)
-                        frames += pcm.size
-                    }
-                    frames
-                }
-                // Let the buffered tail play out before moving on.
-                while (isActive && out.framesPlayed < written) delay(60)
-                if (isActive && my == epoch) onChapterFinished()
+            val out = try {
+                openSink(voice.sampleRate)
             } catch (e: Exception) {
-                if (my == epoch) {
-                    Log.w(TAG, "playback failed: ${e.message}")
-                    showToast("Narration stopped: ${e.message ?: "audio error"}")
-                    stopNow()
-                }
-            } finally {
-                producer.cancel()
-                ticker.cancel()
+                Log.w(TAG, "no audio output: ${e.message}")
+                showToast("No audio output available: ${e.message ?: "unknown error"}", long = true)
+                stopNow(); return@launch
             }
+            sink = out
+            stream(my, out, first, index)
         }
     }
+
+    /** Synthesize ahead, write to [out], and follow what is heard. */
+    private suspend fun stream(my: Int, out: PcmSink, first: Loaded, from: Int) {
+        // A few sentences ahead, so one slow sentence (or fetching the next
+        // chapter) doesn't starve the output.
+        val queue = Channel<Triple<Loaded, Int, FloatArray>>(capacity = 6)
+        // Written in order; the ticker walks forward through them.
+        val marks = java.util.Collections.synchronizedList(ArrayList<Mark>())
+
+        val producer = scope.launch(Dispatchers.Default) {
+            var chapter = first
+            var start = from
+            while (isActive) {
+                for (i in start until chapter.sentences.size) {
+                    if (!isActive) return@launch
+                    val text = chapter.spoken.getOrNull(i) ?: continue   // passed over
+                    queue.send(Triple(chapter, i, voice.generate(text, speaker(), speed())))
+                }
+                // The chapter is synthesized; roll into the next one while it plays.
+                val more = chapter.hasNext && ReaderPrefs.ttsAutoNext.value && !SleepTimer.stopAtChapterEnd
+                if (!more) break
+                chapter = load(chapter.position + 1) ?: break
+                start = 0
+            }
+            queue.close()
+        }
+
+        // The UI follows the playback head, not the producer.
+        var cursor = 0              // the last mark reached
+        var shownChapter = -1
+        /** Move the UI to whatever has been heard by now. */
+        fun advance() {
+            val reached = ArrayList<Mark>()
+            synchronized(marks) {
+                while (cursor < marks.size && marks[cursor].frame <= out.framesPlayed) reached.add(marks[cursor++])
+            }
+            if (reached.isEmpty() || my != epoch) return
+            // Every chapter whose audio has been heard counts as read, even if
+            // several went by between two ticks.
+            for (m in reached) {
+                if (m.chapter.position == shownChapter) continue
+                shownChapter = m.chapter.position
+                current = m.chapter
+                heard.trySend(m.chapter.position)
+            }
+            index = reached.last().sentence
+            publish()
+        }
+
+        val ticker = scope.launch {
+            while (isActive) { advance(); delay(120) }
+        }
+
+        try {
+            val written = withContext(Dispatchers.IO) {
+                var frames = 0L
+                for ((chapter, i, pcm) in queue) {
+                    if (!isActive) break
+                    synchronized(marks) { marks.add(Mark(frames, chapter, i)) }
+                    out.write(pcm)
+                    frames += pcm.size
+                }
+                frames
+            }
+            // Let the buffered tail play out before ending.
+            while (coroutineContext.isActive && out.framesPlayed < written) delay(60)
+            ticker.cancel()
+            advance()   // the last sentences, however fast they played
+            if (coroutineContext.isActive && my == epoch) finished()
+        } catch (e: Exception) {
+            if (my == epoch) {
+                Log.w(TAG, "playback failed: ${e.message}")
+                showToast("Narration stopped: ${e.message ?: "audio error"}")
+                stopNow()
+            }
+        } finally {
+            producer.cancel()
+            ticker.cancel()
+        }
+    }
+
+    /** Fetch a chapter and work out what to say; null (and stops) if it can't. */
+    private suspend fun load(position: Int): Loaded? {
+        val chapter = try {
+            withContext(Dispatchers.IO) { fetchChapter(bookId, position) }
+        } catch (e: Exception) {
+            showToast("Couldn't load the chapter to narrate.")
+            stopNow(); return null
+        }
+        val plain = Sentences.plain(chapter.content)
+        val sentences = Sentences.ranges(plain).map { plain.substring(it.first, it.last + 1) }
+        val loaded = Loaded(
+            position = position, title = chapter.title, sentences = sentences,
+            spoken = NarrationText.spokenLines(sentences),
+            hasPrev = chapter.has_prev, hasNext = chapter.has_next,
+        )
+        // Nothing to say (an empty chapter, or all of it passed over): move on.
+        if (loaded.spoken.all { it == null }) {
+            return if (loaded.hasNext && ReaderPrefs.ttsAutoNext.value) load(position + 1) else null
+        }
+        return loaded
+    }
+
+    private fun modelId() =
+        if (ReaderPrefs.ttsEngine.value == ReaderPrefs.ENGINE_KOKORO) TtsModels.KOKORO else ReaderPrefs.piperVoice.value
+
+    private fun speaker(): Int {
+        engine = ReaderPrefs.ttsEngine.value
+        // Piper voices are single-speaker; Kokoro uses the picked speaker id.
+        return if (engine == ReaderPrefs.ENGINE_KOKORO) ReaderPrefs.kokoroSpeaker.value else 0
+    }
+
+    private fun speed() = ReaderPrefs.ttsRate.value.coerceIn(0.5f, 2.5f)
 
     private fun resumeNow() {
-        if (playing || sentences.isEmpty()) return
-        speakFrom(index)
+        val c = current ?: return
+        start(c.position, index)
     }
 
     private fun pauseNow() {
@@ -252,22 +307,25 @@ class NeuralNarrator(
     }
 
     private fun skip(delta: Int) {
-        if (delta > 0 && !hasNext) return
-        if (delta < 0 && !hasPrev) return
-        val target = position + delta
+        val c = current ?: return
+        if (delta > 0 && !c.hasNext) return
+        if (delta < 0 && !c.hasPrev) return
+        val target = c.position + delta
         if (target < 1) return
-        load(target, 0)
+        start(target, 0)
     }
 
-    private fun onChapterFinished() {
-        if (hasNext && ReaderPrefs.ttsAutoNext.value) skip(+1) else stopNow()
+    /** The novel (or the chapter, without auto-next) ended on its own. */
+    private fun finished() {
+        SleepTimer.chapterEnded()
+        stopNow()
     }
 
     private fun stopNow() {
         playing = false
-        loadJob?.cancel(); loadJob = null
         stopAudio()
-        sentences = emptyList()
+        current = null
+        SleepTimer.narrationStopped()
         TtsController.clear()
     }
 
@@ -279,15 +337,16 @@ class NeuralNarrator(
     }
 
     private fun publish() {
+        val c = current ?: return
         val rate = ReaderPrefs.ttsRate.value.coerceAtLeast(0.1f)
-        val before = if (index in cumChars.indices) cumChars[index] else totalChars
+        val before = if (index in c.cumChars.indices) c.cumChars[index] else c.totalChars
         TtsController.update(
             TtsController.State(
                 active = true, playing = playing,
-                bookId = bookId, position = position, chapterTitle = chapterTitle,
-                sentenceIndex = index, sentenceCount = sentences.size,
+                bookId = bookId, position = c.position, chapterTitle = c.title,
+                sentenceIndex = index, sentenceCount = c.sentences.size,
                 elapsedSec = (before * SEC_PER_CHAR / rate).toInt(),
-                totalSec = (totalChars * SEC_PER_CHAR / rate).toInt(),
+                totalSec = (c.totalChars * SEC_PER_CHAR / rate).toInt(),
             ),
         )
     }

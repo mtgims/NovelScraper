@@ -172,6 +172,10 @@ kotlin {
                 implementation("org.ccil.cowan.tagsoup:tagsoup:1.2.1")
                 // SQLite over JDBC (bundles the native library) for the library database.
                 implementation("app.cash.sqldelight:sqlite-driver:2.4.0")
+                // Media keys, and the desktop's media widget, through MPRIS on D-Bus.
+                implementation("com.github.hypfvieh:dbus-java-core:5.1.1")
+                implementation("com.github.hypfvieh:dbus-java-transport-native-unixsocket:5.1.1")
+
                 // sherpa-onnx for the Kokoro/Piper voices: the JVM binding plus the
                 // native library for Linux x64 (downloaded by sherpaJvm/sherpaNativeLinux).
                 implementation(files(sherpaJvm.flatMap { it.dest }, sherpaNativeLinux.flatMap { it.dest }))
@@ -236,7 +240,7 @@ compose.desktop {
         nativeDistributions {
             // The JDK modules beyond Compose's defaults (from suggestRuntimeModules);
             // java.sql is the JDBC API the library database's SQLite driver needs.
-            modules("java.instrument", "java.sql", "jdk.unsupported")
+            modules("java.instrument", "java.sql", "jdk.security.auth", "jdk.unsupported")
             packageName = "novelscraper"
             packageVersion = appVersionName
             description = "Read and listen to web novels"
