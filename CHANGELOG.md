@@ -10,6 +10,8 @@ what's in that APK, so you can tell what's on your phone.
 
 ## 2026-09-22
 
+- **Linux app starts again (0.31.1).** The 0.31.0 AppImage closed on startup
+  (its bundled Java runtime was missing the database module).
 - **Local library and streaming (0.31.0).** The apps keep the library on the
   device and read novels straight from their sources, with Add to library and
   Download for offline reading and narration. The server account is optional;

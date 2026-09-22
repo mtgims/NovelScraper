@@ -32,6 +32,11 @@ crash report is unreadable without the matching one.
 
 ---
 
+## 0.31.1, 2026-09-22 · `versionCode 56`
+The Linux app starts again: 0.31.0's AppImage closed at once on startup, as its
+bundled Java runtime lacked the database module (`java.sql`) the new library
+needs. The Android app is unchanged.
+
 ## 0.31.0, 2026-09-22 · `versionCode 55`
 Your library now lives on the device, and an account is optional.
 - **Read from sources without a server.** Opening a novel in Browse shows the

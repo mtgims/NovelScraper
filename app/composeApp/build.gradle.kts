@@ -234,8 +234,9 @@ compose.desktop {
     application {
         mainClass = "com.novelscraper.app.MainKt"
         nativeDistributions {
-            // The JDK modules beyond Compose's defaults (from suggestRuntimeModules).
-            modules("java.instrument", "jdk.unsupported")
+            // The JDK modules beyond Compose's defaults (from suggestRuntimeModules);
+            // java.sql is the JDBC API the library database's SQLite driver needs.
+            modules("java.instrument", "java.sql", "jdk.unsupported")
             packageName = "novelscraper"
             packageVersion = appVersionName
             description = "Read and listen to web novels"
