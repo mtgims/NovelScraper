@@ -193,12 +193,12 @@ kotlin {
                 implementation("org.jogamp.jogl:jogl-all:2.5.0:natives-linux-amd64")
 
                 // Media keys, and the desktop's media widget, through MPRIS on D-Bus.
-                // The desktop's media keys (MPRIS) are a Linux protocol on a Unix
-                // socket; a Windows build has no use for either.
-                if (!buildingOnWindows) {
-                    implementation("com.github.hypfvieh:dbus-java-core:5.1.1")
-                    implementation("com.github.hypfvieh:dbus-java-transport-native-unixsocket:5.1.1")
-                }
+                // The desktop's media keys (MPRIS): a Linux protocol on a Unix
+                // socket. The library is carried everywhere because the code that
+                // speaks it is compiled everywhere; on Windows it is never
+                // connected to, and nothing loads the socket transport.
+                implementation("com.github.hypfvieh:dbus-java-core:5.1.1")
+                implementation("com.github.hypfvieh:dbus-java-transport-native-unixsocket:5.1.1")
 
                 // sherpa-onnx for the Kokoro/Piper voices: the JVM binding plus
                 // the native library for whichever platform is being built.
