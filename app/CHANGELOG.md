@@ -32,6 +32,13 @@ crash report is unreadable without the matching one.
 
 ---
 
+## 0.39.1, 2026-09-23 · `versionCode 79`
+- **Fixed: Browse, Progress, Stats and Settings crashed the app.** Taking the
+  Scrape destination out took the destinations that sat below it in the same
+  file with it, so the sidebar offered five places the app no longer knew how to
+  reach. They are back, and every one of them is now opened in turn before a
+  build goes out.
+
 ## 0.39.0, 2026-09-23 · `versionCode 78`
 Novels come from sources now, so the app stops asking for web addresses.
 - **Scrape is gone.** Pasting a novel's address and having the server go and

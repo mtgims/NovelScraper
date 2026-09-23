@@ -10,6 +10,8 @@ what's in that APK, so you can tell what's on your phone.
 
 ## 2026-09-23
 
+- **Fixed: Browse and three other screens crashed (0.39.1).** Removing Scrape
+  took the neighbouring destinations with it.
 - **Scrape removed; long novels split into parts (0.39.0).** Novels come from
   sources now, so pasting a web address for the server to fetch is gone, along
   with the NovelUpdates browser that fed it; a novel is kept with the Download

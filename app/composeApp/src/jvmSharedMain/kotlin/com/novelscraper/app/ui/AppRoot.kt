@@ -35,6 +35,7 @@ import androidx.navigation.compose.rememberNavController
 import androidx.navigation.navArgument
 import androidx.savedstate.read
 import com.novelscraper.app.data.LibraryPrefs
+import com.novelscraper.app.platform.encodeRouteArg
 import com.novelscraper.app.ui.browse.BrowseScreen
 import com.novelscraper.app.ui.browse.ExtensionsScreen
 import com.novelscraper.app.ui.browse.SourceScreen
@@ -166,6 +167,30 @@ private fun MainApp() {
                     onRegister = { u, p, i -> auth.register(u, p, i) { nav.popBackStack("login", inclusive = true) } },
                     onBack = { auth.clearError(); nav.popBackStack() },
                 )
+            }
+            composable("browse") {
+                BrowseScreen(
+                    onOpenSource = { id -> nav.navigate("source/${encodeRouteArg(id)}") },
+                    onManage = { nav.navigate("extensions") },
+                )
+            }
+            composable("extensions") { ExtensionsScreen(onBack = { nav.popBackStack() }) }
+            composable("source/{plugin}") { e ->
+                val plugin = e.arguments!!.read { getString("plugin") }
+                SourceScreen(
+                    pluginId = plugin,
+                    onBack = { nav.popBackStack() },
+                    onOpenNovel = { id -> nav.navigate("book/$id") },
+                )
+            }
+            composable("jobs") {
+                NeedsServer("Updates running on your NovelScraper server show here.", signIn) { ProgressScreen() }
+            }
+            composable("stats") {
+                NeedsServer("Reading stats come from your NovelScraper server for now.", signIn) { StatsScreen() }
+            }
+            composable("settings") {
+                SettingsScreen(onSignIn = signIn, onLogout = { scope.launch { Account.logout() } })
             }
             composable(
                 "book/{id}",
