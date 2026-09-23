@@ -3,6 +3,12 @@
 Newest first.
 
 
+## 0.39.3, 2026-09-24 · `versionCode 81`
+- **The phone app stays upright.** Laid on its side, a phone is wide enough in
+  density-independent pixels to cross the width where the layout switches to the
+  one meant for a window on a computer, sidebar and all. It is locked to
+  portrait now.
+
 ## 0.39.2, 2026-09-23 · `versionCode 80`
 - **Novels can be dragged again on a phone.** The right-click menu took the long
   press for itself, and a long press is how a finger picks a novel up. The menu

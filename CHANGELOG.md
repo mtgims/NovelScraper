@@ -11,6 +11,11 @@ since moved to a repository of their own; this one holds the apps.
 
 ---
 
+## 2026-09-24
+
+- **The Android app is portrait-only (0.39.3).** In landscape a phone is wide
+  enough to get the desktop layout, which is not what a phone wants.
+
 ## 2026-09-23
 
 - **Dragging works on phones again, and sync explains itself (0.39.2).** The
