@@ -46,8 +46,7 @@ source:
 
 - **Shared code first.** Anything not tied to a platform belongs in
   `jvmSharedMain`; `androidMain` and `desktopMain` hold only what genuinely
-  differs (audio sinks, file pickers, the browser, window handling). A platform
-  difference that leaks into shared code is a bug waiting for the other target.
+  differs (audio sinks, file pickers, the browser, window handling).
 - **Sentence indices are a contract.** The reader's highlighting, narration and
   the resume point all index the same flattened chapter text, and both platforms
   must produce it identically. The golden files under
@@ -107,9 +106,3 @@ novel for real.
 Be mindful of the sites: rate-limit requests, set sensible timeouts and retries,
 and write nothing that hammers a source. Requests go out from the reader's own
 device and connection, which belongs to a person, not to a crawler.
-
-## Writing
-
-Repository text is written impersonally, without addressing a reader as "you",
-and without em-dashes. Commit messages say what changed and why it was wrong
-before; they carry no tool or assistant attribution.
