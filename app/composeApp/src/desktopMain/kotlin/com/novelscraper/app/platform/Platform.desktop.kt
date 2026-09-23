@@ -21,9 +21,21 @@ actual fun settingsStore(name: String): KeyValueStore =
 
 actual val hasWebView: Boolean = false
 
-actual val browserUserAgent: String =
-    "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) " +
-        "Chrome/126.0.0.0 Safari/537.36"
+actual val browserCheckNote: String?
+    get() = SystemBrowser.binary?.let { "It opens in ${it.name}, the browser already on this computer." }
+        ?: "The first time on this computer, a browser is downloaded for it (about 500 MB)."
+
+// What the app's own requests claim. A clearance cookie is tied to the browser
+// that earned it, so this follows the browser actually being driven: the one on
+// this computer once it has said its name, remembered for the next run, and the
+// bundled Chromium's until then.
+private const val BUNDLED_UA =
+    "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36"
+
+actual val browserUserAgent: String
+    get() = SystemBrowser.userAgent
+        ?: settingsStore("site-checks").getString("user-agent", null)
+        ?: BUNDLED_UA
 
 actual val hasSystemTts: Boolean = false
 

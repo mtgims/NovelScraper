@@ -1,0 +1,47 @@
+package com.novelscraper.app.platform
+
+import kotlinx.coroutines.runBlocking
+import okhttp3.HttpUrl.Companion.toHttpUrl
+import kotlin.test.Test
+import kotlin.test.assertTrue
+
+/**
+ * Drives the browser on this machine against a real site. Off by default (it
+ * needs a display and the network); run it with
+ * `./gradlew :composeApp:desktopTest -PliveBrowser=https://example.com`.
+ */
+class LiveBrowserTest {
+
+    private val target: String? = System.getProperty("live.browser")?.takeIf { it.isNotBlank() }
+
+    @Test
+    fun loadsAPageInTheSystemBrowser() {
+        val url = target ?: return
+        println("browser: ${SystemBrowser.binary?.path}")
+        assertTrue(SystemBrowser.available, "no Chromium-family browser found on PATH")
+        runBlocking {
+            val page = SystemBrowser.load(url, patienceMs = 8_000, interactiveMs = 90_000, loadMs = 120_000)
+            println("user agent: ${SystemBrowser.userAgent}")
+            println("page: ${page?.length ?: -1} chars")
+            println(page?.take(400))
+            val cookies = SystemBrowser.cookies(url)
+            println("cookies: " + cookies.joinToString { "${it.name}@${it.domain}" })
+            if (page == null) {
+                val stuck = SystemBrowser.currentPage()
+                println("--- stuck on (${stuck?.length ?: -1} chars) ---")
+                println(stuck?.take(1200))
+            }
+            // What the app's own requests would now get, carrying what the browser earned.
+            val jar = com.novelscraper.app.extensions.BrowserCookieJar()
+            jar.acceptFromBrowser(url.toHttpUrl(), cookies)
+            val client = okhttp3.OkHttpClient.Builder().cookieJar(jar).build()
+            client.newCall(
+                okhttp3.Request.Builder().url(url)
+                    .header("User-Agent", SystemBrowser.userAgent.orEmpty())
+                    .build(),
+            ).execute().use { r -> println("plain request with that clearance: HTTP ${r.code}") }
+            SystemBrowser.dispose()
+            assertTrue(page != null && page.length > 200, "nothing came back from the browser")
+        }
+    }
+}

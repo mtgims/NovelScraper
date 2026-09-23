@@ -93,7 +93,7 @@ object Extensions {
         prefs = settingsStore("extensions")
         dataPrefs = settingsStore("plugin-data")
         dir = File(appFilesDir(), "extensions")
-        cookies = BrowserCookieJar()
+        cookies = BrowserCookieJar(settingsStore("site-cookies"))
         http = base.newBuilder()
             .cookieJar(cookies)
             .connectTimeout(20, TimeUnit.SECONDS)

@@ -36,6 +36,11 @@ expect fun settingsStore(name: String): KeyValueStore
  *  and rendering JS-only pages for the scrape relay. */
 expect val hasWebView: Boolean
 
+/** A line about how a browser check will be answered on this device (which
+ *  browser opens, or that one has to be fetched first), or null if there is
+ *  nothing worth saying. */
+expect val browserCheckNote: String?
+
 /** The platform has its own speech engine with installed voices (Android
  *  TextToSpeech). Without one, narration uses the downloadable Kokoro/Piper models. */
 expect val hasSystemTts: Boolean

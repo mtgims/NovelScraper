@@ -69,10 +69,24 @@ actual fun settingsStore(name: String): KeyValueStore =
 
 actual val hasWebView: Boolean = true
 
-// A believable mobile Chrome, so requests from a phone's IP look like a phone.
-actual val browserUserAgent: String =
-    "Mozilla/5.0 (Linux; Android 14; K) AppleWebKit/537.36 (KHTML, like Gecko) " +
+// The phone's own WebView does it; nothing to explain.
+actual val browserCheckNote: String? = null
+
+// What this phone's own WebView calls itself, which is the browser the app
+// actually renders pages with. A fixed string goes stale: claiming a Chrome from
+// two years ago while running a current engine is a mismatch a browser check can
+// see, and old versions are held against you. The "wv" marker is dropped so
+// sites serve their ordinary pages rather than a stripped-down one.
+private val defaultUserAgent: String by lazy {
+    runCatching { android.webkit.WebSettings.getDefaultUserAgent(appContext) }
+        .getOrNull()
+        ?.replace("; wv)", ")")
+        ?.takeIf { it.isNotBlank() }
+        ?: "Mozilla/5.0 (Linux; Android 14; K) AppleWebKit/537.36 (KHTML, like Gecko) " +
         "Chrome/126.0.0.0 Mobile Safari/537.36"
+}
+
+actual val browserUserAgent: String get() = defaultUserAgent
 
 actual val hasSystemTts: Boolean = true
 

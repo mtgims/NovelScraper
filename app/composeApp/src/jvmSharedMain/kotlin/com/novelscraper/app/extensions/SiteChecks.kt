@@ -32,16 +32,31 @@ object SiteChecks {
     }
 
     // Sites that refuse this app's plain requests, so their pages are loaded in
-    // the browser from the start. Kept for the run; a restart tries plainly again.
-    private val browserHosts = java.util.Collections.synchronizedSet(HashSet<String>())
+    // the browser from the start. Written down, because a site that wanted a
+    // browser yesterday wants one today, and finding that out again costs a
+    // refused request and a page load every time the app starts.
+    private val store by lazy { com.novelscraper.app.platform.settingsStore("site-checks") }
+    private val browserHosts: MutableSet<String> by lazy {
+        java.util.Collections.synchronizedSet(HashSet(store.getStringSet("browser-hosts").orEmpty()))
+    }
 
     /** Remember that this site only answers a real browser. */
     fun needsBrowser(url: String) {
-        host(url)?.let { browserHosts.add(it) }
+        host(url)?.let { if (browserHosts.add(it)) save() }
     }
 
     /** True if this site's pages should go straight through the browser. */
     fun wantsBrowser(url: String): Boolean = host(url)?.let { it in browserHosts } == true
+
+    private fun save() {
+        store.putStringSet("browser-hosts", synchronized(browserHosts) { HashSet(browserHosts) })
+    }
+
+    /** This site answers plain requests again (its guard was lifted, or the one
+     *  page that needed a browser was an accident): stop routing it the long way. */
+    fun plainAgain(url: String) {
+        host(url)?.let { if (browserHosts.remove(it)) save() }
+    }
 
     private fun host(url: String): String? =
         runCatching { java.net.URI(url).host }.getOrNull()?.lowercase()

@@ -19,9 +19,10 @@ import java.awt.Dimension
 import javax.swing.JFrame
 import javax.swing.WindowConstants
 
-/** The desktop app carries Chromium, but only once it has been fetched. */
+/** The browser on this computer, or the one the app fetched for itself. */
 actual val canFetchThroughBrowser: Boolean
-    get() = browserReady || java.io.File(appFilesDir(), "browser/install.lock").exists()
+    get() = SystemBrowser.available || browserReady ||
+        java.io.File(appFilesDir(), "browser/install.lock").exists()
 
 private val lock = Mutex()
 private const val LOAD_MS = 90_000L
@@ -49,6 +50,17 @@ private var frame: JFrame? = null
  * through. One page at a time, so a chapter download doesn't open twelve.
  */
 actual suspend fun fetchThroughBrowser(url: String): String? = lock.withLock {
+    // The reader's own browser first: it is current, it has the graphics card
+    // behind it, and checks that turn the bundled one away pass in it.
+    if (SystemBrowser.available) {
+        val page = SystemBrowser.load(url, PATIENCE_MS, INTERACTIVE_MS, LOAD_MS)
+        if (page != null) {
+            keepSystemCookies(url)
+            Log.i(TAG, "$url -> ${page.length} chars (${SystemBrowser.binary?.name})")
+            return page
+        }
+        Log.i(TAG, "the system browser couldn't be used; falling back to the bundled one")
+    }
     if (!ensureSiteCheckBrowser { }) return null
     val view = open() ?: return null
     withContext(Dispatchers.Main) { view.loadURL(url) }
@@ -81,6 +93,15 @@ actual suspend fun fetchThroughBrowser(url: String): String? = lock.withLock {
     } finally {
         if (shown) withContext(Dispatchers.Main) { hideFrame() }
     }
+}
+
+/** The same, for the browser this computer already had. */
+private suspend fun keepSystemCookies(url: String) {
+    val http = url.toHttpUrlOrNull() ?: return
+    val cookies = runCatching { SystemBrowser.cookies(url) }.getOrDefault(emptyList())
+    if (cookies.isEmpty()) return
+    Log.i(TAG, "kept ${cookies.size} cookies for ${http.host}")
+    Extensions.cookies.acceptFromBrowser(http, cookies)
 }
 
 /** Give what the browser collected to the extensions' cookie jar. */
@@ -136,6 +157,7 @@ private suspend fun source(browser: CefBrowser): String? {
 
 /** Let go of the browser when the app closes. */
 internal fun disposeFetchBrowser() {
+    runCatching { SystemBrowser.dispose() }
     runCatching { frame?.dispose() }
     runCatching { browser?.close(true) }
     runCatching { client?.dispose() }

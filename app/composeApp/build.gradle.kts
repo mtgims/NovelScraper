@@ -240,7 +240,16 @@ tasks.withType<Test>().configureEach {
     // LivePluginTest (real sites) runs only with -PlivePlugins=<id>[,<id>...].
     systemProperty("live.plugins", providers.gradleProperty("livePlugins").getOrElse(""))
     systemProperty("live.repo", providers.gradleProperty("liveRepo").getOrElse(""))
-    testLogging { if (providers.gradleProperty("livePlugins").isPresent) showStandardStreams = true }
+    // LiveBrowserTest drives the browser on this machine; needs a display.
+    systemProperty("live.browser", providers.gradleProperty("liveBrowser").getOrElse(""))
+    // Everything else runs without one: a test must never open a window, nor go
+    // looking for a site's check in the browser the developer happens to have.
+    systemProperty("novelscraper.tests", "true")
+    testLogging {
+        if (providers.gradleProperty("livePlugins").isPresent ||
+            providers.gradleProperty("liveBrowser").isPresent
+        ) showStandardStreams = true
+    }
 }
 
 // The desktop app (Linux; Windows later). `./gradlew :composeApp:run` starts it.

@@ -8,6 +8,7 @@ import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.rememberCoroutineScope
 import com.novelscraper.app.extensions.SiteChecks
+import com.novelscraper.app.platform.browserCheckNote
 import com.novelscraper.app.platform.showToast
 import kotlinx.coroutines.launch
 
@@ -32,8 +33,7 @@ fun SiteCheckPrompt() {
                 status ?: if (SiteChecks.possible) {
                     "The site wants to see a browser before it hands over chapters, and no " +
                         "amount of cookies changes that. The app can open one, and from then on " +
-                        "it loads this site's pages through it. The first time on this computer, " +
-                        "the browser is downloaded (about 500 MB)."
+                        "it loads this site's pages through it. " + browserCheckNote.orEmpty()
                 } else {
                     "The site wants to see a browser before it hands over chapters, which this " +
                         "device can't do. Read this novel on the phone, or import it as an EPUB."

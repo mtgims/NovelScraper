@@ -10,6 +10,13 @@ what's in that APK, so you can tell what's on your phone.
 
 ## 2026-09-23
 
+- **Browser checks use the browser you already have (0.35.0).** The Linux app
+  drives the installed Chromium, Brave, Chrome, Edge or Vivaldi over its
+  debugging connection, in a profile of its own, instead of the two-year-old
+  Chromium it carried: current, with the graphics card behind it, which is what
+  a check looks for. Ranobes comes through, Scribble Hub gets clearance the old
+  one never did, and what a check earns is kept between runs. Android now sends
+  its own WebView's user agent rather than a fixed, stale one.
 - **Fixed: Ranobes and Novel Hall (0.34.3).** Ranobes is guarded by DDoS-Guard,
   whose 503 the app read as a dead site rather than a check to pass; it now
   loads through the browser like a Cloudflare site. Novel Hall was showing a

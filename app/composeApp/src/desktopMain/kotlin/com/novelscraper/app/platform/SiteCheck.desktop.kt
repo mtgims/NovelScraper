@@ -46,6 +46,22 @@ actual suspend fun passSiteCheck(url: String, onStatus: (String) -> Unit): Boole
         onStatus("The browser needs an X display (XWayland on a Wayland desktop).")
         return false
     }
+    // The reader's own browser, when there is one: nothing to download, a
+    // current version, and the graphics a check expects to find.
+    if (SystemBrowser.available) {
+        onStatus("Opening the site in ${SystemBrowser.binary?.name ?: "your browser"}…")
+        val page = SystemBrowser.load(url, patienceMs = 3_000, interactiveMs = WAIT_MS, loadMs = 60_000) {
+            onStatus("Answer the check in the window that just opened.")
+        }
+        val cookies = runCatching { SystemBrowser.cookies(url) }.getOrDefault(emptyList())
+        if (page != null && cookies.isNotEmpty()) {
+            Log.i(TAG, "system browser check: " + cookies.joinToString { "${'$'}{it.name}@${'$'}{it.domain}" })
+            Extensions.cookies.acceptFromBrowser(http, cookies)
+            onStatus("Done.")
+            return true
+        }
+        Log.i(TAG, "the system browser didn't get through; trying the bundled one")
+    }
     if (!ensureBrowser(onStatus)) return false
 
     onStatus("Opening the site…")
@@ -204,6 +220,6 @@ internal suspend fun readCookies(url: String): List<BrowserCookieJar.BrowserCook
 
 /** Let go of the browser when the app closes. */
 fun disposeSiteCheckBrowser() {
-    disposeFetchBrowser()
+    disposeFetchBrowser()   // also closes the system browser, if one was driven
     if (browserReady) runCatching { KCEF.disposeBlocking() }
 }

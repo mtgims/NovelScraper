@@ -32,6 +32,29 @@ crash report is unreadable without the matching one.
 
 ---
 
+## 0.35.0, 2026-09-23 · `versionCode 63`
+Browser checks, answered by the browser you already have.
+- **Your own browser does the check now.** On Linux the app drives the Chromium,
+  Brave, Chrome, Edge or Vivaldi already installed, over its debugging
+  connection, in a profile of the app's own under the app's data folder: your
+  real browsing is untouched. The window stays parked off-screen while a site
+  behaves, and comes to the front only when a check wants a person. The browser
+  the app used to carry is Chrome 126, from two years ago, and a browser that
+  old is held against you by exactly the checks it has to pass; it is still
+  there as a fallback for machines with no browser of their own.
+- **Ranobes comes through.** Its guard hands over after one pass in a real
+  browser, and the cookies it leaves make the requests after it ordinary ones.
+  Scribble Hub now gets the clearance the carried browser never did, though its
+  pages keep going through the browser, because Cloudflare ties that clearance
+  to the browser that earned it.
+- **A check passed stays passed.** What a check leaves behind is written down
+  and read back on the next run, along with which sites need a browser at all,
+  so a site that let you in yesterday doesn't ask again today.
+- **The phone tells the truth about itself.** Android used to claim a fixed
+  Chrome 126 while running whatever WebView the phone has; it now says what it
+  actually is, which is one less thing for a check to hold against it.
+- Nothing is downloaded for a check when a browser is already on the machine.
+
 ## 0.34.3, 2026-09-23 · `versionCode 62`
 Two sources that wouldn't behave.
 - **Ranobes loads again.** It is guarded by DDoS-Guard rather than Cloudflare,
