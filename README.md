@@ -1,13 +1,6 @@
 # NovelScraper
 
-A web-novel reader for Android and Linux. It keeps a library on the device,
-reads novels straight from their sites through extensions, and narrates chapters
-out loud with neural voices that run locally, with the screen off.
-
-It exists because serialised fiction is mostly published on sites that are, to
-put it politely, hostile to reading: ads, broken pagination, nothing that
-remembers where a chapter was left, and nothing kept once a site disappears.
-This keeps its own copy and gets out of the way.
+A novel downloader, reader and listener for all (still working on this one) devices. 
 
 ---
 
@@ -63,23 +56,13 @@ collection.
 Keys in the reader: ←/→ chapters, Space/Page Down and Shift+Space/Page Up to
 turn the page, P to play or pause, Ctrl +/- font size, Esc back.
 
-## An optional server
+## Sync
 
-None of the above needs an account. There is a companion server that adds one,
-and with it sync between devices (the library, its order, ratings, collections,
-read chapters and the reading position to the sentence), scraping a novel by its
-web address, EPUB import and export, reading statistics, and a web reader. It
-lives in its own repository and is not required to use the apps: signed out, the
-app is a local library that reads from its sources.
+The app doesn't need an account. Tough if you create one you can sync between devices.
 
-## A thing to expect: Cloudflare
+## Cloudflare
 
-Several sources answer a home connection and refuse a datacentre one, because
-Cloudflare blocks hosting-provider address ranges by reputation, and no amount
-of header fiddling changes that. The apps fetch from the device's own
-connection, which is usually a home one, so this mostly affects a server. A VPN
-exit can also be judged that way: a source may then ask for a check that has to
-be answered by hand.
+Several sources are protected by Cloudflare and can block you more than needed if you are using a VPN. You can always pass the captcha in the webview browser.
 
 ## Being reasonable about this
 
