@@ -1,32 +1,5 @@
-# Scraper runtime data — regenerable caches (data/cache, data/audio), generated
-# EPUBs, covers, and the SQLite db. Bounded by the LRU cache pruner at runtime.
-# NOTE: anchored to the repo root — an unanchored `data/` also matched the
-# Android app's `.../com/novelscraper/app/data/` source package and silently
-# left it untracked.
-/data/
-backend/data/
-
-# TTS model files (large, downloaded on first use)
-backend/models/
-
-# Python
-__pycache__/
-*.py[cod]
-.venv/
-venv/
-*.egg-info/
-
-# Node / frontend (added later)
+# Node, for the plugin host bundle under app/composeApp/pluginHost.
 node_modules/
-.next/
-
-# NOTE: frontend/stubs/ is intentionally TRACKED (not ignored). It holds the
-# empty onnxruntime-node stub that the package.json "overrides" points at via
-# file:stubs/onnxruntime-node; without it a fresh `npm ci` can't resolve the
-# dependency and the build fails.
-
-# deploy secrets: .env holds the domain and the admin password
-.env
 
 # local tooling scratch: editor/assistant config and worktrees. Never commit.
 .claude/

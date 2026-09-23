@@ -2,9 +2,12 @@
 
 What changed and when, newest first. Dates are when the work landed.
 
-The Android app has its own version numbers on top of this, see
-[`app/CHANGELOG.md`](app/CHANGELOG.md), which maps each `versionCode` to
-what's in that APK, so a build on a phone can be identified.
+The apps carry their own version numbers, see
+[`app/CHANGELOG.md`](app/CHANGELOG.md), which maps each `versionCode` to what
+is in that build.
+
+Entries before 2026-09-23 also cover the server and its web reader, which have
+since moved to a repository of their own; this one holds the apps.
 
 ---
 

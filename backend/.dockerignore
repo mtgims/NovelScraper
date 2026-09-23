@@ -1,8 +1,0 @@
-.venv
-data
-models
-tests
-__pycache__
-**/__pycache__
-*.pyc
-requirements-gpu.txt
