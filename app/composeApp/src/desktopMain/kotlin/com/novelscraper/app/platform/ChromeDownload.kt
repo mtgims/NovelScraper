@@ -40,10 +40,14 @@ object ChromeDownload {
 
     private val home = File(appFilesDir(), "chrome")
 
+    /** What Google calls this platform, and where the program sits inside. */
+    private val platform = if (Os.isWindows) "win64" else "linux64"
+    private val inside = if (Os.isWindows) "chrome-win64/chrome.exe" else "chrome-linux64/chrome"
+
     /** The downloaded browser, if one is already here. */
     val installed: File?
         get() = home.listFiles().orEmpty()
-            .mapNotNull { File(it, "chrome-linux64/chrome").takeIf { f -> f.canExecute() } }
+            .mapNotNull { File(it, inside).takeIf { f -> f.canExecute() } }
             .maxByOrNull { it.parentFile.parentFile.name }
 
     /**
@@ -65,7 +69,7 @@ object ChromeDownload {
             onStatus("Unpacking the browser…")
             unzip(zip, target)
             zip.delete()
-            val chrome = File(target, "chrome-linux64/chrome")
+            val chrome = File(target, inside)
             if (!chrome.isFile) {
                 onStatus("The browser didn't unpack as expected.")
                 return@withContext null
@@ -93,7 +97,7 @@ object ChromeDownload {
         }.getOrNull() ?: return null
         val version = stable["version"]?.jsonPrimitive?.contentOrNull ?: return null
         val url = stable["downloads"]?.jsonObject?.get("chrome")?.jsonArray
-            ?.firstOrNull { it.jsonObject["platform"]?.jsonPrimitive?.contentOrNull == "linux64" }
+            ?.firstOrNull { it.jsonObject["platform"]?.jsonPrimitive?.contentOrNull == platform }
             ?.jsonObject?.get("url")?.jsonPrimitive?.contentOrNull ?: return null
         return version to url
     }

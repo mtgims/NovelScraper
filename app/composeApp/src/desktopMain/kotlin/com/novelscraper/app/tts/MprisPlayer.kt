@@ -1,6 +1,7 @@
 package com.novelscraper.app.tts
 
 import com.novelscraper.app.platform.Log
+import com.novelscraper.app.platform.Os
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
@@ -51,6 +52,10 @@ object MprisPlayer {
 
     /** Connect and publish; safe to call once at startup. */
     fun start(onRaise: () -> Unit = {}, onQuit: () -> Unit = {}) {
+        // MPRIS is a Linux desktop's protocol, carried on a session bus that
+        // other systems don't have. Elsewhere the media keys are somebody else's
+        // to handle and this does nothing rather than failing loudly.
+        if (!Os.isLinux) return
         scope.launch {
             try {
                 val conn = DBusConnectionBuilder.forSessionBus().build()

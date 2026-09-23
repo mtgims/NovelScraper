@@ -11,10 +11,14 @@ import java.nio.file.StandardCopyOption
 actual val appVersion: String
     get() = System.getProperty("jpackage.app-version")?.takeIf { it.isNotBlank() } ?: "0.0.0"
 
-actual val updateAssetName: String = "novelscraper-x86_64.AppImage"
+actual val updateAssetName: String =
+    if (Os.isWindows) "novelscraper-setup.exe" else "novelscraper-x86_64.AppImage"
 
 /**
- * Replace the AppImage this app is running from, then start the new one and
+ * Put a new build in place: an installer on Windows, the AppImage itself on
+ * Linux.
+ *
+ * On Linux it replaces the file this app is running from, then start the new one and
  * stand down.
  *
  * The running file is a squashfs the app has mounted and is reading its own
@@ -23,6 +27,19 @@ actual val updateAssetName: String = "novelscraper-x86_64.AppImage"
  * still needs them, and only the name now points at the new one.
  */
 actual suspend fun installUpdate(file: File): Boolean = withContext(Dispatchers.IO) {
+    // Windows ships an installer, and an installer is what replaces the app:
+    // it is started, it asks what it asks, and this process steps aside so the
+    // files it is replacing are not in use.
+    if (Os.isWindows) {
+        return@withContext try {
+            ProcessBuilder(file.absolutePath).start()
+            Thread.sleep(1_200)
+            kotlin.system.exitProcess(0)
+        } catch (e: Exception) {
+            Log.w("Updates", "couldn't start the installer: ${e.message}")
+            false
+        }
+    }
     val running = System.getenv("APPIMAGE")?.let { File(it) }
     if (running == null || !running.isFile) {
         Log.w("Updates", "not running from an AppImage; opening the folder instead")

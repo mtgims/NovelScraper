@@ -52,6 +52,16 @@ val sherpaNativeLinux = tasks.register<DownloadFile>("sherpaNativeLinux") {
     sha256.set("30c93b59381113f9c20aedbbf9fc1ad399158f6bc03dddc0f8934a6e28e069ba")
     dest.set(layout.buildDirectory.file("sherpa/sherpa-onnx-native-lib-linux-x64-$sherpaVersion.jar"))
 }
+val sherpaNativeWindows = tasks.register<DownloadFile>("sherpaNativeWindows") {
+    url.set("https://github.com/k2-fsa/sherpa-onnx/releases/download/v$sherpaVersion/sherpa-onnx-native-lib-win-x64-$sherpaVersion.jar")
+    sha256.set("33fbdbd5410e9ba9bdda94aa164ec8f7825bb49246420d8ce9bdd88219d97039")
+    dest.set(layout.buildDirectory.file("sherpa/sherpa-onnx-native-lib-win-x64-$sherpaVersion.jar"))
+}
+
+// The speech library's native part is per platform, and jpackage builds for the
+// machine it runs on, so the build takes the one this machine is.
+val buildingOnWindows = System.getProperty("os.name").startsWith("Windows", ignoreCase = true)
+val sherpaNative = if (buildingOnWindows) sherpaNativeWindows else sherpaNativeLinux
 
 // The desktop app uses the same font files as Android, copied at build time.
 val desktopFonts = tasks.register<Sync>("desktopFonts") {
@@ -183,12 +193,16 @@ kotlin {
                 implementation("org.jogamp.jogl:jogl-all:2.5.0:natives-linux-amd64")
 
                 // Media keys, and the desktop's media widget, through MPRIS on D-Bus.
-                implementation("com.github.hypfvieh:dbus-java-core:5.1.1")
-                implementation("com.github.hypfvieh:dbus-java-transport-native-unixsocket:5.1.1")
+                // The desktop's media keys (MPRIS) are a Linux protocol on a Unix
+                // socket; a Windows build has no use for either.
+                if (!buildingOnWindows) {
+                    implementation("com.github.hypfvieh:dbus-java-core:5.1.1")
+                    implementation("com.github.hypfvieh:dbus-java-transport-native-unixsocket:5.1.1")
+                }
 
-                // sherpa-onnx for the Kokoro/Piper voices: the JVM binding plus the
-                // native library for Linux x64 (downloaded by sherpaJvm/sherpaNativeLinux).
-                implementation(files(sherpaJvm.flatMap { it.dest }, sherpaNativeLinux.flatMap { it.dest }))
+                // sherpa-onnx for the Kokoro/Piper voices: the JVM binding plus
+                // the native library for whichever platform is being built.
+                implementation(files(sherpaJvm.flatMap { it.dest }, sherpaNative.flatMap { it.dest }))
             }
         }
         getByName("desktopTest") {
@@ -261,7 +275,7 @@ tasks.withType<Test>().configureEach {
     }
 }
 
-// The desktop app (Linux; Windows later). `./gradlew :composeApp:run` starts it.
+// The desktop app, Linux and Windows. `./gradlew :composeApp:run` starts it.
 compose.desktop {
     application {
         mainClass = "com.novelscraper.app.MainKt"
@@ -269,12 +283,26 @@ compose.desktop {
             // The JDK modules beyond Compose's defaults (from suggestRuntimeModules);
             // java.sql is the JDBC API the library database's SQLite driver needs.
             modules("java.instrument", "java.management", "java.sql", "jdk.security.auth", "jdk.unsupported")
+            targetFormats(org.jetbrains.compose.desktop.application.dsl.TargetFormat.Exe)
             packageName = "novelscraper"
             packageVersion = appVersionName
             description = "Read and listen to web novels"
             vendor = "mtgims"
             linux {
                 iconFile.set(project.file("src/desktopMain/resources/icon.png"))
+            }
+            windows {
+                iconFile.set(project.file("src/desktopMain/resources/icon.ico"))
+                // A per-user install, so it needs no administrator, and a shortcut
+                // where a Windows program is looked for.
+                perUserInstall = true
+                menu = true
+                menuGroup = "NovelScraper"
+                shortcut = true
+                dirChooser = true
+                // Fixed, and never changed again: Windows uses it to know that a
+                // new installer replaces this program rather than adding another.
+                upgradeUuid = "6b4a1f4e-9a5a-4a1e-9a0e-4f1c3f0a52d7"
             }
         }
     }

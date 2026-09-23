@@ -1,0 +1,67 @@
+name: Build
+
+# The Windows installer has to be built on Windows: jpackage wraps the platform's
+# own runtime and cannot cross-compile. This builds both desktop packages, on the
+# machine each one needs, and attaches them to a release when one is tagged.
+
+on:
+  push:
+    tags: ["v*"]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  windows:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "21"
+      - uses: gradle/actions/setup-gradle@v4
+      - name: Build the installer
+        working-directory: app
+        run: ./gradlew :composeApp:packageExe --no-daemon
+      - name: Name it as the app expects
+        working-directory: app
+        shell: pwsh
+        run: |
+          $exe = Get-ChildItem -Recurse -Filter *.exe composeApp/build/compose/binaries | Select-Object -First 1
+          if (-not $exe) { throw "no installer was produced" }
+          New-Item -ItemType Directory -Force -Path artifacts | Out-Null
+          Copy-Item $exe.FullName artifacts/novelscraper-setup.exe
+      - uses: actions/upload-artifact@v4
+        with:
+          name: novelscraper-setup
+          path: app/artifacts/novelscraper-setup.exe
+      - name: Attach it to the release
+        if: startsWith(github.ref, 'refs/tags/v')
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh release upload $env:GITHUB_REF_NAME app/artifacts/novelscraper-setup.exe --clobber
+
+  linux:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "21"
+      - uses: gradle/actions/setup-gradle@v4
+      - name: Build the AppImage
+        working-directory: app
+        run: ./gradlew :composeApp:packageLinuxAppImage --no-daemon
+      - uses: actions/upload-artifact@v4
+        with:
+          name: novelscraper-appimage
+          path: novelscraper-x86_64.AppImage
+      - name: Attach it to the release
+        if: startsWith(github.ref, 'refs/tags/v')
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh release upload "$GITHUB_REF_NAME" novelscraper-x86_64.AppImage --clobber

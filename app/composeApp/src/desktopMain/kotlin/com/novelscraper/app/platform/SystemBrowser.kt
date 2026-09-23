@@ -50,10 +50,26 @@ object SystemBrowser {
     private val json = Json { ignoreUnknownKeys = true }
 
     /** Chromium-family browsers, best first. Firefox can't be driven this way. */
-    private val CANDIDATES = listOf(
+    private val CANDIDATES = if (Os.isWindows) listOf(
+        "chrome.exe", "msedge.exe", "brave.exe", "vivaldi.exe", "chromium.exe",
+    ) else listOf(
         "chromium", "chromium-browser", "google-chrome-stable", "google-chrome",
         "brave", "brave-browser", "microsoft-edge", "microsoft-edge-stable", "vivaldi-stable", "vivaldi",
     )
+
+    /** Where Windows keeps browsers, which is not on the PATH. */
+    private val WINDOWS_DIRS: List<String> by lazy {
+        val roots = listOfNotNull(
+            System.getenv("ProgramFiles"),
+            System.getenv("ProgramFiles(x86)"),
+            System.getenv("LOCALAPPDATA"),
+        )
+        val vendors = listOf(
+            "Google/Chrome/Application", "Microsoft/Edge/Application",
+            "BraveSoftware/Brave-Browser/Application", "Vivaldi/Application", "Chromium/Application",
+        )
+        roots.flatMap { root -> vendors.map { "$root/$it" } }
+    }
 
     /** The browser to drive: whatever `NOVELSCRAPER_BROWSER` names, else the
      *  first one on the PATH, else one the app fetched for itself. */
@@ -504,6 +520,10 @@ object SystemBrowser {
      * They are ours by definition: nothing else is given that folder.
      */
     private fun sweepStrays(profile: File) {
+        // Reading other processes' command lines is /proc, which is Linux's.
+        // Elsewhere a stray browser is left alone: it holds the profile, and the
+        // next start adopts it rather than fighting it.
+        if (!Os.isLinux) return
         val mine = process?.pid()
         val marker = "--user-data-dir=${profile.absolutePath}"
         val found = runCatching {
@@ -534,10 +554,10 @@ object SystemBrowser {
         return CANDIDATES.firstNotNullOfOrNull { onPath(it) }
     }
 
-    private fun onPath(name: String): File? =
-        System.getenv("PATH").orEmpty().split(File.pathSeparator)
-            .map { File(it, name) }
-            .firstOrNull { it.canExecute() }
+    private fun onPath(name: String): File? {
+        val dirs = System.getenv("PATH").orEmpty().split(File.pathSeparator) + WINDOWS_DIRS
+        return dirs.map { File(it, name) }.firstOrNull { it.canExecute() }
+    }
 
     /** Start the browser and attach to a tab, or say it couldn't be done. */
     @Synchronized
