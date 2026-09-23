@@ -32,6 +32,27 @@ crash report is unreadable without the matching one.
 
 ---
 
+## 0.37.2, 2026-09-23 · `versionCode 69`
+Sources behind a browser, at something like normal speed.
+- **Pages are asked for from inside the site, not loaded one by one.** Landing
+  on a site cost a whole page load, drawn and waited on, for every single
+  request: a listing, a search, each chapter. Now one page of the site is opened
+  per session, and everything after it is asked for from inside that page, the
+  way the site's own scripts ask. A chapter went from about five seconds to
+  about one; Novel Hall's search went from timing out at ninety seconds to
+  answering in a couple.
+- **Pages a site only hands to a browser going to them** (Scribble Hub's chapter
+  pages refuse anything else) are loaded in a frame of the page instead, which
+  is still a browser going to a page, and still beats loading the window.
+- **A site that stops refusing us goes back to plain requests.** Being written
+  down as needing a browser was for ever; now a host gets a plain request again
+  every half hour, and is taken off the list the moment one works.
+- **The check window is minimised, not shoved off-screen.** Where a window sits
+  is a request a desktop can refuse, and a Wayland one always does, which is why
+  the browser stayed on screen after a check. Minimising is honoured everywhere.
+- Fixed: a site answering on both `example.com` and `www.example.com` was
+  treated as two sites, so every request to it took the slow way round.
+
 ## 0.37.1, 2026-09-23 · `versionCode 68`
 - **The app stops steering your browser window.** When it finds a browser
   already running on its own profile (one you opened yourself, or one left by a

@@ -225,6 +225,9 @@ class PluginRuntime private constructor(
                     SiteChecks.needsBrowser(url)
                     viaBrowser(url, method, headers, r["body"] as? JsonObject)?.let { return@withContext it }
                     challengedUrl = url
+                } else if (resp.isSuccessful) {
+                    // It answered us plainly: it no longer needs the long way round.
+                    SiteChecks.plainAgain(url)
                 }
                 val id = responseSeq.incrementAndGet()
                 synchronized(responseBodies) { responseBodies[id] = bytes }

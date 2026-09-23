@@ -49,13 +49,24 @@ class LivePluginTest {
                     val popular = p.popular(1)
                     println("[$id] popular: ${popular.size} novels, first: ${popular.firstOrNull()}")
                     assertTrue(popular.isNotEmpty(), "$id: empty popular list")
+                    // Latest is its own page too, and the app offers it beside
+                    // popular, so a source with a broken one is half a source.
+                    delay(1500)
+                    val latest = p.popular(1, latest = true)
+                    println("[$id] latest: ${latest.size} novels, first: ${latest.firstOrNull()?.name}")
+                    assertTrue(latest.isNotEmpty(), "$id: empty latest list")
                     // Searching is a different page on most sites, and a different
                     // way of being refused, so it is worth its own look.
                     System.getProperty("live.search").orEmpty().takeIf { it.isNotBlank() }?.let { term ->
                         delay(1500)
                         val found = p.search(term, 1)
-                        println("[$id] search '$term': ${found.size} novels, first: ${found.firstOrNull()}")
+                        println("[$id] search '$term': ${found.size} novels, first: ${found.firstOrNull()?.name}")
                         assertTrue(found.isNotEmpty(), "$id: search found nothing")
+                        // A second page proves the plugin pages its search at all,
+                        // which is easy to get wrong and hard to notice.
+                        delay(1500)
+                        val second = p.search(term, 2)
+                        println("[$id] search page 2: ${second.size} novels, first: ${second.firstOrNull()?.name}")
                     }
                     // Try up to three novels: one may have locked or removed chapters.
                     var lastError: Throwable? = null

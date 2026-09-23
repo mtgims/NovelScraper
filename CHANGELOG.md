@@ -10,6 +10,12 @@ what's in that APK, so you can tell what's on your phone.
 
 ## 2026-09-23
 
+- **Sources behind a browser at normal speed (0.37.2).** Every request used to
+  load a whole page in the browser and wait for it to settle. Now one page of
+  the site is opened per session and the rest are asked for from inside it, as
+  the site's own scripts do: a chapter takes about a second instead of five, and
+  Novel Hall's search answers instead of timing out. The check window is also
+  minimised rather than moved off-screen, which a Wayland desktop ignored.
 - **Scribble Hub: the site's own ranking, its own search, and no more steering
   your browser window (0.37.1).** The source listed highest-rated novels and
   called them popular; it now shows the ranking the site itself shows (Rising

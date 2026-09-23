@@ -45,8 +45,25 @@ object SiteChecks {
         host(url)?.let { if (browserHosts.add(it)) save() }
     }
 
-    /** True if this site's pages should go straight through the browser. */
-    fun wantsBrowser(url: String): Boolean = host(url)?.let { it in browserHosts } == true
+    // When each host was last given another chance at a plain request.
+    private val triedPlainly = java.util.Collections.synchronizedMap(HashMap<String, Long>())
+    private const val TRY_PLAIN_AGAIN_MS = 30 * 60_000L
+
+    /** True if this site's pages should go straight through the browser.
+     *
+     *  Every half hour a host gets one plain request again: a guard can be
+     *  lifted, or have been a passing mood, and a site written down as needing a
+     *  browser would otherwise take the slow way round for ever. */
+    fun wantsBrowser(url: String): Boolean {
+        val host = host(url) ?: return false
+        if (host !in browserHosts) return false
+        val now = System.currentTimeMillis()
+        if (now - (triedPlainly[host] ?: 0L) > TRY_PLAIN_AGAIN_MS) {
+            triedPlainly[host] = now
+            return false
+        }
+        return true
+    }
 
     // Sites whose check has needed a person before. Their window is put on screen
     // straight away next time, rather than spending a silent minute on a check

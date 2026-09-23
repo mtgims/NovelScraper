@@ -139,11 +139,21 @@ object SystemBrowser {
         onShown: () -> Unit = {},
     ): String? {
         if (!start()) return null
+        // Once a page of the site is open, its other pages can be asked for from
+        // inside it, the way the site's own scripts ask: an answer in a moment,
+        // rather than a whole page loaded, drawn and waited on. Only an answer
+        // that comes back as a check goes the long way round.
+        fromInsideThePage(url)?.let { return it }
+        // Not on this site yet: go to its front page, which is where a check is
+        // met and answered, and ask it for the page wanted afterwards. One page
+        // is loaded the slow way per site per session, not one per request.
+        val origin = originOf(url)
+        val landing = if (origin != null && currentOrigin() != origin) origin else url
         val started = System.currentTimeMillis()
         var deadline = started + loadMs
         var shown = false
         try {
-            navigate(url) ?: return null
+            navigate(landing) ?: return null
             var page = settled(deadline)
             var retries = 0
             var lastRetry = System.currentTimeMillis()
@@ -157,7 +167,7 @@ object SystemBrowser {
                     // A fresh go at the check in a window that is on screen and
                     // being drawn. Some checks never finish in one that isn't,
                     // and sit there restarting themselves instead.
-                    navigate(url)
+                    navigate(landing)
                     page = settled(now + 20_000)
                     deadline = System.currentTimeMillis() + interactiveMs
                     continue
@@ -171,14 +181,17 @@ object SystemBrowser {
                     retries++
                     lastRetry = now
                     Log.i(TAG, "still a check; asking again (${retries}/$MAX_RETRIES)")
-                    navigate(url)
+                    navigate(landing)
                     page = settled(now + 20_000)
                     continue
                 }
                 delay(1_000)
                 page = html()
             }
-            return page?.takeIf { !looksLikeBrowserCheck(it) }
+            val landed = page?.takeIf { !looksLikeBrowserCheck(it) } ?: return null
+            // The front page was only the way in; the page actually wanted is
+            // asked for from inside it.
+            return if (landing == url) landed else fromInsideThePage(url) ?: navigateTo(url, deadline)
         } catch (e: Exception) {
             Log.w(TAG, "couldn't drive the browser: ${e.message}")
             stop()
@@ -225,6 +238,87 @@ object SystemBrowser {
         return page
     }
 
+    /** Load a page in the window itself, the slow way, when nothing else works. */
+    private suspend fun navigateTo(url: String, deadline: Long): String? {
+        navigate(url) ?: return null
+        return settled(maxOf(deadline, System.currentTimeMillis() + 30_000))
+            ?.takeIf { !looksLikeBrowserCheck(it) }
+    }
+
+    /** A GET asked for from inside a page of the same site, when one is open.
+     *  Null when there is no such page, or the site answered with a check. */
+    private suspend fun fromInsideThePage(url: String): String? {
+        val origin = originOf(url) ?: return null
+        val here = currentOrigin() ?: return null
+        // A site that answers on both novelhall.com and www.novelhall.com sends
+        // the browser to one of them, and a plugin may name the other. Asking
+        // from the page for the name the page itself is under keeps it a request
+        // within the site rather than one across origins, which a browser stops.
+        val target = when {
+            here == origin -> url
+            bareHost(here) == bareHost(origin) -> here + url.removePrefix(origin)
+            else -> return null
+        }
+        // The same Accept a browser sends when it goes to a page: a site can tell
+        // a page being read from a script fetching something, and some of them
+        // answer the two differently.
+        val asAPage = mapOf(
+            "Accept" to "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,*/*;q=0.8",
+        )
+        val reply = runCatching { request(target, "GET", asAPage, null) }.getOrNull() ?: return null
+        if (reply.status !in 200..299) return throughAFrame(target)
+        if (looksLikeBrowserCheck(reply.body)) {
+            Log.i(TAG, "asked from inside the page and got a check; trying a frame")
+            return throughAFrame(target)
+        }
+        return reply.body.takeIf { it.isNotBlank() }
+    }
+
+    /**
+     * The page fetched into a frame of the page that is already open.
+     *
+     * Some paths are refused to anything that isn't the browser going to a page:
+     * a script asking for them is turned away even with a pass in hand. A frame
+     * loading is the browser going to a page, and one from the same site can be
+     * read straight out of the document, which still beats loading the whole
+     * thing in the window and waiting for it to settle.
+     */
+    private suspend fun throughAFrame(url: String): String? {
+        val origin = originOf(url) ?: return null
+        if (currentOrigin() != origin) return null
+        val script = """
+            (async () => {
+              const f = document.createElement('iframe');
+              f.style.cssText = 'position:absolute;width:0;height:0;border:0;left:-9999px';
+              const settled = new Promise(res => {
+                f.onload = () => res();
+                f.onerror = () => res();
+                setTimeout(res, 20000);
+              });
+              f.src = ${q(url)};
+              document.body.appendChild(f);
+              await settled;
+              let html = '';
+              try { html = f.contentDocument.documentElement.outerHTML; } catch (e) { html = ''; }
+              f.remove();
+              return html;
+            })()
+        """.trimIndent()
+        val html = evaluate(script, await = true)?.takeIf { it.length > 500 } ?: return null
+        if (looksLikeBrowserCheck(html)) return null
+        Log.i(TAG, "GET $url in a frame -> ${html.length} chars")
+        return html
+    }
+
+    /** A host without the "www." a site may or may not put in front of it. */
+    private fun bareHost(origin: String): String =
+        origin.substringAfter("://").removePrefix("www.").lowercase()
+
+    private fun originOf(url: String): String? =
+        runCatching { java.net.URI(url) }.getOrNull()?.let { "${it.scheme}://${it.authority}" }
+
+    private suspend fun currentOrigin(): String? = evaluate("location.origin")
+
     /**
      * Makes a request from inside the page, the way the site's own scripts do.
      *
@@ -241,9 +335,8 @@ object SystemBrowser {
         body: BrowserBody?,
     ): BrowserReply? {
         if (!start()) return null
-        val origin = runCatching { java.net.URI(url) }.getOrNull()
-            ?.let { "${it.scheme}://${it.authority}" } ?: return null
-        if (evaluate("location.origin") != origin) {
+        val origin = originOf(url) ?: return null
+        if (currentOrigin() != origin) {
             navigate(origin)
             settled(System.currentTimeMillis() + 45_000)
         }
@@ -311,9 +404,16 @@ object SystemBrowser {
             "Browser.setWindowBounds",
             buildJsonObject {
                 put("windowId", id)
+                putJsonObject("bounds") { put("windowState", "normal") }
+            },
+            browserSession,
+        )
+        call(
+            "Browser.setWindowBounds",
+            buildJsonObject {
+                put("windowId", id)
                 putJsonObject("bounds") {
                     put("left", 120); put("top", 90); put("width", 1100); put("height", 860)
-                    put("windowState", "normal")
                 }
             },
             browserSession,
@@ -321,7 +421,14 @@ object SystemBrowser {
         call("Page.bringToFront", buildJsonObject {}, pageSession)
     }
 
-    /** Park it back off-screen. */
+    /**
+     * Put the window away again. It is minimised rather than moved out of sight:
+     * where a window is placed is a request a desktop may refuse, and on a
+     * Wayland one it always does, which left the browser sitting on screen for
+     * the rest of the session. Minimising is honoured everywhere, and the page
+     * inside keeps running, because the browser was started with the settings
+     * that stop it being throttled when nobody is looking.
+     */
     suspend fun hide() {
         if (keepVisible) return
         val id = windowId ?: return
@@ -329,7 +436,7 @@ object SystemBrowser {
             "Browser.setWindowBounds",
             buildJsonObject {
                 put("windowId", id)
-                putJsonObject("bounds") { put("left", OFFSCREEN); put("top", OFFSCREEN) }
+                putJsonObject("bounds") { put("windowState", "minimized") }
             },
             browserSession,
         )
@@ -701,12 +808,12 @@ object SystemBrowser {
     private const val OFFSCREEN = -2400
 
     /** How long a loaded page gets to go quiet before it is read anyway. */
-    private const val SETTLE_AFTER_LOAD_MS = 6_000L
+    private const val SETTLE_AFTER_LOAD_MS = 2_500L
 
     /** How long a page must hold still to count as finished, and the longest
      *  it is given to get there. */
-    private const val HELD_STILL_MS = 2_000L
-    private const val SETTLE_MAX_MS = 10_000L
+    private const val HELD_STILL_MS = 1_000L
+    private const val SETTLE_MAX_MS = 5_000L
 
     /** How long a check gets before it is asked again, and how many times. */
     private const val RETRY_MS = 8_000L
