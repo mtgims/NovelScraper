@@ -1,5 +1,12 @@
 package com.novelscraper.app.ui.screen
 
+import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.foundation.border
+import androidx.compose.foundation.hoverable
+import androidx.compose.foundation.interaction.MutableInteractionSource
+import androidx.compose.foundation.interaction.collectIsHoveredAsState
+import androidx.compose.runtime.remember
+import androidx.compose.ui.graphics.Color
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
@@ -36,8 +43,16 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.viewmodel.compose.viewModel
+import androidx.compose.material.icons.filled.Add
+import androidx.compose.material.icons.filled.Remove
+import com.novelscraper.app.data.LibraryPrefs
+import com.novelscraper.app.platform.isDesktop
 import com.novelscraper.app.library.LibBook
 import com.novelscraper.app.net.Account
+import androidx.compose.foundation.layout.fillMaxHeight
+import com.novelscraper.app.ui.components.GridScrollbar
+import com.novelscraper.app.ui.components.MenuAction
+import com.novelscraper.app.ui.components.WithContextMenu
 import com.novelscraper.app.ui.components.BookCover
 import androidx.compose.material.icons.filled.DownloadDone
 import androidx.compose.foundation.layout.Row
@@ -78,10 +93,22 @@ fun LibraryScreen(onOpenBook: (Int) -> Unit) {
     }
 
     Column(Modifier.fillMaxSize()) {
+        val coverWidth by LibraryPrefs.coverWidth.collectAsState()
         ScreenTitle("Library", action = {
-            if (refreshing || updates.running) CircularProgressIndicator(Modifier.size(24.dp).padding(2.dp))
-            else IconButton(onClick = { vm.refresh() }) {
-                Icon(Icons.Filled.Refresh, contentDescription = "Check for new chapters")
+            if (isDesktop) {
+                IconButton(onClick = { LibraryPrefs.smaller() }, enabled = LibraryPrefs.canShrink) {
+                    Icon(Icons.Filled.Remove, contentDescription = "Smaller covers")
+                }
+                IconButton(onClick = { LibraryPrefs.bigger() }, enabled = LibraryPrefs.canGrow) {
+                    Icon(Icons.Filled.Add, contentDescription = "Bigger covers")
+                }
+            }
+            // The refresh keeps its place whether it is a button or a spinner.
+            Box(Modifier.size(48.dp), contentAlignment = Alignment.Center) {
+                if (refreshing || updates.running) CircularProgressIndicator(Modifier.size(22.dp))
+                else IconButton(onClick = { vm.refresh() }) {
+                    Icon(Icons.Filled.Refresh, contentDescription = "Check for new chapters")
+                }
             }
         })
         if (updates.running) {
@@ -114,19 +141,40 @@ fun LibraryScreen(onOpenBook: (Int) -> Unit) {
                     )
                     else -> LazyVerticalGrid(
                         state = gridState,
-                        columns = GridCells.Adaptive(minSize = 150.dp),
-                        contentPadding = PaddingValues(start = 12.dp, end = 12.dp, top = 6.dp, bottom = 104.dp),
+                        columns = GridCells.Adaptive(minSize = coverWidth.dp),
+                        // The pill floats over the bottom of a phone screen; a
+                        // rail sits beside the window and needs no room here.
+                        contentPadding = PaddingValues(
+                            start = 16.dp, end = 16.dp, top = 6.dp,
+                            bottom = if (isDesktop) 24.dp else 104.dp,
+                        ),
                         horizontalArrangement = Arrangement.spacedBy(12.dp),
                         verticalArrangement = Arrangement.spacedBy(16.dp),
-                        modifier = Modifier.fillMaxSize(),
+                        modifier = Modifier.fillMaxSize().padding(end = if (isDesktop) 10.dp else 0.dp),
                     ) {
                         items(display, key = { it.id }) { book ->
                             ReorderableItem(reorderState, key = book.id) { dragging ->
+                                val menu = listOf(
+                                    MenuAction("Open") { onOpenBook(book.id) },
+                                    MenuAction("Mark all read") { vm.markAllRead(book.id) },
+                                    MenuAction("Remove downloads") { vm.removeDownloads(book.id) },
+                                    MenuAction("Remove from library") { vm.removeFromLibrary(book.id) },
+                                )
                                 BookCard(
+                                    menu = menu,
                                     book = book,
-                                    modifier = if (canReorder) Modifier.longPressDraggableHandle(
-                                        onDragStopped = { vm.commitOrder() },
-                                    ) else Modifier,
+                                    modifier = when {
+                                        !canReorder -> Modifier
+                                        // Press and drag with a pointer; hold
+                                        // first with a finger, where a plain drag
+                                        // is how the grid is scrolled.
+                                        isDesktop -> Modifier.draggableHandle(
+                                            onDragStopped = { vm.commitOrder() },
+                                        )
+                                        else -> Modifier.longPressDraggableHandle(
+                                            onDragStopped = { vm.commitOrder() },
+                                        )
+                                    },
                                     elevated = dragging,
                                     onClick = { onOpenBook(book.id) },
                                 )
@@ -134,6 +182,7 @@ fun LibraryScreen(onOpenBook: (Int) -> Unit) {
                         }
                     }
                 }
+                GridScrollbar(gridState, Modifier.align(Alignment.CenterEnd).fillMaxHeight())
             }
         }
     }
@@ -141,13 +190,28 @@ fun LibraryScreen(onOpenBook: (Int) -> Unit) {
 @Composable
 private fun BookCard(
     book: LibBook,
+    menu: List<MenuAction>,
     modifier: Modifier = Modifier,
     elevated: Boolean = false,
     onClick: () -> Unit,
 ) {
-    Column(modifier = modifier.fillMaxWidth().scale(if (elevated) 1.03f else 1f).clickable(onClick = onClick)) {
+    val interaction = remember { MutableInteractionSource() }
+    val hovered by interaction.collectIsHoveredAsState()
+    // Under a pointer, something should say what is about to be clicked; a
+    // finger already knows, because it is on it.
+    val lift by animateFloatAsState(if (elevated) 1.03f else if (hovered) 1.02f else 1f, label = "lift")
+    WithContextMenu(actions = menu, modifier = modifier.hoverable(interaction), onClick = onClick) {
+      Column(Modifier.fillMaxWidth().scale(lift)) {
         Box {
-            BookCover(book, Modifier.fillMaxWidth().aspectRatio(3f / 4f).clip(RoundedCornerShape(10.dp)))
+            BookCover(
+                book,
+                Modifier.fillMaxWidth().aspectRatio(3f / 4f).clip(RoundedCornerShape(10.dp))
+                    .border(
+                        width = if (hovered) 2.dp else 0.dp,
+                        color = if (hovered) MaterialTheme.colorScheme.primary else Color.Transparent,
+                        shape = RoundedCornerShape(10.dp),
+                    ),
+            )
             // Unread chapters, and a mark when chapters are downloaded.
             Row(Modifier.padding(6.dp), horizontalArrangement = Arrangement.spacedBy(4.dp)) {
                 if (book.unreadCount > 0) Badge(book.unreadCount.toString())
@@ -162,6 +226,7 @@ private fun BookCard(
         Box(Modifier.height(16.dp).padding(top = 2.dp)) {
             if ((book.rating ?: 0) > 0) StarRating(book.rating, size = 13.dp)
         }
+      }
     }
 }
 

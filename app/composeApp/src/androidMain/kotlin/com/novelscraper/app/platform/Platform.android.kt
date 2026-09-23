@@ -69,6 +69,8 @@ actual fun settingsStore(name: String): KeyValueStore =
 
 actual val hasWebView: Boolean = true
 
+actual val isDesktop: Boolean = false
+
 // The phone's own WebView does it; nothing to explain.
 actual val browserCheckNote: String? = null
 

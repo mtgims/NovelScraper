@@ -21,6 +21,8 @@ actual fun settingsStore(name: String): KeyValueStore =
 
 actual val hasWebView: Boolean = false
 
+actual val isDesktop: Boolean = true
+
 actual val browserCheckNote: String?
     get() = SystemBrowser.binary?.let { "It opens in ${it.name}, a browser already on this computer." }
         ?: "This computer has no browser the app can drive, so a current Chrome is fetched " +

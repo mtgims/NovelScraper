@@ -103,6 +103,8 @@ import com.novelscraper.app.platform.PlatformBackHandler
 import com.novelscraper.app.platform.openInBrowser
 import com.novelscraper.app.platform.showToast
 import com.novelscraper.app.ui.components.RemoteImage
+import com.novelscraper.app.ui.components.ContentWidth
+import com.novelscraper.app.platform.isDesktop
 import com.novelscraper.app.ui.components.ScreenTitle
 import com.novelscraper.app.ui.theme.Kicker
 import com.novelscraper.app.ui.theme.Serif
@@ -167,10 +169,17 @@ fun BrowseScreen(onOpenSource: (String) -> Unit, onManage: () -> Unit) {
                 }
             }
         } else {
-            LazyColumn(contentPadding = PaddingValues(bottom = 104.dp)) {
-                items(installed, key = { it.id }) { p ->
-                    SourceRow(p.name, p.lang, p.iconUrl, subtitle = p.site.removePrefix("https://").removePrefix("www.").trimEnd('/'),
-                        onClick = { onOpenSource(p.id) }) {}
+            ContentWidth {
+                LazyColumn(
+                    contentPadding = PaddingValues(bottom = if (isDesktop) 24.dp else 104.dp),
+                ) {
+                    items(installed, key = { it.id }) { p ->
+                        SourceRow(
+                            p.name, p.lang, p.iconUrl,
+                            subtitle = p.site.removePrefix("https://").removePrefix("www.").trimEnd('/'),
+                            onClick = { onOpenSource(p.id) },
+                        ) {}
+                    }
                 }
             }
         }

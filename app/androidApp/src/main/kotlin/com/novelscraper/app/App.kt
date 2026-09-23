@@ -6,6 +6,7 @@ import android.os.Bundle
 import coil3.ImageLoader
 import coil3.PlatformContext
 import coil3.SingletonImageLoader
+import com.novelscraper.app.data.LibraryPrefs
 import com.novelscraper.app.data.ReaderPrefs
 import com.novelscraper.app.extensions.Extensions
 import com.novelscraper.app.library.DownloadKeeper
@@ -31,6 +32,7 @@ class App : Application(), SingletonImageLoader.Factory {
         // Chapter downloads keep going in the background under a service.
         DownloadKeeper.start()
         ReaderPrefs.init()
+        LibraryPrefs.init()
         ThemeController.init()
         TtsController.player = AndroidTtsPlayer(this)
         ScrapeRelay.init(this)  // lets the relay create its offscreen render WebView

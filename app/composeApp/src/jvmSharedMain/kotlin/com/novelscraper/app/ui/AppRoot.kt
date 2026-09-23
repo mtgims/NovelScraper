@@ -1,11 +1,16 @@
 package com.novelscraper.app.ui
 
 import androidx.compose.animation.AnimatedContentTransitionScope
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import com.novelscraper.app.platform.isDesktop
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.padding
 import androidx.compose.material3.Button
 import androidx.compose.material3.MaterialTheme
@@ -34,6 +39,7 @@ import com.novelscraper.app.ui.browse.BrowseScreen
 import com.novelscraper.app.ui.browse.ExtensionsScreen
 import com.novelscraper.app.ui.browse.SourceScreen
 import com.novelscraper.app.ui.components.PillNavBar
+import com.novelscraper.app.ui.components.NavRail
 import com.novelscraper.app.ui.components.SiteCheckPrompt
 import com.novelscraper.app.ui.components.isTopLevelRoute
 import com.novelscraper.app.ui.screen.BookScreen
@@ -86,11 +92,29 @@ private fun MainApp() {
     val route = entry?.destination?.route
     val slideSpec = tween<IntOffset>(260)
 
-    Box(Modifier.fillMaxSize()) {
+    BoxWithConstraints(Modifier.fillMaxSize()) {
+        // Which navigation is shown follows the window, as layout should: a rail
+        // on anything desktop-sized, with labels when there is room for them.
+        val wide = maxWidth >= RAIL_MIN_WIDTH
+        val labelled = maxWidth >= RAIL_LABEL_MIN_WIDTH
+        val onRail = wide && isTopLevelRoute(route)
+
+        Row(Modifier.fillMaxSize()) {
+            if (onRail) {
+                NavRail(
+                    current = route,
+                    labelled = labelled,
+                    onSelect = { dest -> go(nav, route, dest) },
+                )
+            }
+            Box(Modifier.weight(1f).fillMaxSize()) {
         NavHost(
             nav,
             startDestination = "library",
             enterTransition = {
+                // A window doesn't slide from side to side when you change page:
+                // that is a phone showing you which way it went. Here it fades.
+                if (isDesktop) return@NavHost fadeIn(tween(120))
                 val fwd = routeRank(targetState.destination.route) >= routeRank(initialState.destination.route)
                 slideIntoContainer(
                     if (fwd) AnimatedContentTransitionScope.SlideDirection.Left
@@ -99,6 +123,7 @@ private fun MainApp() {
                 )
             },
             exitTransition = {
+                if (isDesktop) return@NavHost fadeOut(tween(120))
                 val fwd = routeRank(targetState.destination.route) >= routeRank(initialState.destination.route)
                 slideOutOfContainer(
                     if (fwd) AnimatedContentTransitionScope.SlideDirection.Left
@@ -107,9 +132,11 @@ private fun MainApp() {
                 )
             },
             popEnterTransition = {
+                if (isDesktop) return@NavHost fadeIn(tween(120))
                 slideIntoContainer(AnimatedContentTransitionScope.SlideDirection.Right, slideSpec)
             },
             popExitTransition = {
+                if (isDesktop) return@NavHost fadeOut(tween(120))
                 slideOutOfContainer(AnimatedContentTransitionScope.SlideDirection.Right, slideSpec)
             },
         ) {
@@ -228,21 +255,31 @@ private fun MainApp() {
             }
         }
 
-        // A source asking for a browser check can come from any screen.
-        SiteCheckPrompt()
+                // A source asking for a browser check can come from any screen.
+                SiteCheckPrompt()
 
-        if (isTopLevelRoute(route)) {
-            PillNavBar(
-                current = route,
-                onSelect = { dest ->
-                    if (dest != route) nav.navigate(dest) {
-                        launchSingleTop = true
-                        popUpTo("library") { saveState = true }
-                        restoreState = true
-                    }
-                },
-                modifier = Modifier.align(Alignment.BottomCenter),
-            )
+                if (!wide && isTopLevelRoute(route)) {
+                    PillNavBar(
+                        current = route,
+                        onSelect = { dest -> go(nav, route, dest) },
+                        modifier = Modifier.align(Alignment.BottomCenter),
+                    )
+                }
+            }
         }
     }
 }
+
+/** Go to a top-level destination, keeping each tab's own back stack. */
+private fun go(nav: androidx.navigation.NavHostController, from: String?, dest: String) {
+    if (dest == from) return
+    nav.navigate(dest) {
+        launchSingleTop = true
+        popUpTo("library") { saveState = true }
+        restoreState = true
+    }
+}
+
+/** A window wide enough for navigation down the side, and wide enough to name it. */
+private val RAIL_MIN_WIDTH = 760.dp
+private val RAIL_LABEL_MIN_WIDTH = 1000.dp

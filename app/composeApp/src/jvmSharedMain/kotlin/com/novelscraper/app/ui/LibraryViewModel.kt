@@ -75,6 +75,23 @@ class LibraryViewModel : ViewModel() {
         }
     }
 
+    // --- what a right-click offers -------------------------------------------
+
+    fun markAllRead(id: Int) { viewModelScope.launch { lib.markAllRead(id) } }
+
+    fun removeFromLibrary(id: Int) {
+        viewModelScope.launch {
+            lib.setInLibrary(id, false)
+            lib.removeDownloads(id)
+        }
+    }
+
+    fun removeDownloads(id: Int) { viewModelScope.launch { lib.removeDownloads(id) } }
+
+    fun setCollections(id: Int, collectionIds: List<Int>) {
+        viewModelScope.launch { lib.setBookCollections(id, collectionIds) }
+    }
+
     fun createCollection(name: String) {
         if (name.isBlank()) return
         viewModelScope.launch { lib.createCollection(name) }

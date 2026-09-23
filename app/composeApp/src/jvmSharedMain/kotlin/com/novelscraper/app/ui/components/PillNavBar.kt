@@ -34,9 +34,11 @@ import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 
-private data class NavItem(val route: String, val label: String, val icon: ImageVector)
+internal data class NavItem(val route: String, val label: String, val icon: ImageVector)
 
-private val ITEMS = listOf(
+/** The app's destinations, in one place: the pill on a phone and the rail on a
+ *  computer are two ways of showing the same list. */
+internal val navItems = listOf(
     NavItem("library", "Library", Icons.AutoMirrored.Filled.MenuBook),
     NavItem("browse", "Browse", Icons.Filled.Explore),
     NavItem("new", "Scrape", Icons.Filled.AddCircleOutline),
@@ -45,7 +47,7 @@ private val ITEMS = listOf(
     NavItem("settings", "Settings", Icons.Filled.Settings),
 )
 
-fun isTopLevelRoute(route: String?): Boolean = ITEMS.any { it.route == route }
+fun isTopLevelRoute(route: String?): Boolean = navItems.any { it.route == route }
 
 /**
  * Floating, translucent rounded-pill bottom navigation (mirrors the reader's
@@ -67,7 +69,7 @@ fun PillNavBar(current: String?, onSelect: (String) -> Unit, modifier: Modifier 
             verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.spacedBy(2.dp),
         ) {
-            ITEMS.forEach { item ->
+            navItems.forEach { item ->
                 PillItem(item, selected = current == item.route) { onSelect(item.route) }
             }
         }

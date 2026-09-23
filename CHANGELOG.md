@@ -10,6 +10,11 @@ what's in that APK, so you can tell what's on your phone.
 
 ## 2026-09-23
 
+- **A desktop layout for the desktop app (0.38.0).** Navigation moved from a
+  floating phone-style pill to a rail down the side with proper hit targets and
+  hover, library covers can be resized and remembered, novels drag with a
+  pointer and answer a right-click, scrollbars appeared, the library stopped
+  bouncing when it loads, and the list screens keep to a readable column.
 - **The app's browser keeps out of the way, and closing it is survivable
   (0.37.3).** On Hyprland, which places every window itself and cannot minimise,
   the browser is sent to a workspace kept aside and only brought over for a

@@ -51,6 +51,12 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import com.novelscraper.app.data.ReaderPrefs
 import com.novelscraper.app.library.LibrarySyncRunner
+import com.novelscraper.app.ui.components.ContentWidth
+import com.novelscraper.app.platform.isDesktop
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.fillMaxHeight
+import androidx.compose.foundation.layout.fillMaxSize
+import com.novelscraper.app.ui.components.ColumnScrollbar
 import com.novelscraper.app.net.Account
 import com.novelscraper.app.net.Net
 import com.novelscraper.app.platform.hasSystemTts
@@ -70,10 +76,13 @@ fun SettingsScreen(onSignIn: () -> Unit, onLogout: () -> Unit) {
     val rate by ReaderPrefs.ttsRate.collectAsState()
     val fontScale by ReaderPrefs.fontScale.collectAsState()
 
-    Column(
-        Modifier.fillMaxWidth().statusBarsPadding().verticalScroll(rememberScrollState())
+    val scroll = rememberScrollState()
+    Box(Modifier.fillMaxSize()) {
+      ContentWidth(Modifier.statusBarsPadding().verticalScroll(scroll)) {
+      Column(
+        Modifier.fillMaxWidth()
             .padding(horizontal = 20.dp)
-            .padding(top = 20.dp, bottom = 120.dp),
+            .padding(top = 20.dp, bottom = if (isDesktop) 40.dp else 120.dp),
     ) {
         Text("Settings", style = MaterialTheme.typography.headlineMedium)
 
@@ -136,6 +145,9 @@ fun SettingsScreen(onSignIn: () -> Unit, onLogout: () -> Unit) {
                 Button(onClick = onSignIn, modifier = Modifier.padding(top = 16.dp)) { Text("Sign in") }
             }
         }
+    }
+      }
+      ColumnScrollbar(scroll, Modifier.align(Alignment.CenterEnd).fillMaxHeight())
     }
 }
 

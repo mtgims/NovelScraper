@@ -36,6 +36,15 @@ expect fun settingsStore(name: String): KeyValueStore
  *  and rendering JS-only pages for the scrape relay. */
 expect val hasWebView: Boolean
 
+/**
+ * A computer with a pointer and a keyboard, rather than a phone with fingers.
+ *
+ * Layout follows the width of the window, as it should, but a few things follow
+ * the input instead: what can be hovered, what a right-click does, whether a
+ * drag needs holding first, and how much screen a hit target has to be given.
+ */
+expect val isDesktop: Boolean
+
 /** A line about how a browser check will be answered on this device (which
  *  browser opens, or that one has to be fetched first), or null if there is
  *  nothing worth saying. */

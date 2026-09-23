@@ -9,6 +9,8 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.statusBarsPadding
+import com.novelscraper.app.ui.components.ContentWidth
+import com.novelscraper.app.platform.isDesktop
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.material3.Card
@@ -59,11 +61,16 @@ fun ProgressScreen() {
                 Text("No scrapes yet.", Modifier.align(Alignment.Center),
                     style = MaterialTheme.typography.bodyLarge)
             } else {
-                LazyColumn(
-                    contentPadding = PaddingValues(start = 16.dp, end = 16.dp, bottom = 110.dp),
-                    verticalArrangement = Arrangement.spacedBy(12.dp),
-                ) {
-                    items(jobs, key = { it.id }) { job -> JobCard(job, vm) }
+                ContentWidth {
+                    LazyColumn(
+                        contentPadding = PaddingValues(
+                            start = 16.dp, end = 16.dp,
+                            bottom = if (isDesktop) 24.dp else 110.dp,
+                        ),
+                        verticalArrangement = Arrangement.spacedBy(12.dp),
+                    ) {
+                        items(jobs, key = { it.id }) { job -> JobCard(job, vm) }
+                    }
                 }
             }
         }

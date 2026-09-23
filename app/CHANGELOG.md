@@ -32,6 +32,31 @@ crash report is unreadable without the matching one.
 
 ---
 
+## 0.38.0, 2026-09-23 · `versionCode 71`
+The Linux app stops being a phone app on a monitor.
+- **Navigation down the side.** A row of small targets floating at the bottom is
+  for a thumb that finds it without looking; a pointer has to be aimed at it.
+  Destinations now live along the left edge, always in the same place, each one a
+  full row wide enough to hit without care, lit as the pointer crosses it, with
+  the names shown when the window is wide enough. Phones keep the pill.
+- **Covers the size you want them.** Plus and minus in the library's header,
+  remembered between runs, from small enough for a wall of books to large enough
+  to read the titles across the room.
+- **The library stops jumping.** Entering it started a check for new chapters,
+  the refresh button became a spinner, the header changed height and the whole
+  grid bounced. The header now keeps its height whatever is in it.
+- **Novels can be dragged with a pointer.** Rearranging needed a press and hold,
+  which is how a finger avoids scrolling the grid; a pointer just drags.
+- **Right-click a novel** for open, mark all read, remove downloads and remove
+  from library, instead of opening the novel to find them. Holding does the same
+  on a phone.
+- **Scrollbars**, where the platform has them, so there is some sense of how much
+  is below and something to grab.
+- **Settings, Browse and Progress keep to a readable column** rather than a line
+  of text with a metre of nothing after it.
+- Screens fade between each other on a computer instead of sliding in from the
+  side, which was the phone telling you which way it went.
+
 ## 0.37.3, 2026-09-23 · `versionCode 70`
 The browser that wouldn't get out of the way, and what happened when you closed
 it.

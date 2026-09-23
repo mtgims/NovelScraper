@@ -18,6 +18,7 @@ import androidx.compose.ui.window.WindowState
 import androidx.compose.ui.window.application
 import coil3.SingletonImageLoader
 import coil3.disk.DiskCache
+import com.novelscraper.app.data.LibraryPrefs
 import com.novelscraper.app.data.ReaderPrefs
 import com.novelscraper.app.extensions.Extensions
 import com.novelscraper.app.library.Library
@@ -48,6 +49,7 @@ fun initApp() {
     Extensions.init(Net.client)
     Library.init()
     ReaderPrefs.init()
+    LibraryPrefs.init()
     ThemeController.init()
     TtsController.player = DesktopTtsPlayer
     SingletonImageLoader.setSafe { ctx ->
