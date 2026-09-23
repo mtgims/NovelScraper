@@ -63,14 +63,3 @@ The app doesn't need an account. Tough if you create one you can sync between de
 ## Cloudflare
 
 Several sources are protected by Cloudflare and can block you more than needed if you are using a VPN. You can always pass the captcha in the webview browser.
-
-## Being reasonable about this
-
-Requests go out at a polite rate, back off on errors, and are cached so a re-read
-doesn't re-fetch. Please leave that alone. The point is a personal library of
-things already read, not a way to strip-mine someone's site, and the sources
-here are largely aggregators reposting other people's translations, which is its
-own mess.
-
-Anything fetched is still under someone else's copyright; it is not for
-redistribution.
