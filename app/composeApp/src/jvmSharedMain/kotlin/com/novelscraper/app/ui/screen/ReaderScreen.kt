@@ -45,6 +45,7 @@ import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
+import androidx.compose.material3.LocalTextStyle
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
@@ -77,6 +78,7 @@ import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.text.SpanStyle
 import androidx.compose.ui.text.TextLayoutResult
 import androidx.compose.ui.text.buildAnnotatedString
+import androidx.compose.ui.text.style.TextIndent
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -367,8 +369,16 @@ private fun buildBlocks(plain: String, ranges: List<IntRange>, imageUrls: List<S
             imgIdx++
             i++
         } else {
+            // One block per paragraph, not one per run of text. A paragraph break
+            // survives the flattening as a single newline, which on its own reads
+            // as a wall of text: as separate blocks they can be given air between
+            // them. Sentence indices are untouched, because the split falls in the
+            // gap between two sentences, where no index lives.
             val start = i
-            while (i < ranges.size && !isImage(ranges[i])) i++
+            i++
+            while (i < ranges.size && !isImage(ranges[i]) &&
+                !plain.substring(ranges[i - 1].last + 1, ranges[i].first).contains('\n')
+            ) i++
             val base = ranges[start].first
             val end = ranges[i - 1].last + 1
             out.add(TextBlock(
@@ -525,8 +535,15 @@ private fun ChapterBody(
                         fontFamily = Serif,
                         fontSize = (19 * fontScale).sp,
                         lineHeight = (31 * fontScale).sp,
+                        // Paragraphs are told apart by the space after them and the
+                        // indent on the line that starts one, which is how a book
+                        // does it.
+                        style = LocalTextStyle.current.copy(
+                            textIndent = TextIndent(firstLine = (14 * fontScale).sp),
+                        ),
                         onTextLayout = { layouts[block.firstIndex] = it },
                         modifier = measure
+                            .padding(bottom = (10 * fontScale).dp)
                             .onGloballyPositioned { blockYs[block.firstIndex] = it.localToRoot(Offset.Zero).y }
                             .pointerInput(bookId, pos, block.firstIndex) {
                                 // Single tap toggles the bars; long-press on a sentence

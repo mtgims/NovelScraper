@@ -10,6 +10,10 @@ what's in that APK, so you can tell what's on your phone.
 
 ## 2026-09-23
 
+- **Themes apply everywhere, and source chapters have paragraphs (0.38.3).** The
+  palettes only named some colours, so Material filled the rest in purple, which
+  is what the sidebar was. Chapters from a source ran together into a wall of
+  text; each paragraph is now its own block with space and an indent.
 - **Kokoro at full precision on the desktop, and the Library button works from
   a novel (0.38.2).** The narration model was the eight-bit one, which is why it
   sounded gravelly; the Linux app now uses the full one and still speaks five

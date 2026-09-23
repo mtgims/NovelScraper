@@ -23,6 +23,17 @@ private val Light = lightColorScheme(
     surfaceVariant = Color(0xFFF4F4F5), onSurfaceVariant = Color(0xFF71717A),
     outline = Color(0xFFE4E4E7), outlineVariant = Color(0xFFE4E4E7),
     error = Color(0xFFDC2626), onError = Color(0xFFFFFFFF),
+    // The surfaces a theme is actually built from: without these, Material
+    // hands back its own baseline, which is purple whatever the theme says.
+    surfaceContainerLowest = Color(0xFFFFFFFF), surfaceContainerLow = Color(0xFFFAFAFA),
+    surfaceContainer = Color(0xFFF4F4F5), surfaceContainerHigh = Color(0xFFEFEFF1),
+    surfaceContainerHighest = Color(0xFFE9E9EC),
+    // What is picked out (a chosen row, a selected chapter) follows the accent.
+    secondary = Color(0xFF4F46E5), onSecondary = Color(0xFFFFFFFF),
+    secondaryContainer = Color(0xFFECEBFB), onSecondaryContainer = Color(0xFF18181B),
+    surfaceTint = Color(0xFF4F46E5),
+    tertiary = Color(0xFF0D9488), onTertiary = Color(0xFFFFFFFF),
+
 )
 
 private val Dark = darkColorScheme(
@@ -33,6 +44,17 @@ private val Dark = darkColorScheme(
     surfaceVariant = Color(0xFF232327), onSurfaceVariant = Color(0xFFA1A1AA),
     outline = Color(0xFF2A2A2E), outlineVariant = Color(0xFF2A2A2E),
     error = Color(0xFFF87171), onError = Color(0xFF0A0A0B),
+    // The surfaces a theme is actually built from: without these, Material
+    // hands back its own baseline, which is purple whatever the theme says.
+    surfaceContainerLowest = Color(0xFF060607), surfaceContainerLow = Color(0xFF111113),
+    surfaceContainer = Color(0xFF161618), surfaceContainerHigh = Color(0xFF1D1D20),
+    surfaceContainerHighest = Color(0xFF232327),
+    // What is picked out (a chosen row, a selected chapter) follows the accent.
+    secondary = Color(0xFF818CF8), onSecondary = Color(0xFF0A0A0B),
+    secondaryContainer = Color(0xFF1E1F3A), onSecondaryContainer = Color(0xFFF4F4F5),
+    surfaceTint = Color(0xFF818CF8),
+    tertiary = Color(0xFF2DD4BF), onTertiary = Color(0xFF04201D),
+
 )
 
 private val Purple = darkColorScheme(
@@ -43,6 +65,17 @@ private val Purple = darkColorScheme(
     surfaceVariant = Color(0xFF271D33), onSurfaceVariant = Color(0xFFA99FB8),
     outline = Color(0xFF342843), outlineVariant = Color(0xFF342843),
     error = Color(0xFFFB7185), onError = Color(0xFF140F1C),
+    // The surfaces a theme is actually built from: without these, Material
+    // hands back its own baseline, which is purple whatever the theme says.
+    surfaceContainerLowest = Color(0xFF0F0B15), surfaceContainerLow = Color(0xFF191220),
+    surfaceContainer = Color(0xFF1D1626), surfaceContainerHigh = Color(0xFF241B2E),
+    surfaceContainerHighest = Color(0xFF2B2038),
+    // What is picked out (a chosen row, a selected chapter) follows the accent.
+    secondary = Color(0xFFA855F7), onSecondary = Color(0xFF140F1C),
+    secondaryContainer = Color(0xFF2A1E3A), onSecondaryContainer = Color(0xFFECE8F3),
+    surfaceTint = Color(0xFFA855F7),
+    tertiary = Color(0xFF34D399), onTertiary = Color(0xFF07241A),
+
 )
 
 private val Blue = darkColorScheme(
@@ -53,6 +86,17 @@ private val Blue = darkColorScheme(
     surfaceVariant = Color(0xFF18233A), onSurfaceVariant = Color(0xFF98A6C0),
     outline = Color(0xFF22314C), outlineVariant = Color(0xFF22314C),
     error = Color(0xFFF87171), onError = Color(0xFF0A1020),
+    // The surfaces a theme is actually built from: without these, Material
+    // hands back its own baseline, which is purple whatever the theme says.
+    surfaceContainerLowest = Color(0xFF070C18), surfaceContainerLow = Color(0xFF0E1526),
+    surfaceContainer = Color(0xFF111A2E), surfaceContainerHigh = Color(0xFF16213A),
+    surfaceContainerHighest = Color(0xFF1C2A45),
+    // What is picked out (a chosen row, a selected chapter) follows the accent.
+    secondary = Color(0xFF3B82F6), onSecondary = Color(0xFF0A1020),
+    secondaryContainer = Color(0xFF16233D), onSecondaryContainer = Color(0xFFE6ECF5),
+    surfaceTint = Color(0xFF3B82F6),
+    tertiary = Color(0xFF38BDF8), onTertiary = Color(0xFF06243A),
+
 )
 
 /** Available themes (name, label, swatch bg + accent) — mirrors theme-picker.tsx. */

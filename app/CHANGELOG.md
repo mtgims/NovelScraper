@@ -32,6 +32,21 @@ crash report is unreadable without the matching one.
 
 ---
 
+## 0.38.3, 2026-09-23 · `versionCode 74`
+- **The themes reach the whole app now.** Each palette named a handful of
+  colours and left the rest to Material, whose own are purple: that is why the
+  sidebar stayed the same mauve in every theme, and why a selected row did too.
+  All four themes now carry their own surfaces and accents, so the sidebar is
+  neutral in Dark, navy in Blue, plum in Purple and near-white in Light.
+- **Chapters from a source read as chapters.** Their paragraphs arrive as plain
+  line breaks, which runs the page together into a wall of text. Each paragraph
+  is now its own block, with space after it and an indent on its first line, as
+  a book has. The sentence a narration is on is unaffected, because the split
+  falls between sentences.
+- The sidebar's collapse control lost its label: three lines at the top of a
+  sidebar have meant that for thirty years, and the word took up the very room
+  it exists to reclaim.
+
 ## 0.38.2, 2026-09-23 · `versionCode 73`
 - **Kokoro sounds like Kokoro now, on a computer.** The app was fetching the
   model quantised down to eight bits, a quarter of the size and audibly so: the

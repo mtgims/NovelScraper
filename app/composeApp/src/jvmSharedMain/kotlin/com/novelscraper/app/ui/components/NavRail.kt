@@ -63,9 +63,12 @@ fun NavRail(
             // The app already knows its own name; the space is better spent on
             // the one control the rail itself needs.
             RailItem(
-                label = if (labelled) "Collapse" else "Expand",
+                label = "",
                 selected = false,
-                labelled = labelled,
+                // No word beside it: three lines at the top of a sidebar have
+                // meant this for thirty years, and the label only took up the
+                // room the reader was trying to reclaim.
+                labelled = false,
                 icon = { tint -> Icon(Icons.Filled.Menu, contentDescription = "Narrow or widen the sidebar", tint = tint) },
                 onClick = onToggleWidth,
             )
