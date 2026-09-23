@@ -358,7 +358,21 @@ object SystemBrowser {
         // first request of the next run, before this one has been started.
         userAgent?.let { settingsStore("site-checks").putString("user-agent", it) }
         Log.i(TAG, "driving ${binary?.name}: ${version?.get("product")?.jsonPrimitive?.contentOrNull}")
+        reportGraphics()
         openTab()
+    }
+
+    /**
+     * Notes what the browser has to draw with. A check judges a browser largely
+     * on its graphics: one falling back to software rendering, or with WebGL
+     * switched off, looks like something that isn't a person's browser, so when
+     * a check won't pass this is the first line worth reading.
+     */
+    private suspend fun reportGraphics() {
+        val gpu = call("SystemInfo.getInfo", buildJsonObject {}, null)?.get("gpu")?.jsonObject ?: return
+        val renderer = gpu["auxAttributes"]?.jsonObject?.get("glRenderer")?.jsonPrimitive?.contentOrNull
+        val webgl = gpu["featureStatus"]?.jsonObject?.get("webgl")?.jsonPrimitive?.contentOrNull
+        Log.i(TAG, "graphics: renderer=${renderer ?: "unknown"}, webgl=${webgl ?: "unknown"}")
     }
 
     /** The browser writes its port, then the path to its own socket, into the

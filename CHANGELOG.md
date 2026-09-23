@@ -10,6 +10,10 @@ what's in that APK, so you can tell what's on your phone.
 
 ## 2026-09-23
 
+- **Browser checks: a notice, no second browser, and a log file (0.36.2).** The
+  check window now says which site is asking, closing it no longer starts the
+  carried browser behind it, and the app writes a log with the browser's
+  graphics state, which is what a check mostly judges.
 - **Fixed: checks failing in the app that pass in your own browser (0.36.1).** A
   browser left behind by a bad exit kept the app's profile, so later runs fell
   back to the old carried browser; the app now adopts or clears it. An

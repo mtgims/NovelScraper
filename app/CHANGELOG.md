@@ -32,6 +32,18 @@ crash report is unreadable without the matching one.
 
 ---
 
+## 0.36.2, 2026-09-23 · `versionCode 66`
+- **The check window says what it is.** A browser appearing on its own explained
+  nothing; the app now says which site is asking and that the answer goes in
+  that window.
+- **No second browser.** Closing the check window used to start the carried
+  browser instead, which opened a black window and could pass nothing anyway.
+  When there is a real browser, it is the only one used.
+- **A log file**, `~/.cache/novelscraper/novelscraper.log` (last megabyte), and
+  the browser now notes what it has to draw with: `graphics: renderer=…,
+  webgl=…`. A check judges a browser mostly on its graphics, so that line is
+  the first thing to read when one won't pass.
+
 ## 0.36.1, 2026-09-23 · `versionCode 65`
 Why a check that passes in your own browser wouldn't pass in the app's.
 - **A browser left behind blocked the next one.** If the app ended badly, its

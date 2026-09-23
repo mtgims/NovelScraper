@@ -65,12 +65,33 @@ actual fun showToast(message: String, long: Boolean) {
 }
 
 actual object Log {
-    actual fun d(tag: String, msg: String) { if (isDebugBuild) println("D/$tag: $msg") }
-    actual fun i(tag: String, msg: String) = println("I/$tag: $msg")
-    actual fun w(tag: String, msg: String) = System.err.println("W/$tag: $msg")
+    actual fun d(tag: String, msg: String) { if (isDebugBuild) out("D/$tag: $msg") }
+    actual fun i(tag: String, msg: String) = out("I/$tag: $msg")
+    actual fun w(tag: String, msg: String) = out("W/$tag: $msg", error = true)
     actual fun e(tag: String, msg: String, t: Throwable?) {
-        System.err.println("E/$tag: $msg")
+        out("E/$tag: $msg", error = true)
         t?.printStackTrace()
+    }
+
+    // Started from a desktop launcher there is nowhere for a printed line to go,
+    // and the one line that says why a browser check failed is worth having
+    // afterwards. Kept to the last megabyte; nothing here is private beyond the
+    // addresses the app was asked to fetch.
+    private val file: java.io.File? by lazy {
+        runCatching {
+            java.io.File(appCacheDir(), "novelscraper.log").also { log ->
+                log.parentFile?.mkdirs()
+                if (log.length() > 1_000_000L) log.writeText("")
+            }
+        }.getOrNull()
+    }
+
+    private val stamp = java.time.format.DateTimeFormatter.ofPattern("HH:mm:ss")
+
+    @Synchronized
+    private fun out(line: String, error: Boolean = false) {
+        if (error) System.err.println(line) else println(line)
+        runCatching { file?.appendText("${java.time.LocalTime.now().format(stamp)} $line\n") }
     }
 }
 

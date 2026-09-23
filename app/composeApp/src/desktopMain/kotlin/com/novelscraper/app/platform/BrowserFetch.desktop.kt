@@ -57,13 +57,22 @@ actual suspend fun fetchThroughBrowser(url: String): String? = lock.withLock {
         // A site that has needed a person before gets its window straight away,
         // rather than a silent minute spent on a check that won't pass alone.
         val patience = if (SiteChecks.wantsPerson(url)) 0L else PATIENCE_MS
-        val page = SystemBrowser.load(url, patience, INTERACTIVE_MS, LOAD_MS) { SiteChecks.neededPerson(url) }
+        val host = runCatching { java.net.URI(url).host }.getOrNull() ?: url
+        val page = SystemBrowser.load(url, patience, INTERACTIVE_MS, LOAD_MS) {
+            SiteChecks.neededPerson(url)
+            // The window appearing by itself explains nothing on its own.
+            showToast("$host is asking for a browser check: answer it in the window that just opened.", long = true)
+        }
         if (page != null) {
             keepSystemCookies(url)
             Log.i(TAG, "$url -> ${page.length} chars (${SystemBrowser.binary?.name})")
             return page
         }
-        Log.i(TAG, "the system browser couldn't be used; falling back to the bundled one")
+        // No falling back to the carried browser: it is Chrome 126, it passes
+        // nothing this one couldn't, and firing up a second browser window on
+        // top of the one the reader just closed only adds insult.
+        Log.i(TAG, "the browser didn't get the page")
+        return null
     }
     if (!ensureSiteCheckBrowser { }) return null
     val view = open() ?: return null
