@@ -279,7 +279,9 @@ private fun NeuralModel(engine: String) {
         progress is KokoroDownloader.Progress.Extracting
 
     val blurb = if (engine == ReaderPrefs.ENGINE_KOKORO)
-        "~125 MB · multilingual, most natural (English, Spanish, French, Chinese, Japanese…). ~1× real time."
+        (if (isDesktop) "~335 MB · multilingual, most natural (English, Spanish, French, Chinese, Japanese…), " +
+            "at full precision. About real time."
+        else "~125 MB · multilingual, most natural (English, Spanish, French, Chinese, Japanese…). ~1× real time.")
     else
         "~65 MB · fast English voice (Amy) — several times real time, no buffering; less expressive than Kokoro."
 

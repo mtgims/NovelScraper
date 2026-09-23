@@ -2,6 +2,7 @@ package com.novelscraper.app.tts
 
 import com.novelscraper.app.platform.appFilesDir
 import java.io.File
+import com.novelscraper.app.platform.isDesktop
 
 /**
  * The downloadable on-device voice models, addressed by a "model id":
@@ -41,9 +42,20 @@ object TtsModels {
     )
 
     private val SPECS: Map<String, Spec> = buildMap {
+        // Kokoro comes quantised to eight bits and at full precision. The small
+        // one is a quarter of the size and sounds it: the voice is recognisably
+        // the same person with gravel poured over it, which is no good for
+        // something meant to be listened to for hours. A computer has the room
+        // and the processor for the full one; a phone keeps the small one.
         put(
             KOKORO,
-            Spec(
+            if (isDesktop) Spec(
+                dir = "kokoro-multi-lang-v1_0",
+                url = "$BASE/kokoro-multi-lang-v1_0.tar.bz2",
+                kind = "kokoro",
+                onnx = "model.onnx",
+                required = listOf("model.onnx", "voices.bin", "tokens.txt", "lexicon-us-en.txt"),
+            ) else Spec(
                 dir = "kokoro-int8-multi-lang-v1_0",
                 url = "$BASE/kokoro-int8-multi-lang-v1_0.tar.bz2",
                 kind = "kokoro",

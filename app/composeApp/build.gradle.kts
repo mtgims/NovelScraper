@@ -241,6 +241,9 @@ tasks.withType<Test>().configureEach {
     systemProperty("live.plugins", providers.gradleProperty("livePlugins").getOrElse(""))
     systemProperty("live.repo", providers.gradleProperty("liveRepo").getOrElse(""))
     systemProperty("live.search", providers.gradleProperty("liveSearch").getOrElse(""))
+    // LiveKokoroTest fetches a speech model and speaks with it.
+    systemProperty("live.tts", providers.gradleProperty("liveTts").getOrElse(""))
+    systemProperty("live.tts.out", providers.gradleProperty("liveTtsOut").getOrElse(""))
     // LiveBrowserTest drives the browser on this machine; needs a display.
     systemProperty("live.browser", providers.gradleProperty("liveBrowser").getOrElse(""))
     systemProperty("live.dump", providers.gradleProperty("liveDump").getOrElse(""))
@@ -252,7 +255,8 @@ tasks.withType<Test>().configureEach {
     testLogging {
         if (providers.gradleProperty("livePlugins").isPresent ||
             providers.gradleProperty("liveBrowser").isPresent ||
-            providers.gradleProperty("fetchBrowser").isPresent
+            providers.gradleProperty("fetchBrowser").isPresent ||
+            providers.gradleProperty("liveTts").isPresent
         ) showStandardStreams = true
     }
 }

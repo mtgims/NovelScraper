@@ -10,6 +10,10 @@ what's in that APK, so you can tell what's on your phone.
 
 ## 2026-09-23
 
+- **Kokoro at full precision on the desktop, and the Library button works from
+  a novel (0.38.2).** The narration model was the eight-bit one, which is why it
+  sounded gravelly; the Linux app now uses the full one and still speaks five
+  times faster than real time.
 - **Desktop layout, second pass (0.38.1).** Hovering a novel lights the whole
   tile in the app's rounded shape instead of a square patch behind it, opening a
   novel no longer lurches (the sidebar used to vanish and the page widen after

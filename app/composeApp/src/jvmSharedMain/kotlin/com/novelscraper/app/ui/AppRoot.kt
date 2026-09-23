@@ -279,6 +279,11 @@ private fun MainApp() {
 /** Go to a top-level destination, keeping each tab's own back stack. */
 private fun go(nav: androidx.navigation.NavHostController, from: String?, dest: String) {
     if (dest == from) return
+    // Already somewhere above it in the stack (a novel's page sits above the
+    // library): come back to it. Navigating instead asks to pop up to the
+    // library and then to go to the library, and the two cancel out, which is
+    // why the library was the one destination that did nothing.
+    if (nav.popBackStack(dest, inclusive = false)) return
     nav.navigate(dest) {
         launchSingleTop = true
         popUpTo("library") { saveState = true }

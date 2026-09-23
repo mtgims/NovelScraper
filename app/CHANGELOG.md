@@ -32,6 +32,17 @@ crash report is unreadable without the matching one.
 
 ---
 
+## 0.38.2, 2026-09-23 · `versionCode 73`
+- **Kokoro sounds like Kokoro now, on a computer.** The app was fetching the
+  model quantised down to eight bits, a quarter of the size and audibly so: the
+  right voice with gravel poured over it. The Linux app now fetches the
+  full-precision one (about 335 MB), which on this machine speaks four seconds
+  of narration in under a second, five times faster than it is listened to. The
+  phone keeps the small model, where the storage and the processor both matter.
+- **Library is reachable from a novel's page again.** It was the one destination
+  in the sidebar that did nothing there: going to it asked to pop back to the
+  library and then to open the library, and the two cancelled each other out.
+
 ## 0.38.1, 2026-09-23 · `versionCode 72`
 The desktop layout, gone over again.
 - **A novel lights up whole.** The mark under the pointer was a square patch the
