@@ -65,6 +65,10 @@ object SystemBrowser {
     @Volatile private var chosen: File? = null
     @Volatile private var noSandbox = false
 
+    /** True when the browser at the other end was already running: someone else's
+     *  windows are in it, and it is not ours to close. */
+    @Volatile private var adopted = false
+
     /** `NOVELSCRAPER_BROWSER_VISIBLE=1` keeps the window on screen the whole
      *  time, for a desktop where a check won't finish out of sight. */
     private val keepVisible: Boolean =
@@ -418,7 +422,11 @@ object SystemBrowser {
         // up and fall back to the browser we carry, take up with the one already
         // here: it is ours, in our own folder, and its cookies are the ones we
         // earned.
-        if (port.isFile && adopt(endpointFrom(port))) return@withContext openTab()
+        if (port.isFile && adopt(endpointFrom(port))) {
+            adopted = true
+            return@withContext openTab()
+        }
+        adopted = false
         if (startProcess() == null) return@withContext false
         val endpoint = withTimeoutOrNull(20_000) { awaitEndpoint(port) }
         if (endpoint == null) {
@@ -565,16 +573,20 @@ object SystemBrowser {
     /** One tab, kept for the whole run, so a site that has been let through stays
      *  let through. */
     private suspend fun openTab(): Boolean {
-        // The window the browser opened at startup, which is the one the position
-        // and size on the command line applied to. A second tab beside it would
-        // only be something for the reader to wonder about.
-        val existing = call("Target.getTargets", buildJsonObject {}, null)
+        // A browser the app started has one window, opened where the command line
+        // put it: that one is ours to use. A browser that was already running is
+        // somebody's, with their tabs in it, so the app opens a window of its own
+        // and leaves theirs alone rather than steering a page they are reading.
+        val existing = if (adopted) null else call("Target.getTargets", buildJsonObject {}, null)
             ?.get("targetInfos")?.jsonArray
             ?.firstOrNull { it.jsonObject["type"]?.jsonPrimitive?.contentOrNull == "page" }
             ?.jsonObject?.get("targetId")?.jsonPrimitive?.contentOrNull
         targetId = existing
-            ?: call("Target.createTarget", buildJsonObject { put("url", "about:blank") }, null)
-                ?.get("targetId")?.jsonPrimitive?.contentOrNull
+            ?: call(
+                "Target.createTarget",
+                buildJsonObject { put("url", "about:blank"); if (adopted) put("newWindow", true) },
+                null,
+            )?.get("targetId")?.jsonPrimitive?.contentOrNull
             ?: return false
         val attached = call(
             "Target.attachToTarget",
@@ -596,8 +608,20 @@ object SystemBrowser {
 
     @Synchronized
     private fun stop() {
+        // A browser we adopted is left running, but the window we opened in it is
+        // ours to clear away.
+        if (adopted) targetId?.let { id ->
+            runCatching {
+                socket?.send(
+                    buildJsonObject {
+                        put("id", nextId.getAndIncrement())
+                        put("method", "Target.closeTarget")
+                        put("params", buildJsonObject { put("targetId", id) })
+                    }.toString(),
+                )
+            }
+        }
         runCatching { socket?.close(1000, null) }
-        // A browser we adopted is left running: it was here before us.
         runCatching { process?.destroy() }
         socket = null
         process = null
@@ -605,6 +629,7 @@ object SystemBrowser {
         browserSession = null
         targetId = null
         windowId = null
+        adopted = false
         pending.clear()
     }
 

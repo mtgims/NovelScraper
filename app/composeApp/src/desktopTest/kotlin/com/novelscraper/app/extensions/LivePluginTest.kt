@@ -49,6 +49,14 @@ class LivePluginTest {
                     val popular = p.popular(1)
                     println("[$id] popular: ${popular.size} novels, first: ${popular.firstOrNull()}")
                     assertTrue(popular.isNotEmpty(), "$id: empty popular list")
+                    // Searching is a different page on most sites, and a different
+                    // way of being refused, so it is worth its own look.
+                    System.getProperty("live.search").orEmpty().takeIf { it.isNotBlank() }?.let { term ->
+                        delay(1500)
+                        val found = p.search(term, 1)
+                        println("[$id] search '$term': ${found.size} novels, first: ${found.firstOrNull()}")
+                        assertTrue(found.isNotEmpty(), "$id: search found nothing")
+                    }
                     // Try up to three novels: one may have locked or removed chapters.
                     var lastError: Throwable? = null
                     var ok = false

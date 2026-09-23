@@ -32,6 +32,14 @@ crash report is unreadable without the matching one.
 
 ---
 
+## 0.37.1, 2026-09-23 · `versionCode 68`
+- **The app stops steering your browser window.** When it finds a browser
+  already running on its own profile (one you opened yourself, or one left by a
+  run that ended badly), it now opens a window of its own in it and parks that
+  out of sight, instead of taking over the tab in front of you. Closing your
+  window no longer stops the app fetching, and yours is left where it was.
+- The live source check can search now, not only list and read.
+
 ## 0.37.0, 2026-09-23 · `versionCode 67`
 Scribble Hub, read in the app at last, and why it wouldn't be.
 - **The app's browser no longer announces itself as automated.** Chromium sets

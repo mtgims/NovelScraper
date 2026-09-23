@@ -10,6 +10,12 @@ what's in that APK, so you can tell what's on your phone.
 
 ## 2026-09-23
 
+- **Scribble Hub: the site's own ranking, its own search, and no more steering
+  your browser window (0.37.1).** The source listed highest-rated novels and
+  called them popular; it now shows the ranking the site itself shows (Rising
+  today, with its weekly, monthly, all-time, Popularity, Favourites, Activity
+  and Readers rankings as sort options), and searches the way the site does. The
+  app also stops taking over a browser window you opened yourself.
 - **Scribble Hub works in the app (0.37.0).** Its check refused the app's
   browser because Chromium tells every page it is being driven while a program
   is attached to it; the same window opened by hand passed first time. The app's

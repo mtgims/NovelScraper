@@ -23,6 +23,9 @@ class LiveBrowserTest {
             val page = SystemBrowser.load(url, patienceMs = 8_000, interactiveMs = 90_000, loadMs = 120_000)
             println("user agent: ${SystemBrowser.userAgent}")
             println("page: ${page?.length ?: -1} chars")
+            System.getProperty("live.dump")?.takeIf { it.isNotBlank() }?.let { path ->
+                page?.let { java.io.File(path).writeText(it); println("dumped to $path") }
+            }
             println(page?.take(1600))
             val cookies = SystemBrowser.cookies(url)
             println("cookies: " + cookies.joinToString { "${it.name}@${it.domain}" })
