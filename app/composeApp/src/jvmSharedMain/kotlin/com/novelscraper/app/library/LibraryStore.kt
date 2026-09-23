@@ -435,12 +435,22 @@ class LibraryStore(
      * signed in; throws if the server can't be reached (nothing is lost: what
      * wasn't accepted is sent next time).
      */
+    /** Raised when the server answers, but has no sync in it: an older build. */
+    class SyncUnsupportedException : Exception("This server doesn't have sync yet.")
+
     suspend fun syncNow(): Boolean = serverMutex.withLock {
         if (!server.enabled) return false
         io { db.transaction { sync.enroll() } }
         repeat(MAX_SYNC_ROUNDS) {
             val (cursor, device, out) = io { db.transactionWithResult { Triple(sync.cursor(), sync.device(), sync.pending(SYNC_BATCH)) } }
-            val resp = server.sync(SyncRequest(cursor, device, out))
+            val resp = try {
+                server.sync(SyncRequest(cursor, device, out))
+            } catch (e: retrofit2.HttpException) {
+                // A 404 is not a network problem: the server is answering, it
+                // simply doesn't know this endpoint. Saying "can't reach the
+                // server" for that sends everyone looking in the wrong place.
+                if (e.code() == 404) throw SyncUnsupportedException() else throw e
+            }
             io {
                 db.transaction {
                     sync.sent(out)

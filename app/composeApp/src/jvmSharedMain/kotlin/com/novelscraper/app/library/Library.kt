@@ -150,7 +150,13 @@ object LibrarySyncRunner {
     val state: StateFlow<State> = _state.asStateFlow()
 
     /** [lastSync]: when the last sync succeeded (ms), 0 if never this run. */
-    data class State(val syncing: Boolean = false, val lastSync: Long = 0, val error: Boolean = false)
+    data class State(
+        val syncing: Boolean = false,
+        val lastSync: Long = 0,
+        val error: Boolean = false,
+        /** The server answered, but has no sync in it: it needs updating. */
+        val unsupported: Boolean = false,
+    )
 
     /** The app is in use: sync now, then periodically. */
     @Synchronized
@@ -191,9 +197,13 @@ object LibrarySyncRunner {
         } catch (e: kotlinx.coroutines.CancellationException) {
             _state.value = _state.value.copy(syncing = false)
             throw e
+        } catch (e: LibraryStore.SyncUnsupportedException) {
+            Log.w("Sync", "the server has no sync endpoint (an older build)")
+            _state.value = _state.value.copy(syncing = false, error = true, unsupported = true)
+            false
         } catch (e: Exception) {
             Log.d("Sync", "sync failed: ${e.message}")
-            _state.value = _state.value.copy(syncing = false, error = true)
+            _state.value = _state.value.copy(syncing = false, error = true, unsupported = false)
             false
         }
     }

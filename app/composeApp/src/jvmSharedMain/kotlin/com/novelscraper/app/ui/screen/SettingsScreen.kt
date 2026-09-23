@@ -370,6 +370,9 @@ private fun SyncStatus() {
     }
     val text = when {
         sync.syncing -> "Syncing…"
+        sync.unsupported ->
+            "Not synced: this server is an older build without sync. Update the server, then it will " +
+                "catch up on its own. Nothing is lost meanwhile."
         sync.error -> "Not synced: can't reach the server. Changes are kept and sent later."
         sync.lastSync == 0L -> "Library sync: waiting for the first sync."
         else -> {

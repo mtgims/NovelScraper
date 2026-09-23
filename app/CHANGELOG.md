@@ -32,6 +32,17 @@ crash report is unreadable without the matching one.
 
 ---
 
+## 0.39.2, 2026-09-23 · `versionCode 80`
+- **Novels can be dragged again on a phone.** The right-click menu took the long
+  press for itself, and a long press is how a finger picks a novel up. The menu
+  is now a pointer's alone; what it offers is on the novel's own page, which is
+  where a phone has always found it.
+- **Sync says what is actually wrong.** "Can't reach the server" was shown for
+  any failure at all, including the one that is happening: the server answers
+  perfectly well but has no sync in it, because it is running a build from
+  before sync existed. That now reads as what it is, and points at updating the
+  server.
+
 ## 0.39.1, 2026-09-23 · `versionCode 79`
 - **Fixed: Browse, Progress, Stats and Settings crashed the app.** Taking the
   Scrape destination out took the destinations that sat below it in the same

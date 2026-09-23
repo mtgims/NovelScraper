@@ -10,6 +10,9 @@ what's in that APK, so you can tell what's on your phone.
 
 ## 2026-09-23
 
+- **Dragging works on phones again, and sync explains itself (0.39.2).** The
+  right-click menu had taken the long press that moves a novel. Sync's failure
+  message blamed the network for a server that answers but has no sync endpoint.
 - **Fixed: Browse and three other screens crashed (0.39.1).** Removing Scrape
   took the neighbouring destinations with it.
 - **Scrape removed; long novels split into parts (0.39.0).** Novels come from

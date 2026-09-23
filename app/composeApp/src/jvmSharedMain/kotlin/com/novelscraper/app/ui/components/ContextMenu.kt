@@ -14,6 +14,7 @@ import androidx.compose.ui.geometry.Offset
 import androidx.compose.foundation.layout.offset
 import androidx.compose.ui.unit.IntOffset
 import kotlin.math.roundToInt
+import com.novelscraper.app.platform.isDesktop
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.input.pointer.PointerEventPass
 import androidx.compose.ui.input.pointer.PointerEventType
@@ -24,12 +25,12 @@ import androidx.compose.ui.input.pointer.pointerInput
 data class MenuAction(val label: String, val onSelect: () -> Unit)
 
 /**
- * The menu a thing offers when asked: right-click with a pointer, hold with a
- * finger.
+ * The menu a thing offers when asked, which on a computer means a right-click.
  *
- * Every desktop has this and the app had none of it, so everything a novel could
- * do meant opening the novel first. The same menu serves both, because the
- * actions are the same; only the way of asking differs.
+ * A phone is left alone: holding something down there already means picking it
+ * up and moving it, and a novel that opens a menu instead can't be rearranged.
+ * What the menu offers is on the novel's own page as well, which is where a
+ * phone has always found it.
  */
 @OptIn(ExperimentalFoundationApi::class)
 @Composable
@@ -46,7 +47,13 @@ fun WithContextMenu(
     var pressedAt by remember { mutableStateOf(Offset.Zero) }
     androidx.compose.foundation.layout.Box(
         modifier
-            .combinedClickable(onClick = onClick, onLongClick = { open = true })
+            .combinedClickable(
+                onClick = onClick,
+                // Holding a novel down on a phone is how it is picked up and
+                // moved; taking that over for a menu took the reordering away.
+                // A pointer has a button of its own for this and needs no hold.
+                onLongClick = if (isDesktop) ({ open = true }) else null,
+            )
             .pointerInput(actions) {
                 awaitPointerEventScope {
                     while (true) {
