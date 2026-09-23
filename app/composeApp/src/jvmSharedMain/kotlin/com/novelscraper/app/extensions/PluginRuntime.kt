@@ -271,14 +271,20 @@ class PluginRuntime private constructor(
         }.toString()
     }
 
-    /** Cloudflare's interstitial ("Just a moment..."): 403/503 with its marker
-     *  header or page. */
+    /**
+     * A guard's interstitial rather than the page: 403 or 503 with the marker
+     * Cloudflare documents, or a body that is plainly a check. Cloudflare is not
+     * the only one, so the page itself decides as well: Ranobes sits behind
+     * DDoS-Guard, which answers 503 with the same kind of holding page.
+     */
     private fun isChallenge(code: Int, headers: okhttp3.Headers, body: ByteArray): Boolean {
         if (code != 403 && code != 503) return false
         if (headers["cf-mitigated"].equals("challenge", ignoreCase = true)) return true
-        val head = String(body, 0, minOf(body.size, 4096), Charsets.UTF_8)
-        return headers["server"]?.contains("cloudflare", ignoreCase = true) == true &&
-            (head.contains("Just a moment", ignoreCase = true) || head.contains("cf-chl"))
+        val guard = headers["server"].orEmpty()
+        if (guard.contains("ddos-guard", ignoreCase = true)) return true
+        val head = String(body, 0, minOf(body.size, 6144), Charsets.UTF_8)
+        return looksLikeBrowserCheck(head) ||
+            (guard.contains("cloudflare", ignoreCase = true) && head.contains("cf-chl"))
     }
 
     private fun requestBody(method: String, body: JsonObject?, contentType: String?): okhttp3.RequestBody? {

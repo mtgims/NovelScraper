@@ -10,6 +10,12 @@ what's in that APK, so you can tell what's on your phone.
 
 ## 2026-09-23
 
+- **Fixed: Ranobes and Novel Hall (0.34.3).** Ranobes is guarded by DDoS-Guard,
+  whose 503 the app read as a dead site rather than a check to pass; it now
+  loads through the browser like a Cloudflare site. Novel Hall was showing a
+  "book cover not available" picture on every novel, because its list pages
+  carry no covers; the app draws its own tile instead. Cookies collected on the
+  way through the browser are kept, so following pages are plain requests.
 - **Browser checks on Linux, the way the phone does them (0.34.2).** A hidden
   browser loads pages for sources that refuse plain requests, and shows itself
   only when a check needs a tap, which is how Mihon handles this on Android.

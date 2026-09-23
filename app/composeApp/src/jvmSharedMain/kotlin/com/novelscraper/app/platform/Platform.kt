@@ -161,5 +161,8 @@ fun looksLikeBrowserCheck(html: String): Boolean {
     return head.contains("Just a moment", ignoreCase = true) ||
         head.contains("cf_chl_opt", ignoreCase = true) ||
         head.contains("cf-chl-bypass", ignoreCase = true) ||
-        head.contains("Checking your browser before accessing", ignoreCase = true)
+        head.contains("Checking your browser before accessing", ignoreCase = true) ||
+        // DDoS-Guard (Ranobes) holds pages back the same way.
+        head.contains("ddos-guard", ignoreCase = true) ||
+        head.contains("check_are_you_bot", ignoreCase = true)
 }

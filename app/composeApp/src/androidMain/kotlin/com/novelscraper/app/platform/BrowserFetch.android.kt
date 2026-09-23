@@ -4,6 +4,8 @@ import android.annotation.SuppressLint
 import android.webkit.CookieManager
 import android.webkit.WebView
 import android.webkit.WebViewClient
+import com.novelscraper.app.extensions.BrowserCookieJar
+import com.novelscraper.app.extensions.Extensions
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
@@ -11,6 +13,7 @@ import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.withTimeoutOrNull
+import okhttp3.HttpUrl.Companion.toHttpUrlOrNull
 
 /** Android has a WebView. */
 actual val canFetchThroughBrowser: Boolean = true
@@ -46,6 +49,9 @@ actual suspend fun fetchThroughBrowser(url: String): String? = lock.withLock {
                     delay(1_500)
                     page = html(view)
                 }
+                // The cookies that got the page through go to the extensions, so
+                // the pages after it can be fetched plainly.
+                if (page != null) keepCookies(url)
                 page
             }
         } finally {
@@ -55,6 +61,28 @@ actual suspend fun fetchThroughBrowser(url: String): String? = lock.withLock {
 }
 
 private const val SETTLE_MS = 2_500L
+
+/** Give what the WebView collected to the extensions' cookie jar. The header form
+ *  is name/value pairs only, so the domain is the one we asked for. */
+private fun keepCookies(url: String) {
+    val http = url.toHttpUrlOrNull() ?: return
+    val header = CookieManager.getInstance().getCookie(url).orEmpty()
+    val cookies = header.split(';').mapNotNull { pair ->
+        val at = pair.indexOf('=')
+        if (at <= 0) return@mapNotNull null
+        BrowserCookieJar.BrowserCookie(
+            name = pair.take(at).trim(),
+            value = pair.substring(at + 1).trim(),
+            domain = http.host,
+            path = "/",
+            expiresAt = 0L,
+            secure = http.isHttps,
+            httpOnly = false,
+        )
+    }
+    if (cookies.isEmpty()) return
+    Extensions.cookies.acceptFromBrowser(http, cookies)
+}
 
 /** The page as it stands, unescaped from the JavaScript string the WebView returns. */
 private suspend fun html(view: WebView): String? {

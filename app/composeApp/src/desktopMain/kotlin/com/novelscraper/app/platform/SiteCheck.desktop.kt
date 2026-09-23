@@ -184,7 +184,7 @@ private suspend fun ensureBrowser(onStatus: (String) -> Unit): Boolean {
 }
 
 /** Cookies the browser holds for [url], as it holds them. */
-private suspend fun readCookies(url: String): List<BrowserCookieJar.BrowserCookie> = withContext(Dispatchers.IO) {
+internal suspend fun readCookies(url: String): List<BrowserCookieJar.BrowserCookie> = withContext(Dispatchers.IO) {
     val out = ArrayList<BrowserCookieJar.BrowserCookie>()
     val done = java.util.concurrent.CountDownLatch(1)
     val visitor = object : org.cef.callback.CefCookieVisitor {

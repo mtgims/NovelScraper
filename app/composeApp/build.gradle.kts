@@ -2,6 +2,8 @@ import org.jetbrains.kotlin.gradle.dsl.JvmTarget
 import java.net.URI
 import java.security.MessageDigest
 import javax.inject.Inject
+import java.nio.file.Files
+import java.nio.file.StandardCopyOption
 
 plugins {
     id("com.android.kotlin.multiplatform.library")
@@ -321,14 +323,25 @@ abstract class BuildAppImage : DefaultTask() {
         }
         tool.get().asFile.setExecutable(true)
         val out = output.get().asFile
-        out.delete()
+        // Build beside the old one and move it into place. A running AppImage is
+        // a squashfs mounted from this very file: writing over it pulls the app's
+        // own classes out from under it, and it dies with SIGBUS. A move leaves
+        // the old file's contents alone for as long as something is reading them.
+        val staged = File(out.parentFile, out.name + ".new")
+        staged.delete()
         exec.exec {
             // Run appimagetool without FUSE; ARCH names the target.
             environment("APPIMAGE_EXTRACT_AND_RUN", "1")
             environment("ARCH", "x86_64")
             commandLine(tool.get().asFile.path, "--no-appstream", "--runtime-file", runtime.get().asFile.path,
-                appDir.path, out.path)
+                appDir.path, staged.path)
         }
+        Files.move(
+            staged.toPath(), out.toPath(),
+            StandardCopyOption.REPLACE_EXISTING,
+            StandardCopyOption.ATOMIC_MOVE,
+        )
+        out.setExecutable(true)
         logger.lifecycle("AppImage -> ${out.absolutePath}")
     }
 }

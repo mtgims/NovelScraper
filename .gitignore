@@ -44,3 +44,7 @@ node_modules/
 # operational detail that has no business in a shared repo — and `git add -A`
 # would happily take it.
 /CHAT-HANDOFF.md
+
+# JVM crash reports and core files, written next to wherever the app was started.
+/hs_err_pid*.log
+/core.*

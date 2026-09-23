@@ -32,6 +32,23 @@ crash report is unreadable without the matching one.
 
 ---
 
+## 0.34.3, 2026-09-23 · `versionCode 62`
+Two sources that wouldn't behave.
+- **Ranobes loads again.** It is guarded by DDoS-Guard rather than Cloudflare,
+  and answers a plain request with a 503 the app read as a dead site instead of
+  a check to pass. It now recognises that guard and loads the page through the
+  browser, showing the check when it wants a tick.
+- **Novel Hall shows its covers.** Its list pages carry no cover images, and the
+  source was filling the gap with a picture that says "book cover not
+  available". It now leaves the cover empty, so the app draws the novel's own
+  tile, and the real cover appears on the novel's page.
+- **A check, once.** Cookies a page collects on its way through the browser are
+  kept, so the pages after it are fetched as ordinary requests, at the speed of
+  a request rather than a page load.
+- Building no longer kills a running Linux app: the APK and the AppImage are
+  written beside the old file and moved into place, rather than over a file the
+  running app is reading itself out of.
+
 ## 0.34.2, 2026-09-23 · `versionCode 61`
 Browser checks on Linux now work the way they do on the phone: one browser is
 kept out of sight and used to load pages from sources that refuse the app's

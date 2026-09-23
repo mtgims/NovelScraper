@@ -1,5 +1,6 @@
 package com.novelscraper.app.platform
 
+import com.novelscraper.app.extensions.Extensions
 import dev.datlag.kcef.KCEF
 import dev.datlag.kcef.KCEFBrowser
 import dev.datlag.kcef.KCEFClient
@@ -10,6 +11,7 @@ import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.withTimeoutOrNull
+import okhttp3.HttpUrl.Companion.toHttpUrlOrNull
 import org.cef.browser.CefBrowser
 import org.cef.browser.CefRendering
 import org.cef.callback.CefStringVisitor
@@ -70,11 +72,24 @@ actual suspend fun fetchThroughBrowser(url: String): String? = lock.withLock {
             page = source(view)
         }
         val result = page?.takeIf { !looksLikeBrowserCheck(it) }
+        // A page that came through carries the cookies that got it through: hand
+        // them to the extensions so the next pages can be fetched plainly, at the
+        // speed of a request rather than a page load.
+        if (result != null) keepCookies(url)
         Log.i(TAG, "$url -> ${result?.length ?: -1} chars")
         result
     } finally {
         if (shown) withContext(Dispatchers.Main) { hideFrame() }
     }
+}
+
+/** Give what the browser collected to the extensions' cookie jar. */
+private suspend fun keepCookies(url: String) {
+    val http = url.toHttpUrlOrNull() ?: return
+    val cookies = runCatching { readCookies(url) }.getOrDefault(emptyList())
+    if (cookies.isEmpty()) return
+    Log.i(TAG, "kept ${cookies.size} cookies for ${http.host}")
+    Extensions.cookies.acceptFromBrowser(http, cookies)
 }
 
 /** The shared browser, made on first use. */

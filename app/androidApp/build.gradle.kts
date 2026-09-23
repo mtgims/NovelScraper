@@ -1,5 +1,9 @@
 // The Android app: the shell around the shared code in :composeApp (App,
 // MainActivity, the manifest's application and activity), plus packaging.
+import java.io.File
+import java.nio.file.Files
+import java.nio.file.StandardCopyOption
+
 plugins {
     id("com.android.application")
     id("org.jetbrains.kotlin.plugin.compose")
@@ -96,7 +100,15 @@ val copyApkToRoot = tasks.register("copyApkToRoot") {
     inputs.file(src)
     outputs.file(dst)
     doLast {
-        src.get().asFile.copyTo(dst, overwrite = true)
+        // Copy beside it and move into place, so an interrupted build can't leave
+        // half an APK where the whole one was.
+        val staged = File(dst.parentFile, dst.name + ".new")
+        src.get().asFile.copyTo(staged, overwrite = true)
+        Files.move(
+            staged.toPath(), dst.toPath(),
+            StandardCopyOption.REPLACE_EXISTING,
+            StandardCopyOption.ATOMIC_MOVE,
+        )
         logger.lifecycle("APK -> ${dst.absolutePath}")
     }
 }
