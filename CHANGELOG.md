@@ -10,6 +10,8 @@ what's in that APK, so you can tell what's on your phone.
 
 ## 2026-09-23
 
+- **Right-click menus open under the pointer (0.38.6).** They were appearing at
+  a fixed spot beside the novel instead of where the click landed.
 - **The sidebar animates open and closed (0.38.5).** It widens and narrows over
   about a fifth of a second with the labels going with it, and the icons hold
   their place while it moves.

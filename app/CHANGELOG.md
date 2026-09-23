@@ -32,6 +32,13 @@ crash report is unreadable without the matching one.
 
 ---
 
+## 0.38.6, 2026-09-23 · `versionCode 77`
+- **A right-click opens its menu where you clicked.** It was appearing at a
+  fixed spot beside the novel, because a dropdown measures from the bottom of
+  whatever it is attached to and it was attached to the whole tile. It now hangs
+  off a point of no size sitting exactly where the press landed, whether that
+  press was a right-click or a finger held down.
+
 ## 0.38.5, 2026-09-23 · `versionCode 76`
 - **The sidebar opens and closes rather than jumping.** It widens and narrows
   over about a fifth of a second, and the labels come and go with it, taken away
