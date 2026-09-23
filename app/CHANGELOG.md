@@ -32,6 +32,27 @@ crash report is unreadable without the matching one.
 
 ---
 
+## 0.36.0, 2026-09-23 · `versionCode 64`
+Checks that wouldn't finish, and machines with no browser to finish them in.
+- **A browser of the app's own, when the computer has none.** Rather than the
+  Chromium the app used to carry (Chrome 126, two years old, which the harder
+  checks refuse on sight), it fetches the current Chrome that Google publishes
+  for driving from a program, about 190 MB, once, and drives it exactly as it
+  drives an installed one. Machines with Chromium, Brave, Chrome, Edge or
+  Vivaldi keep using that and download nothing.
+- **A check that sat there restarting itself.** The page is asked for again
+  every few seconds while the window is still hidden, and once more the moment
+  the window comes on screen, because some checks never finish in a window that
+  isn't being drawn. A site that has needed a person before gets its window
+  straight away next time instead of a silent minute first.
+- **The page is read out of the document now**, rather than by running script
+  inside it. Asking a page to evaluate an expression is the ordinary way to do
+  this, and also the way an automated browser announces itself to the checks it
+  is trying to get through.
+- **A clearer answer when a check keeps asking.** A site that hands over its
+  pass and then asks again is objecting to where the request comes from, not to
+  the app, and now says so instead of "the check didn't pass".
+
 ## 0.35.0, 2026-09-23 · `versionCode 63`
 Browser checks, answered by the browser you already have.
 - **Your own browser does the check now.** On Linux the app drives the Chromium,

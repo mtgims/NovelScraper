@@ -55,10 +55,34 @@ object SystemBrowser {
     )
 
     /** The browser to drive: whatever `NOVELSCRAPER_BROWSER` names, else the
-     *  first one on the PATH. Worked out once. */
-    val binary: File? by lazy { find() }
+     *  first one on the PATH, else one the app fetched for itself. */
+    val binary: File?
+        get() = chosen ?: locate()?.also { chosen = it }
 
     val available: Boolean get() = binary != null
+
+    @Volatile private var chosen: File? = null
+    @Volatile private var noSandbox = false
+
+    private fun locate(): File? {
+        // Under test, only the test that asks for a browser gets one.
+        if (System.getProperty("novelscraper.tests") == "true" &&
+            System.getProperty("live.browser").isNullOrBlank()
+        ) return null
+        return find() ?: ChromeDownload.installed
+    }
+
+    /**
+     * Makes sure there is a browser to drive, fetching a current Chrome if this
+     * machine has none of its own. [onStatus] carries the wait to the UI.
+     */
+    suspend fun ensure(onStatus: (String) -> Unit): Boolean {
+        if (available) return true
+        if (System.getProperty("novelscraper.tests") == "true") return false
+        val fetched = ChromeDownload.ensure(onStatus) ?: return false
+        chosen = fetched
+        return true
+    }
 
     /** What the browser calls itself, once it has told us (the app's own requests
      *  claim the same, so a clearance cookie stays with the name that earned it). */
@@ -72,6 +96,9 @@ object SystemBrowser {
     private var pageSession: String? = null
     private var targetId: String? = null
     private var windowId: Int? = null
+
+    @Volatile private var navigatedAt = 0L
+    @Volatile private var loadedAt = 0L
 
     private val pending = ConcurrentHashMap<Int, CompletableDeferred<JsonObject>>()
     private val nextId = AtomicInteger(1)
@@ -103,19 +130,37 @@ object SystemBrowser {
         var deadline = started + loadMs
         var shown = false
         try {
-            call("Page.navigate", buildJsonObject { put("url", url) }, pageSession) ?: return null
-            while (System.currentTimeMillis() < deadline) {
-                if (ready()) break
-                delay(250)
-            }
-            var page = html()
+            navigate(url) ?: return null
+            var page = settled(deadline)
+            var retries = 0
+            var lastRetry = System.currentTimeMillis()
             while (page != null && looksLikeBrowserCheck(page) && System.currentTimeMillis() < deadline) {
-                if (!shown && System.currentTimeMillis() - started > patienceMs) {
+                val now = System.currentTimeMillis()
+                if (!shown && now - started > patienceMs) {
                     shown = true
                     Log.i(TAG, "the check needs a visible browser; showing it")
                     onShown()
                     show()
+                    // A fresh go at the check in a window that is on screen and
+                    // being drawn. Some checks never finish in one that isn't,
+                    // and sit there restarting themselves instead.
+                    navigate(url)
+                    page = settled(now + 20_000)
                     deadline = System.currentTimeMillis() + interactiveMs
+                    continue
+                }
+                // While it is still ours to deal with, ask again every so often:
+                // a check that has quietly issued its cookie usually only needs
+                // the page fetched once more to be let through. Never once the
+                // window is on screen, where a reload lands under the reader's
+                // own hands.
+                if (!shown && retries < MAX_RETRIES && now - lastRetry > RETRY_MS) {
+                    retries++
+                    lastRetry = now
+                    Log.i(TAG, "still a check; asking again (${retries}/$MAX_RETRIES)")
+                    navigate(url)
+                    page = settled(now + 20_000)
+                    continue
                 }
                 delay(1_000)
                 page = html()
@@ -128,6 +173,20 @@ object SystemBrowser {
         } finally {
             if (shown) runCatching { hide() }
         }
+    }
+
+    private suspend fun navigate(url: String): JsonObject? {
+        navigatedAt = System.currentTimeMillis()
+        return call("Page.navigate", buildJsonObject { put("url", url) }, pageSession)
+    }
+
+    /** Waits for the page to finish loading (or [deadline]), then reads it. */
+    private suspend fun settled(deadline: Long): String? {
+        while (System.currentTimeMillis() < deadline) {
+            if (ready()) break
+            delay(250)
+        }
+        return html()
     }
 
     /** The cookies the browser holds for [url] (what a passed check left behind). */
@@ -194,10 +253,6 @@ object SystemBrowser {
     // --- starting and stopping -----------------------------------------------------
 
     private fun find(): File? {
-        // Under test, only the test that asks for a browser gets one.
-        if (System.getProperty("novelscraper.tests") == "true" &&
-            System.getProperty("live.browser").isNullOrBlank()
-        ) return null
         System.getenv("NOVELSCRAPER_BROWSER")?.takeIf { it.isNotBlank() }?.let { named ->
             val file = File(named)
             if (file.canExecute()) return file
@@ -230,6 +285,10 @@ object SystemBrowser {
             "--user-data-dir=${profile.absolutePath}",
             "--remote-debugging-port=0",
             "--no-first-run",
+            // A fetched Chrome has no setuid helper, so on a kernel that won't
+            // give it a namespace of its own it can only run without a sandbox.
+            // Only ever after it has failed to start with one.
+            if (noSandbox) "--no-sandbox" else null,
             "--no-default-browser-check",
             "--disable-session-crashed-bubble",
             "--hide-crash-restore-bubble",
@@ -259,6 +318,12 @@ object SystemBrowser {
         if (endpoint == null) {
             Log.w(TAG, "the browser didn't open its debugging port")
             stop()
+            // A browser that died on the spot usually couldn't build its sandbox.
+            if (!noSandbox) {
+                noSandbox = true
+                Log.i(TAG, "trying again without the sandbox")
+                return@withContext start()
+            }
             return@withContext false
         }
         if (!connect(endpoint)) { stop(); return@withContext false }
@@ -293,7 +358,12 @@ object SystemBrowser {
 
                 override fun onMessage(webSocket: WebSocket, text: String) {
                     val message = runCatching { json.parseToJsonElement(text).jsonObject }.getOrNull() ?: return
-                    val id = message["id"]?.jsonPrimitive?.int ?: return
+                    val id = message["id"]?.jsonPrimitive?.int ?: run {
+                        // Not an answer: the browser saying the page finished.
+                        val event = message["method"]?.jsonPrimitive?.contentOrNull
+                        if (event == "Page.loadEventFired") loadedAt = System.currentTimeMillis()
+                        return
+                    }
                     val result = message["result"]?.jsonObject
                         ?: buildJsonObject { put("error", message["error"]?.toString() ?: "failed") }
                     pending.remove(id)?.complete(result)
@@ -385,23 +455,33 @@ object SystemBrowser {
         return result
     }
 
-    /** True once the page has finished loading. */
-    private suspend fun ready(): Boolean = evaluate("document.readyState") == "complete"
+    /** True once the page loaded after the last request to go somewhere. */
+    private fun ready(): Boolean = loadedAt >= navigatedAt
 
-    private suspend fun html(): String? = evaluate("document.documentElement.outerHTML")
-
-    private suspend fun evaluate(expression: String): String? {
-        val result = call(
-            "Runtime.evaluate",
-            buildJsonObject {
-                put("expression", expression)
-                put("returnByValue", true)
-                put("awaitPromise", false)
-            },
+    /**
+     * The page as the browser holds it, read out of its document rather than by
+     * running script inside it. Asking a page to evaluate an expression is the
+     * ordinary way to do this, and it is also the way an automated browser
+     * announces itself: the machinery that carries the answer back is watched
+     * for by the very checks this browser exists to get through. Reading the
+     * document leaves that machinery alone.
+     */
+    private suspend fun html(): String? {
+        val root = call(
+            "DOM.getDocument",
+            buildJsonObject { put("depth", 0) },
             pageSession,
-        ) ?: return null
-        return result["result"]?.jsonObject?.get("value")?.jsonPrimitive?.contentOrNull
+        )?.get("root")?.jsonObject?.get("nodeId")?.jsonPrimitive?.int ?: return null
+        return call(
+            "DOM.getOuterHTML",
+            buildJsonObject { put("nodeId", root) },
+            pageSession,
+        )?.get("outerHTML")?.jsonPrimitive?.contentOrNull
     }
 
     private const val OFFSCREEN = -2400
+
+    /** How long a check gets before it is asked again, and how many times. */
+    private const val RETRY_MS = 8_000L
+    private const val MAX_RETRIES = 3
 }

@@ -245,9 +245,12 @@ tasks.withType<Test>().configureEach {
     // Everything else runs without one: a test must never open a window, nor go
     // looking for a site's check in the browser the developer happens to have.
     systemProperty("novelscraper.tests", "true")
+    // LiveChromeDownloadTest fetches a browser (a few hundred megabytes).
+    systemProperty("fetch.browser", providers.gradleProperty("fetchBrowser").getOrElse(""))
     testLogging {
         if (providers.gradleProperty("livePlugins").isPresent ||
-            providers.gradleProperty("liveBrowser").isPresent
+            providers.gradleProperty("liveBrowser").isPresent ||
+            providers.gradleProperty("fetchBrowser").isPresent
         ) showStandardStreams = true
     }
 }

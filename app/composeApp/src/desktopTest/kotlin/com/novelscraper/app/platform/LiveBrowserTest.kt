@@ -45,3 +45,20 @@ class LiveBrowserTest {
         }
     }
 }
+
+/**
+ * Fetches a current Chrome the way a machine with no browser would, and drives
+ * it. Run with `./gradlew :composeApp:desktopTest -PfetchBrowser=true`.
+ */
+class LiveChromeDownloadTest {
+
+    @Test
+    fun fetchesAndDrivesAChromeOfItsOwn() {
+        if (System.getProperty("fetch.browser") != "true") return
+        runBlocking {
+            val chrome = ChromeDownload.ensure { println("  $it") }
+            println("fetched: ${chrome?.path}")
+            assertTrue(chrome != null && chrome.canExecute(), "no browser came back")
+        }
+    }
+}

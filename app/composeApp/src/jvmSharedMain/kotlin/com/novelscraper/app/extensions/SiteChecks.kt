@@ -48,8 +48,24 @@ object SiteChecks {
     /** True if this site's pages should go straight through the browser. */
     fun wantsBrowser(url: String): Boolean = host(url)?.let { it in browserHosts } == true
 
+    // Sites whose check has needed a person before. Their window is put on screen
+    // straight away next time, rather than spending a silent minute on a check
+    // that was never going to pass by itself.
+    private val interactiveHosts: MutableSet<String> by lazy {
+        java.util.Collections.synchronizedSet(HashSet(store.getStringSet("interactive-hosts").orEmpty()))
+    }
+
+    /** This site's check wanted a person. */
+    fun neededPerson(url: String) {
+        host(url)?.let { if (interactiveHosts.add(it)) save() }
+    }
+
+    /** True if this site has asked for a person before. */
+    fun wantsPerson(url: String): Boolean = host(url)?.let { it in interactiveHosts } == true
+
     private fun save() {
         store.putStringSet("browser-hosts", synchronized(browserHosts) { HashSet(browserHosts) })
+        store.putStringSet("interactive-hosts", synchronized(interactiveHosts) { HashSet(interactiveHosts) })
     }
 
     /** This site answers plain requests again (its guard was lifted, or the one

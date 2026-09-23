@@ -1,6 +1,7 @@
 package com.novelscraper.app.platform
 
 import com.novelscraper.app.extensions.Extensions
+import com.novelscraper.app.extensions.SiteChecks
 import dev.datlag.kcef.KCEF
 import dev.datlag.kcef.KCEFBrowser
 import dev.datlag.kcef.KCEFClient
@@ -53,7 +54,10 @@ actual suspend fun fetchThroughBrowser(url: String): String? = lock.withLock {
     // The reader's own browser first: it is current, it has the graphics card
     // behind it, and checks that turn the bundled one away pass in it.
     if (SystemBrowser.available) {
-        val page = SystemBrowser.load(url, PATIENCE_MS, INTERACTIVE_MS, LOAD_MS)
+        // A site that has needed a person before gets its window straight away,
+        // rather than a silent minute spent on a check that won't pass alone.
+        val patience = if (SiteChecks.wantsPerson(url)) 0L else PATIENCE_MS
+        val page = SystemBrowser.load(url, patience, INTERACTIVE_MS, LOAD_MS) { SiteChecks.neededPerson(url) }
         if (page != null) {
             keepSystemCookies(url)
             Log.i(TAG, "$url -> ${page.length} chars (${SystemBrowser.binary?.name})")

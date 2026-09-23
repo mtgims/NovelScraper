@@ -22,8 +22,9 @@ actual fun settingsStore(name: String): KeyValueStore =
 actual val hasWebView: Boolean = false
 
 actual val browserCheckNote: String?
-    get() = SystemBrowser.binary?.let { "It opens in ${it.name}, the browser already on this computer." }
-        ?: "The first time on this computer, a browser is downloaded for it (about 500 MB)."
+    get() = SystemBrowser.binary?.let { "It opens in ${it.name}, a browser already on this computer." }
+        ?: "This computer has no browser the app can drive, so a current Chrome is fetched " +
+        "for it the first time (about 190 MB)."
 
 // What the app's own requests claim. A clearance cookie is tied to the browser
 // that earned it, so this follows the browser actually being driven: the one on

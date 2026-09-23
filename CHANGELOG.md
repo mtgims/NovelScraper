@@ -10,6 +10,13 @@ what's in that APK, so you can tell what's on your phone.
 
 ## 2026-09-23
 
+- **Browser checks: a browser for machines that have none, and checks that stop
+  looping (0.36.0).** With no Chromium-family browser installed, the app now
+  fetches the current Chrome built for driving from a program (about 190 MB)
+  instead of falling back to a two-year-old one. A check that hasn't finished is
+  asked again, and asked once more when its window comes on screen, since some
+  never finish in a window that isn't drawn. Pages are read out of the document
+  rather than by running script in them.
 - **Browser checks use the browser you already have (0.35.0).** The Linux app
   drives the installed Chromium, Brave, Chrome, Edge or Vivaldi over its
   debugging connection, in a profile of its own, instead of the two-year-old

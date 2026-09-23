@@ -48,7 +48,7 @@ actual suspend fun passSiteCheck(url: String, onStatus: (String) -> Unit): Boole
     }
     // The reader's own browser, when there is one: nothing to download, a
     // current version, and the graphics a check expects to find.
-    if (SystemBrowser.available) {
+    if (SystemBrowser.ensure(onStatus)) {
         onStatus("Opening the site in ${SystemBrowser.binary?.name ?: "your browser"}…")
         val page = SystemBrowser.load(url, patienceMs = 3_000, interactiveMs = WAIT_MS, loadMs = 60_000) {
             onStatus("Answer the check in the window that just opened.")
@@ -59,6 +59,17 @@ actual suspend fun passSiteCheck(url: String, onStatus: (String) -> Unit): Boole
             Extensions.cookies.acceptFromBrowser(http, cookies)
             onStatus("Done.")
             return true
+        }
+        // A check that hands over its cookie and then asks again has judged where
+        // the request comes from, not what asked. Saying so beats "didn't pass".
+        if (cookies.any { it.name.startsWith("cf_clearance") || it.name.startsWith("__ddg") }) {
+            Log.i(TAG, "cleared but still challenged: the address is what it objects to")
+            onStatus(
+                "The site gave its pass and then asked again, which usually means it objects to " +
+                    "the address you are connecting from rather than to the app. If you are on a " +
+                    "VPN, try another exit or turn it off for this site.",
+            )
+            return false
         }
         Log.i(TAG, "the system browser didn't get through; trying the bundled one")
     }
