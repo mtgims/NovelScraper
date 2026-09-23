@@ -32,6 +32,23 @@ crash report is unreadable without the matching one.
 
 ---
 
+## 0.36.1, 2026-09-23 · `versionCode 65`
+Why a check that passes in your own browser wouldn't pass in the app's.
+- **A browser left behind blocked the next one.** If the app ended badly, its
+  browser kept running and kept the profile, and every later run failed to start
+  one and quietly fell back to the old browser it carries, which no hard check
+  accepts. It now takes up with the browser already running on its profile, and
+  if that one won't say where it is listening, ends it and starts again.
+- **A window out of sight could count as hidden.** A desktop that decides the
+  off-screen window is covered makes Chromium report the page as hidden, and a
+  check does not finish in a hidden page: it waits, gives up and starts over,
+  which is exactly what a check that never ends looks like. That judgement is
+  now turned off for the app's browser.
+- A check that hasn't passed brings its window forward after six seconds rather
+  than twelve.
+- `NOVELSCRAPER_BROWSER_VISIBLE=1` keeps the browser window on screen from the
+  start, for a desktop where a check still won't finish out of sight.
+
 ## 0.36.0, 2026-09-23 · `versionCode 64`
 Checks that wouldn't finish, and machines with no browser to finish them in.
 - **A browser of the app's own, when the computer has none.** Rather than the

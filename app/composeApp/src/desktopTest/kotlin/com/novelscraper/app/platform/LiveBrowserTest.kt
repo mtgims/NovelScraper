@@ -23,7 +23,7 @@ class LiveBrowserTest {
             val page = SystemBrowser.load(url, patienceMs = 8_000, interactiveMs = 90_000, loadMs = 120_000)
             println("user agent: ${SystemBrowser.userAgent}")
             println("page: ${page?.length ?: -1} chars")
-            println(page?.take(400))
+            println(page?.take(1600))
             val cookies = SystemBrowser.cookies(url)
             println("cookies: " + cookies.joinToString { "${it.name}@${it.domain}" })
             if (page == null) {

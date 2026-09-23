@@ -64,6 +64,11 @@ object SystemBrowser {
     @Volatile private var chosen: File? = null
     @Volatile private var noSandbox = false
 
+    /** `NOVELSCRAPER_BROWSER_VISIBLE=1` keeps the window on screen the whole
+     *  time, for a desktop where a check won't finish out of sight. */
+    private val keepVisible: Boolean =
+        System.getenv("NOVELSCRAPER_BROWSER_VISIBLE").orEmpty().let { it == "1" || it.equals("true", true) }
+
     private fun locate(): File? {
         // Under test, only the test that asks for a browser gets one.
         if (System.getProperty("novelscraper.tests") == "true" &&
@@ -233,6 +238,7 @@ object SystemBrowser {
 
     /** Park it back off-screen. */
     suspend fun hide() {
+        if (keepVisible) return
         val id = windowId ?: return
         call(
             "Browser.setWindowBounds",
@@ -294,11 +300,16 @@ object SystemBrowser {
             "--hide-crash-restore-bubble",
             // The window is parked off-screen, and a parked window must keep
             // running at full speed: a check that is throttled never finishes.
-            "--window-position=$OFFSCREEN,$OFFSCREEN",
+            if (keepVisible) "--window-position=120,90" else "--window-position=$OFFSCREEN,$OFFSCREEN",
             "--window-size=1100,860",
             "--disable-background-timer-throttling",
             "--disable-backgrounding-occluded-windows",
             "--disable-renderer-backgrounding",
+            // A window nobody can see is a window the compositor may decide is
+            // covered, and a page Chromium then reports as hidden. A check does
+            // not finish in a hidden page: it waits, gives up and starts again,
+            // which is what a check that never ends looks like from outside.
+            "--disable-features=CalculateNativeWinOcclusion",
             "about:blank",
         )
         process = ProcessBuilder(command)
@@ -310,14 +321,28 @@ object SystemBrowser {
 
     /** Everything needed before a page can be loaded: process, socket, tab. */
     private suspend fun start(): Boolean = withContext(Dispatchers.IO) {
-        if (socket != null && process?.isAlive == true && pageSession != null) return@withContext true
+        if (socket != null && alive() && pageSession != null) return@withContext true
         stop()
-        if (startProcess() == null) return@withContext false
         val profile = File(appFilesDir(), "browser-profile")
-        val endpoint = withTimeoutOrNull(20_000) { awaitEndpoint(File(profile, "DevToolsActivePort")) }
+        val port = File(profile, "DevToolsActivePort")
+        // A browser left behind by a run that ended badly still holds the profile,
+        // and a second one on the same profile refuses to start. Rather than give
+        // up and fall back to the browser we carry, take up with the one already
+        // here: it is ours, in our own folder, and its cookies are the ones we
+        // earned.
+        if (port.isFile && adopt(endpointFrom(port))) return@withContext openTab()
+        if (startProcess() == null) return@withContext false
+        val endpoint = withTimeoutOrNull(20_000) { awaitEndpoint(port) }
         if (endpoint == null) {
             Log.w(TAG, "the browser didn't open its debugging port")
             stop()
+            // Most often because one from a run that ended badly still holds the
+            // profile and won't say where it is listening. It is ours, in our own
+            // folder, so it can be shown the door.
+            if (releaseProfileLock(profile)) {
+                Log.i(TAG, "cleared a browser left behind on our profile; trying again")
+                return@withContext start()
+            }
             // A browser that died on the spot usually couldn't build its sandbox.
             if (!noSandbox) {
                 noSandbox = true
@@ -340,14 +365,59 @@ object SystemBrowser {
      *  profile as soon as it is listening. */
     private suspend fun awaitEndpoint(file: File): String? {
         while (true) {
-            if (file.isFile) {
-                val lines = runCatching { file.readLines() }.getOrDefault(emptyList())
-                if (lines.size >= 2 && lines[0].isNotBlank()) return "ws://127.0.0.1:${lines[0]}${lines[1]}"
-            }
+            endpointFrom(file)?.let { return it }
             if (process?.isAlive != true) return null
             delay(150)
         }
     }
+
+    private fun endpointFrom(file: File): String? {
+        val lines = runCatching { file.readLines() }.getOrDefault(emptyList())
+        if (lines.size < 2 || lines[0].isBlank()) return null
+        return "ws://127.0.0.1:${lines[0]}${lines[1]}"
+    }
+
+    /**
+     * Ends a browser still holding [profile] from an earlier run, if there is
+     * one. Chromium names the holder in SingletonLock, as host-pid; the process
+     * is only ended once its own command line confirms it is sitting on this
+     * folder, so nothing else on the machine is touched.
+     */
+    private fun releaseProfileLock(profile: File): Boolean {
+        val lock = File(profile, "SingletonLock")
+        val holder = runCatching { java.nio.file.Files.readSymbolicLink(lock.toPath()).toString() }.getOrNull()
+        val pid = holder?.substringAfterLast('-')?.toLongOrNull() ?: return false
+        val command = runCatching { File("/proc/$pid/cmdline").readText() }.getOrNull() ?: return false
+        if (!command.contains(profile.absolutePath)) return false
+        Log.i(TAG, "ending the browser left on our profile (pid $pid)")
+        runCatching { ProcessHandle.of(pid).ifPresent { it.destroy() } }
+        // It takes a moment to let go of the lock.
+        Thread.sleep(1_500)
+        runCatching { lock.delete() }
+        runCatching { File(profile, "SingletonCookie").delete() }
+        runCatching { File(profile, "SingletonSocket").delete() }
+        return true
+    }
+
+    /** Connect to a browser that is already running on our profile. */
+    private suspend fun adopt(endpoint: String?): Boolean {
+        if (endpoint == null) return false
+        if (!connect(endpoint)) return false
+        val version = call("Browser.getVersion", buildJsonObject {}, null)
+        if (version == null) {
+            runCatching { socket?.close(1000, null) }
+            socket = null
+            return false
+        }
+        userAgent = version["userAgent"]?.jsonPrimitive?.contentOrNull
+        userAgent?.let { settingsStore("site-checks").putString("user-agent", it) }
+        Log.i(TAG, "took up with the browser already running on our profile")
+        return true
+    }
+
+    /** True while there is a browser at the other end: one we started, or one we
+     *  adopted and whose socket is still answering. */
+    private fun alive(): Boolean = process?.isAlive == true || (process == null && socket != null)
 
     private suspend fun connect(endpoint: String): Boolean {
         val open = CompletableDeferred<Boolean>()
@@ -418,6 +488,7 @@ object SystemBrowser {
     @Synchronized
     private fun stop() {
         runCatching { socket?.close(1000, null) }
+        // A browser we adopted is left running: it was here before us.
         runCatching { process?.destroy() }
         socket = null
         process = null

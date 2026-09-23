@@ -10,6 +10,11 @@ what's in that APK, so you can tell what's on your phone.
 
 ## 2026-09-23
 
+- **Fixed: checks failing in the app that pass in your own browser (0.36.1).** A
+  browser left behind by a bad exit kept the app's profile, so later runs fell
+  back to the old carried browser; the app now adopts or clears it. An
+  off-screen window could also be judged covered, which makes a page count as
+  hidden, and a check never finishes in a hidden page.
 - **Browser checks: a browser for machines that have none, and checks that stop
   looping (0.36.0).** With no Chromium-family browser installed, the app now
   fetches the current Chrome built for driving from a program (about 190 MB)

@@ -29,7 +29,7 @@ private val lock = Mutex()
 private const val LOAD_MS = 90_000L
 private const val SETTLE_MS = 2_000L
 /** How long a check gets to pass by itself before the window is shown. */
-private const val PATIENCE_MS = 12_000L
+private const val PATIENCE_MS = 6_000L
 /** How long the reader then has to answer a check that wants a tap. */
 private const val INTERACTIVE_MS = 5 * 60_000L
 private const val TAG = "BrowserFetch"
