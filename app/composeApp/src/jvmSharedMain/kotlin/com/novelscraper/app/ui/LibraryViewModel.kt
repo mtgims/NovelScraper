@@ -6,6 +6,7 @@ import com.novelscraper.app.library.LibBook
 import com.novelscraper.app.library.LibCollection
 import com.novelscraper.app.library.Library
 import com.novelscraper.app.library.LibrarySyncRunner
+import com.novelscraper.app.library.LibraryUpdates
 import com.novelscraper.app.net.Account
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
@@ -37,7 +38,12 @@ class LibraryViewModel : ViewModel() {
     private val _dragOrder = MutableStateFlow<List<Int>?>(null)
     val dragOrder: StateFlow<List<Int>?> = _dragOrder.asStateFlow()
 
-    fun refresh() {
+    /** What a check for new chapters is doing. */
+    val updates = LibraryUpdates.state
+
+    /** Pull to refresh: the server's library, sync, and a look for new chapters. */
+    fun refresh(force: Boolean = true) {
+        LibraryUpdates.checkAll(force = force, announce = force)
         if (_refreshing.value || !Account.signedIn) return
         _refreshing.value = true
         viewModelScope.launch {

@@ -91,7 +91,11 @@ class PluginRuntime private constructor(
             // A site behind a browser check makes plugins fail or come back empty;
             // say so rather than showing "nothing found".
             challengedUrl?.let { url ->
-                if (!ok || value.isBlank() || value == "[]" || value == "null") throw SiteChallengeException(info.id, url)
+                if (!ok || value.isBlank() || value == "[]" || value == "null") {
+                    // The app can offer to open this in a real browser.
+                    SiteChecks.needed(url)
+                    throw SiteChallengeException(info.id, url)
+                }
             }
             if (!ok) throw PluginException(info.id, value)
             value

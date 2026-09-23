@@ -8,6 +8,14 @@ what's in that APK, so you can tell what's on your phone.
 
 ---
 
+## 2026-09-23
+
+- **Reliability and parity (0.34.0).** Reading carries on into the next chapter
+  by scrolling, the library checks its source novels for new chapters, downloads
+  retry and skip instead of stopping (and survive leaving the app on Android),
+  the library file is copied before any schema migration, and the Linux app can
+  open a real browser to pass a source's browser check.
+
 ## 2026-09-22
 
 - **Narration rebuilt (0.33.0).** Gapless chapters, asides skipped, a

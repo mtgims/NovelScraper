@@ -51,6 +51,11 @@ object ChapterDownloads {
     data class State(val running: Boolean = false, val error: String? = null)
 
     private const val SITE_PAUSE_MS = 1_000L
+    /** Tries per chapter before it is left for later. */
+    private const val TRIES = 3
+    /** How many chapters in a row may fail before the queue waits for the reader. */
+    private const val GIVE_UP_AFTER = 5
+    private const val BACKOFF_MS = 3_000L
 
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
     private val _state = MutableStateFlow(State())
@@ -69,16 +74,27 @@ object ChapterDownloads {
             while (true) {
                 wake.receive()
                 _state.value = State(running = true)
+                var inARow = 0        // failures with nothing succeeding in between
                 while (true) {
-                    val (chapterId, _, _) = lib.nextQueued() ?: break
+                    val (chapterId, _, attempts) = lib.nextQueued() ?: break
                     try {
                         if (lib.downloadQueued(chapterId)) delay(SITE_PAUSE_MS)
+                        inARow = 0
                     } catch (e: kotlinx.coroutines.CancellationException) {
                         throw e
                     } catch (e: Exception) {
-                        Log.w("Downloads", "chapter $chapterId: ${e.message}")
-                        _state.value = State(running = false, error = message(e))
-                        break
+                        // One chapter failing is not the whole queue failing: try it
+                        // again a couple of times, then leave it and move on.
+                        inARow++
+                        val gaveUp = lib.downloadFailed(chapterId, attempts, TRIES)
+                        Log.w("Downloads", "chapter $chapterId (try ${attempts + 1}): ${e.message}")
+                        if (inARow >= GIVE_UP_AFTER) {
+                            // Everything is failing: the site or the connection is
+                            // down, so stop asking until the reader says to.
+                            _state.value = State(running = false, error = message(e))
+                            break
+                        }
+                        delay(if (gaveUp) SITE_PAUSE_MS else BACKOFF_MS * (attempts + 1))
                     }
                 }
                 if (_state.value.error == null) _state.value = State(running = false)
@@ -92,6 +108,18 @@ object ChapterDownloads {
             Library.store.enqueueDownloads(bookId, positions)
             start()
         }
+    }
+
+    /** Another go at the chapters that gave up. */
+    fun retryFailed() {
+        scope.launch {
+            Library.store.retryFailedDownloads()
+            start()
+        }
+    }
+
+    fun forgetFailed() {
+        scope.launch { Library.store.forgetFailedDownloads() }
     }
 
     fun resume() = start()

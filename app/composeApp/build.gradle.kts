@@ -172,6 +172,10 @@ kotlin {
                 implementation("org.ccil.cowan.tagsoup:tagsoup:1.2.1")
                 // SQLite over JDBC (bundles the native library) for the library database.
                 implementation("app.cash.sqldelight:sqlite-driver:2.4.0")
+                // A real browser (Chromium through JCEF) for sites that ask for a
+                // browser check; its runtime is fetched on first use, not shipped.
+                implementation("dev.datlag:kcef:2025.03.23")
+
                 // Media keys, and the desktop's media widget, through MPRIS on D-Bus.
                 implementation("com.github.hypfvieh:dbus-java-core:5.1.1")
                 implementation("com.github.hypfvieh:dbus-java-transport-native-unixsocket:5.1.1")
@@ -240,7 +244,7 @@ compose.desktop {
         nativeDistributions {
             // The JDK modules beyond Compose's defaults (from suggestRuntimeModules);
             // java.sql is the JDBC API the library database's SQLite driver needs.
-            modules("java.instrument", "java.sql", "jdk.security.auth", "jdk.unsupported")
+            modules("java.instrument", "java.management", "java.sql", "jdk.security.auth", "jdk.unsupported")
             packageName = "novelscraper"
             packageVersion = appVersionName
             description = "Read and listen to web novels"
@@ -300,6 +304,12 @@ abstract class BuildAppImage : DefaultTask() {
                 """
                 #!/bin/sh
                 HERE="${'$'}(dirname "${'$'}(readlink -f "${'$'}0")")"
+                # The embedded browser (site checks) picks its display backend from
+                # the environment and gives up if it guesses wrong.
+                if [ -z "${'$'}OZONE_PLATFORM" ]; then
+                  if [ -n "${'$'}WAYLAND_DISPLAY" ]; then OZONE_PLATFORM=wayland; else OZONE_PLATFORM=x11; fi
+                  export OZONE_PLATFORM
+                fi
                 exec "${'$'}HERE/bin/novelscraper" "${'$'}@"
                 """.trimIndent() + "\n",
             )

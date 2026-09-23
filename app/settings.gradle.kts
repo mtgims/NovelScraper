@@ -16,6 +16,10 @@ dependencyResolutionManagement {
     repositories {
         google()
         mavenCentral()
+        // JOGL, which the embedded browser (JCEF) draws through; it isn't on Central.
+        maven("https://jogamp.org/deployment/maven/") {
+            content { includeGroupByRegex("org\\.jogamp.*") }
+        }
     }
 }
 

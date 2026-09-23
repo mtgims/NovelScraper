@@ -29,6 +29,7 @@ import com.novelscraper.app.platform.DesktopDirs
 import com.novelscraper.app.platform.LocalAppWindow
 import com.novelscraper.app.platform.PropertiesStore
 import com.novelscraper.app.platform.ToastHost
+import com.novelscraper.app.platform.disposeSiteCheckBrowser
 import com.novelscraper.app.platform.settingsStore
 import com.novelscraper.app.tts.DesktopTtsPlayer
 import com.novelscraper.app.tts.MprisPlayer
@@ -129,6 +130,7 @@ fun AppContent() {
 private fun shutdown() {
     TtsController.stop()
     MprisPlayer.stop()
+    disposeSiteCheckBrowser()
     ScrapeRelay.stop()
     DesktopTtsPlayer.release()
     PropertiesStore.flush()

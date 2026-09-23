@@ -64,6 +64,10 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.runtime.snapshotFlow
 import androidx.compose.ui.Alignment
+import androidx.compose.ui.input.nestedscroll.NestedScrollConnection
+import androidx.compose.ui.input.nestedscroll.nestedScroll
+import androidx.compose.ui.input.nestedscroll.NestedScrollSource
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.geometry.Offset
@@ -190,7 +194,30 @@ fun ReaderScreen(bookId: Int, position: Int, onBack: () -> Unit) {
         }
     }
 
-    Box(Modifier.fillMaxSize().onPreviewKeyEvent(onKey).focusRequester(focus).focusable()) {
+    // Keep pulling at the end of a chapter (or at the top) and the reader moves
+    // to the next one, so a novel reads through without reaching for a button.
+    val turnDistance = with(LocalDensity.current) { 140.dp.toPx() }
+    val hasNext = data?.chapter?.has_next == true
+    val hasPrev = data?.chapter?.has_prev == true
+    val turnPages = remember(pos, hasNext, hasPrev, turnDistance) {
+        object : NestedScrollConnection {
+            private var pulled = 0f
+            override fun onPostScroll(consumed: Offset, available: Offset, source: NestedScrollSource): Offset {
+                if (source != NestedScrollSource.UserInput) return Offset.Zero
+                // Nothing left to scroll: what the list couldn't use is the pull.
+                if (available.y == 0f) { pulled = 0f; return Offset.Zero }
+                pulled = if (pulled != 0f && (pulled < 0) != (available.y < 0)) available.y else pulled + available.y
+                if (pulled < -turnDistance && hasNext) { pulled = 0f; pos += 1 }
+                else if (pulled > turnDistance && hasPrev) { pulled = 0f; pos -= 1 }
+                return Offset.Zero
+            }
+        }
+    }
+
+    Box(
+        Modifier.fillMaxSize().onPreviewKeyEvent(onKey).focusRequester(focus).focusable()
+            .nestedScroll(turnPages),
+    ) {
         // Full-screen chapter content — its geometry is independent of the bars.
         val s = state
         when {
@@ -473,6 +500,8 @@ private fun ChapterBody(
             .padding(horizontal = 22.dp, vertical = 16.dp),
         horizontalAlignment = Alignment.CenterHorizontally,
     ) {
+        val endHint = if (data.chapter.has_next) "Keep scrolling for the next chapter"
+                      else "That's the last chapter"
         val measure = Modifier.widthIn(max = 620.dp).fillMaxWidth()
         Text(
             data.chapter.title,
@@ -521,6 +550,12 @@ private fun ChapterBody(
                 )
             }
         }
+        Text(
+            endHint,
+            style = MaterialTheme.typography.labelMedium,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            modifier = Modifier.padding(top = 28.dp),
+        )
         Box(Modifier.padding(bottom = 110.dp)) // clear the floating Listen pill
     }
 }

@@ -74,6 +74,11 @@ object Extensions {
     lateinit var http: OkHttpClient
         private set
 
+    /** The cookies sources set while plugins browse them (and what a browser
+     *  check leaves behind). */
+    lateinit var cookies: BrowserCookieJar
+        private set
+
     private val _repos = MutableStateFlow<List<String>>(emptyList())
     val repos: StateFlow<List<String>> = _repos.asStateFlow()
 
@@ -88,8 +93,9 @@ object Extensions {
         prefs = settingsStore("extensions")
         dataPrefs = settingsStore("plugin-data")
         dir = File(appFilesDir(), "extensions")
+        cookies = BrowserCookieJar()
         http = base.newBuilder()
-            .cookieJar(BrowserCookieJar())
+            .cookieJar(cookies)
             .connectTimeout(20, TimeUnit.SECONDS)
             .readTimeout(40, TimeUnit.SECONDS)
             .build()

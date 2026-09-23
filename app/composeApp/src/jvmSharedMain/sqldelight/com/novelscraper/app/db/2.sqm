@@ -1,0 +1,4 @@
+-- 2 -> 3: a download that fails is remembered, so the queue moves past it
+-- instead of stopping (0.34.0).
+ALTER TABLE download_queue ADD COLUMN attempts INTEGER NOT NULL DEFAULT 0;
+ALTER TABLE download_queue ADD COLUMN failed INTEGER NOT NULL DEFAULT 0;

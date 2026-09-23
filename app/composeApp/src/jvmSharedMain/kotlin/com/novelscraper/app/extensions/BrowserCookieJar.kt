@@ -21,6 +21,22 @@ class BrowserCookieJar : CookieJar {
         }
     }
 
+    /** Cookies a real browser collected (passing a site's check), as
+     *  "name=value" pairs for [url]'s host. */
+    @Synchronized
+    fun acceptFromBrowser(url: HttpUrl, pairs: List<Pair<String, String>>) {
+        for ((name, value) in pairs) {
+            val cookie = Cookie.Builder()
+                .name(name).value(value)
+                .domain(url.host)
+                .path("/")
+                .expiresAt(System.currentTimeMillis() + 7 * 24 * 3600_000L)
+                .build()
+            cookies.removeAll { it.name == cookie.name && it.domain == cookie.domain }
+            cookies += cookie
+        }
+    }
+
     @Synchronized
     override fun loadForRequest(url: HttpUrl): List<Cookie> {
         val now = System.currentTimeMillis()

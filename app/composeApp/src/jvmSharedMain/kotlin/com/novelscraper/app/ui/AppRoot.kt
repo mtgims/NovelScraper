@@ -34,6 +34,7 @@ import com.novelscraper.app.ui.browse.BrowseScreen
 import com.novelscraper.app.ui.browse.ExtensionsScreen
 import com.novelscraper.app.ui.browse.SourceScreen
 import com.novelscraper.app.ui.components.PillNavBar
+import com.novelscraper.app.ui.components.SiteCheckPrompt
 import com.novelscraper.app.ui.components.isTopLevelRoute
 import com.novelscraper.app.ui.screen.BookScreen
 import com.novelscraper.app.ui.screen.LibraryScreen
@@ -226,6 +227,9 @@ private fun MainApp() {
                 )
             }
         }
+
+        // A source asking for a browser check can come from any screen.
+        SiteCheckPrompt()
 
         if (isTopLevelRoute(route)) {
             PillNavBar(

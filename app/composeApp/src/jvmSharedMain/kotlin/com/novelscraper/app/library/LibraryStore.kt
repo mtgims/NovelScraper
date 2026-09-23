@@ -100,6 +100,12 @@ class LibraryStore(
                 counts?.total?.toInt() ?: 0, r?.sentence?.toInt())
         }
 
+    /** The library as it is now (for a one-off pass, not a screen). */
+    suspend fun libraryFlowOnce(): List<LibBook> = io {
+        val members = shelves.memberships().executeAsList().groupBy({ it.book_id.toInt() }, { it.collection_id.toInt() })
+        books.selectLibrary().executeAsList().map { it.toLib(members[it.id.toInt()].orEmpty()) }
+    }
+
     suspend fun book(id: Int): LibBook? = io {
         books.selectById(id.toLong()).executeAsOneOrNull()
             ?.toLib(shelves.ofBook(id.toLong()).executeAsList().map { it.toInt() })
@@ -352,13 +358,31 @@ class LibraryStore(
     suspend fun cancelDownloads(id: Int) = io { chapters.clearQueueForBook(id.toLong()) }
 
     fun queuedFlow(): Flow<Long> = chapters.queuedCount().asFlow().mapToOneOrNull(Dispatchers.IO).map { it ?: 0 }
+    fun failedForBookFlow(id: Int): Flow<Long> =
+        chapters.failedForBook(id.toLong()).asFlow().mapToOneOrNull(Dispatchers.IO).map { it ?: 0 }
+
     fun queuedForBookFlow(id: Int): Flow<Long> =
         chapters.queuedForBook(id.toLong()).asFlow().mapToOneOrNull(Dispatchers.IO).map { it ?: 0 }
 
-    /** The next queued chapter: (chapter row id, novel id, position). */
-    internal suspend fun nextQueued(): Triple<Long, Int, Int>? = io {
-        chapters.nextQueued().executeAsOneOrNull()?.let { Triple(it.chapter_id, it.book_id.toInt(), it.position.toInt()) }
+    /** The next chapter to download: (chapter row id, novel id, tries so far). */
+    internal suspend fun nextQueued(): Triple<Long, Int, Long>? = io {
+        chapters.nextQueued().executeAsOneOrNull()?.let { Triple(it.chapter_id, it.book_id.toInt(), it.attempts) }
     }
+
+    /** A download didn't work: count the try, and give up on it after [tries]. */
+    internal suspend fun downloadFailed(chapterId: Long, attempts: Long, tries: Int): Boolean = io {
+        val giveUp = attempts + 1 >= tries
+        chapters.attemptFailed(if (giveUp) 1 else 0, chapterId)
+        giveUp
+    }
+
+    /** Chapters whose download gave up. */
+    fun failedDownloadsFlow(): Flow<Long> =
+        chapters.failedCount().asFlow().mapToOneOrNull(Dispatchers.IO).map { it ?: 0 }
+
+    suspend fun retryFailedDownloads() = io { chapters.retryFailed() }
+
+    suspend fun forgetFailedDownloads() = io { chapters.dropFailed() }
 
     /** Download one queued chapter (keeping text already cached) and take it off
      *  the queue. True if it was fetched from a source site (for pacing). */

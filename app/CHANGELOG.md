@@ -32,6 +32,29 @@ crash report is unreadable without the matching one.
 
 ---
 
+## 0.34.0, 2026-09-23 · `versionCode 59`
+The rough edges, smoothed.
+- **Keep scrolling to the next chapter.** At the end of a chapter, carrying on
+  moves to the next one (and pulling down at the top goes back), with a line at
+  the end telling you so. Narration already did this; now reading does too.
+- **New chapters, found for you.** Opening the library looks over your source
+  novels for chapters that appeared since last time (at most every six hours,
+  one novel at a time so no site gets a burst), and the refresh button checks
+  now and says what it found. New chapters show as the unread count.
+- **Downloads that don't give up.** A chapter that fails is tried three times,
+  then set aside so the rest carry on; the novel's page says how many were set
+  aside, with "Try again" and "Forget". If everything is failing, the queue
+  waits instead of hammering the site. On Android, downloads now keep going
+  when you leave the app, with a notification.
+- **A copy before the library changes shape.** Whenever an update changes the
+  library's schema, the old file is copied aside first (the newest two are
+  kept), so a bad migration can't take your library with it.
+- **Browser checks on the desktop.** When a source asks for a browser check,
+  the Linux app can now open a real browser, let the check run, and carry on
+  with what it collected. Chromium is fetched on first use (about 500 MB, into
+  the app's data folder), not shipped in the download. The phone answers checks
+  with its own WebView.
+
 ## 0.33.0, 2026-09-22 · `versionCode 58`
 Narration, the way it should have been.
 - **No gap between chapters.** A novel now plays straight through: the next

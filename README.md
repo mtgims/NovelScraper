@@ -107,6 +107,10 @@ The phone build lands at `novelscraper.apk` in the repo root and the Linux one a
 executable and run it; it needs FUSE 2, `fuse2` on Arch). `app/CHANGELOG.md`
 tracks every version.
 
+Sources that ask for a browser check (Cloudflare) are answered by the phone's
+WebView, or on Linux by a Chromium the app fetches on first use (about 500 MB,
+kept in `~/.local/share/novelscraper/browser`).
+
 **Sources are extensions.** They live in their own repository,
 [novelscraper-extensions](https://github.com/mtgims/novelscraper-extensions), which
 also explains how to write one. The app ships with no sources: under Browse,

@@ -262,6 +262,7 @@ private fun BookContent(
     // One volume (source novels): no volume headers, just the chapters.
     val flat = volumes.size <= 1
     val queued by vm.queued.collectAsState()
+    val failedDownloads by vm.failedDownloads.collectAsState()
     val downloads by vm.downloads.collectAsState()
 
     // Collapsible volumes — collapse all but the one you're currently reading so a
@@ -279,7 +280,8 @@ private fun BookContent(
     val header: @Composable () -> Unit = {
         BookHeader(
             book, chapters.size, progress, hasProgress, resumePos, collections,
-            queued = queued, downloadError = downloads.error,
+            queued = queued, failedDownloads = failedDownloads, downloadError = downloads.error,
+            onRetryFailed = vm::retryFailedDownloads, onForgetFailed = vm::forgetFailedDownloads,
             onToggleCollection = vm::toggleCollection,
             onRate = vm::setRating,
             onOpenReader = onOpenReader,
@@ -523,7 +525,10 @@ private fun BookHeader(
     resumePos: Int,
     collections: List<LibCollection>,
     queued: Long,
+    failedDownloads: Long,
     downloadError: String?,
+    onRetryFailed: () -> Unit,
+    onForgetFailed: () -> Unit,
     onToggleCollection: (Int) -> Unit,
     onRate: (Int) -> Unit,
     onOpenReader: (Int) -> Unit,
@@ -618,6 +623,19 @@ private fun BookHeader(
                 leadingIcon = { Icon(Icons.Filled.Refresh, contentDescription = null,
                     modifier = Modifier.size(18.dp)) },
             )
+        }
+
+        if (failedDownloads > 0) {
+            Row(Modifier.fillMaxWidth().padding(top = 10.dp), verticalAlignment = Alignment.CenterVertically) {
+                Text(
+                    "$failedDownloads chapter${if (failedDownloads == 1L) "" else "s"} couldn't be downloaded",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.error,
+                    modifier = Modifier.weight(1f),
+                )
+                TextButton(onClick = onForgetFailed) { Text("Forget") }
+                TextButton(onClick = onRetryFailed) { Text("Try again") }
+            }
         }
 
         if (queued > 0) {

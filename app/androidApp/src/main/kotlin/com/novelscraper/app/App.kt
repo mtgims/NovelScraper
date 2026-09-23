@@ -8,6 +8,7 @@ import coil3.PlatformContext
 import coil3.SingletonImageLoader
 import com.novelscraper.app.data.ReaderPrefs
 import com.novelscraper.app.extensions.Extensions
+import com.novelscraper.app.library.DownloadKeeper
 import com.novelscraper.app.library.Library
 import com.novelscraper.app.net.Account
 import com.novelscraper.app.net.Net
@@ -27,6 +28,8 @@ class App : Application(), SingletonImageLoader.Factory {
         Account.init()
         Extensions.init(Net.client)
         Library.init()
+        // Chapter downloads keep going in the background under a service.
+        DownloadKeeper.start()
         ReaderPrefs.init()
         ThemeController.init()
         TtsController.player = AndroidTtsPlayer(this)

@@ -54,12 +54,13 @@ fun LibraryScreen(onOpenBook: (Int) -> Unit) {
     val vm: LibraryViewModel = viewModel { LibraryViewModel() }
     // New novels on the server (scraped or imported there) come in on entry,
     // deferred past the slide transition so the grid doesn't recompose mid-animation.
-    LaunchedEffect(Unit) { kotlinx.coroutines.delay(300); vm.refresh() }
+    LaunchedEffect(Unit) { kotlinx.coroutines.delay(300); vm.refresh(force = false) }
     val loaded by vm.books.collectAsState()
     val dragOrder by vm.dragOrder.collectAsState()
     val collections by vm.collections.collectAsState()
     val tab by vm.tab.collectAsState()
     val refreshing by vm.refreshing.collectAsState()
+    val updates by vm.updates.collectAsState()
     val account by Account.state.collectAsState()
 
     val books = loaded.orEmpty().let { list ->
@@ -78,13 +79,21 @@ fun LibraryScreen(onOpenBook: (Int) -> Unit) {
 
     Column(Modifier.fillMaxSize()) {
         ScreenTitle("Library", action = {
-            if (account is Account.State.SignedIn) {
-                if (refreshing) CircularProgressIndicator(Modifier.size(24.dp).padding(2.dp))
-                else IconButton(onClick = vm::refresh) {
-                    Icon(Icons.Filled.Refresh, contentDescription = "Refresh from the server")
-                }
+            if (refreshing || updates.running) CircularProgressIndicator(Modifier.size(24.dp).padding(2.dp))
+            else IconButton(onClick = { vm.refresh() }) {
+                Icon(Icons.Filled.Refresh, contentDescription = "Check for new chapters")
             }
         })
+        if (updates.running) {
+            Text(
+                "Checking for new chapters · ${updates.done + 1} of ${updates.total}" +
+                    if (updates.novel.isNotBlank()) " · ${updates.novel}" else "",
+                style = MaterialTheme.typography.labelMedium,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                maxLines = 1, overflow = TextOverflow.Ellipsis,
+                modifier = Modifier.padding(horizontal = 20.dp, vertical = 2.dp),
+            )
+        }
         CollectionTabs(
                 collections = collections,
                 activeTab = tab,

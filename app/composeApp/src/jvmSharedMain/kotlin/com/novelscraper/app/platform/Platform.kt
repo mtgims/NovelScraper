@@ -129,3 +129,13 @@ data class SystemVoice(val name: String, val label: String)
  *  until they have been enumerated. */
 @Composable
 expect fun rememberSystemVoices(): List<SystemVoice>
+
+/** True if this device can show a browser to pass a site's check (Cloudflare). */
+expect val canPassSiteChecks: Boolean
+
+/**
+ * Open a real browser at [url] and wait until the site's check is passed,
+ * handing what it collected (cookies) to the extensions' cookie jar. True if the
+ * site let us through. [onStatus] reports what is happening, for the UI.
+ */
+expect suspend fun passSiteCheck(url: String, onStatus: (String) -> Unit = {}): Boolean

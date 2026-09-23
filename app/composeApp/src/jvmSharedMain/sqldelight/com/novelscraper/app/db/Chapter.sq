@@ -25,10 +25,14 @@ CREATE TABLE chapter_content (
     fetched_at INTEGER NOT NULL
 );
 
--- Chapters waiting to be downloaded, oldest request first.
+-- Chapters waiting to be downloaded, oldest request first. attempts counts the
+-- tries so far; failed marks one that gave up, so the queue moves on and the
+-- reader can ask for another go.
 CREATE TABLE download_queue (
     chapter_id INTEGER PRIMARY KEY REFERENCES chapter(id) ON DELETE CASCADE,
-    queued_at INTEGER NOT NULL
+    queued_at INTEGER NOT NULL,
+    attempts INTEGER NOT NULL DEFAULT 0,
+    failed INTEGER NOT NULL DEFAULT 0
 );
 
 selectByBook:
@@ -108,19 +112,34 @@ enqueue:
 INSERT OR IGNORE INTO download_queue (chapter_id, queued_at) VALUES (?, ?);
 
 nextQueued:
-SELECT q.chapter_id, c.book_id, c.position
+SELECT q.chapter_id, c.book_id, c.position, q.attempts
 FROM download_queue q JOIN chapter c ON c.id = q.chapter_id
+WHERE q.failed = 0
 ORDER BY q.queued_at, c.book_id, c.position
 LIMIT 1;
+
+attemptFailed:
+UPDATE download_queue SET attempts = attempts + 1, failed = ? WHERE chapter_id = ?;
+
+failedCount:
+SELECT count(*) FROM download_queue WHERE failed = 1;
+
+-- Another go at everything that gave up.
+retryFailed:
+UPDATE download_queue SET failed = 0, attempts = 0 WHERE failed = 1;
+
+dropFailed:
+DELETE FROM download_queue WHERE failed = 1;
 
 dequeue:
 DELETE FROM download_queue WHERE chapter_id = ?;
 
 queuedCount:
-SELECT count(*) FROM download_queue;
+SELECT count(*) FROM download_queue WHERE failed = 0;
 
 queuedForBook:
-SELECT count(*) FROM download_queue q JOIN chapter c ON c.id = q.chapter_id WHERE c.book_id = ?;
+SELECT count(*) FROM download_queue q JOIN chapter c ON c.id = q.chapter_id
+WHERE c.book_id = ? AND q.failed = 0;
 
 clearQueueForBook:
 DELETE FROM download_queue WHERE chapter_id IN (SELECT id FROM chapter WHERE book_id = ?);
@@ -133,3 +152,7 @@ SELECT position, path, read FROM chapter WHERE book_id = ? ORDER BY position;
 
 selectByPath:
 SELECT id FROM chapter WHERE book_id = ? AND path = ?;
+
+failedForBook:
+SELECT count(*) FROM download_queue q JOIN chapter c ON c.id = q.chapter_id
+WHERE c.book_id = ? AND q.failed = 1;

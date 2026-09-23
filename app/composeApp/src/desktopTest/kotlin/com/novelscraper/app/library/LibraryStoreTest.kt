@@ -65,7 +65,7 @@ class LibraryStoreTest {
     }
 
     /** A server holding two novels; can be taken offline. */
-    private class FakeServer(val syncStore: FakeSync = FakeSync()) : ServerOrigin {
+    class FakeServer(val syncStore: FakeSync = FakeSync()) : ServerOrigin {
         override var enabled = true
         var offline = false
         val books = mutableListOf(
@@ -97,6 +97,11 @@ class LibraryStoreTest {
         override suspend fun deleteCollection(id: Int) { net() }
         override suspend fun deleteBook(id: Int) { net(); deleted += id }
         override suspend fun sync(request: SyncRequest): SyncResponse { net(); return syncStore.sync(request) }
+    }
+
+    companion object {
+        /** A server that is never signed in (for tests that only use sources). */
+        fun offlineServer(): ServerOrigin = FakeServer().also { it.enabled = false }
     }
 
     private var clock = 1_000L

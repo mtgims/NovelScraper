@@ -10,6 +10,7 @@ import com.novelscraper.app.extensions.PluginNotInstalledException
 import com.novelscraper.app.extensions.RepoPlugin
 import com.novelscraper.app.library.Library
 import com.novelscraper.app.extensions.SiteChallengeException
+import com.novelscraper.app.extensions.SiteChecks
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -23,7 +24,9 @@ private const val OFFLINE = "Couldn't reach the site. Check your connection; dow
 
 /** What to tell the user when a plugin (or server) call fails. */
 fun describe(e: Throwable): String = when (e) {
-    is SiteChallengeException -> "This site asks for a browser check first, which the app can't pass yet."
+    is SiteChallengeException ->
+        if (SiteChecks.possible) "This site asks for a browser check first: open it from the box that pops up, then try again."
+        else "This site asks for a browser check first, which this device can't do."
     is PluginNotInstalledException -> "${e.message} Install it under Browse, Extensions."
     // The plugin host's fetch reports a failed connection this way.
     is PluginException -> if (e.message?.contains("Network request failed") == true) OFFLINE

@@ -40,6 +40,8 @@ class BookViewModel(private val bookId: Int) : ViewModel() {
     val progress: StateFlow<LibProgress?> = lib.progressFlow(bookId).stateIn(viewModelScope, SharingStarted.Eagerly, null)
     val collections: StateFlow<List<LibCollection>> = lib.collectionsFlow().stateIn(viewModelScope, SharingStarted.Eagerly, emptyList())
     val queued: StateFlow<Long> = lib.queuedForBookFlow(bookId).stateIn(viewModelScope, SharingStarted.Eagerly, 0L)
+    /** Chapters of this novel whose download gave up. */
+    val failedDownloads: StateFlow<Long> = lib.failedForBookFlow(bookId).stateIn(viewModelScope, SharingStarted.Eagerly, 0L)
     val downloads = ChapterDownloads.state
 
     private val _refreshing = MutableStateFlow(false)
@@ -74,7 +76,7 @@ class BookViewModel(private val bookId: Int) : ViewModel() {
                 throw e
             } catch (e: PluginNotInstalledException) {
                 // Name the source as this novel knows it ("Royal Road", not its plugin id).
-                val name = book.value?.site?.takeIf { it.isNotBlank() }
+                val name = (book.value ?: lib.book(bookId))?.site?.takeIf { it.isNotBlank() }
                 _error.value = if (name != null) "The $name source isn't installed on this device. " +
                     "Install it under Browse, Extensions." else describe(e)
             } catch (e: Exception) {
@@ -199,6 +201,11 @@ class BookViewModel(private val bookId: Int) : ViewModel() {
     }
 
     fun resumeDownloads() = ChapterDownloads.resume()
+
+    /** Another go at the chapters that couldn't be downloaded. */
+    fun retryFailedDownloads() = ChapterDownloads.retryFailed()
+
+    fun forgetFailedDownloads() = ChapterDownloads.forgetFailed()
 
     // --- audiobook ----------------------------------------------------------------
 
