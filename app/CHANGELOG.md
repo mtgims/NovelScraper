@@ -32,6 +32,13 @@ crash report is unreadable without the matching one.
 
 ---
 
+## 0.38.5, 2026-09-23 · `versionCode 76`
+- **The sidebar opens and closes rather than jumping.** It widens and narrows
+  over about a fifth of a second, and the labels come and go with it, taken away
+  from their far end like a panel closing over them. The icons keep their place
+  throughout: they sit in a slot of their own at the start of each row, which is
+  what makes it read as the panel moving rather than everything rearranging.
+
 ## 0.38.4, 2026-09-23 · `versionCode 75`
 - **The browser doesn't sit there eating memory.** A whole Chromium, with its
   own graphics, network and storage processes, was kept standing by for the

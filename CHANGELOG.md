@@ -10,6 +10,9 @@ what's in that APK, so you can tell what's on your phone.
 
 ## 2026-09-23
 
+- **The sidebar animates open and closed (0.38.5).** It widens and narrows over
+  about a fifth of a second with the labels going with it, and the icons hold
+  their place while it moves.
 - **The app's browser stops hoarding memory (0.38.4).** It is closed after three
   minutes unused, goes with the app whatever ends it, and any left running on the
   app's profile by an earlier crash are cleared before a new one starts. It also

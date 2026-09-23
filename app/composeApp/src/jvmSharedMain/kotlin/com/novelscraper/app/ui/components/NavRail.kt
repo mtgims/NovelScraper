@@ -1,5 +1,15 @@
 package com.novelscraper.app.ui.components
 
+import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.core.FastOutSlowInEasing
+import androidx.compose.animation.core.animateDpAsState
+import androidx.compose.animation.core.tween
+import androidx.compose.animation.expandHorizontally
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.shrinkHorizontally
+import androidx.compose.foundation.layout.Box
+import androidx.compose.ui.draw.clipToBounds
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.interaction.MutableInteractionSource
@@ -51,13 +61,22 @@ fun NavRail(
     onToggleWidth: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
+    // The rail widens and narrows rather than jumping between two widths, and the
+    // labels come and go with it. The icons stay where they are throughout: they
+    // sit in a slot of their own at the start of each row, which is what makes
+    // the movement read as the panel opening rather than everything rearranging.
+    val width by animateDpAsState(
+        targetValue = if (labelled) RAIL_WIDE else RAIL_NARROW,
+        animationSpec = tween(RAIL_ANIMATION_MS, easing = FastOutSlowInEasing),
+        label = "rail width",
+    )
     Surface(
-        modifier = modifier.fillMaxHeight().width(if (labelled) RAIL_WIDE else RAIL_NARROW),
+        modifier = modifier.fillMaxHeight().width(width).clipToBounds(),
         color = MaterialTheme.colorScheme.surfaceContainerLow,
         contentColor = MaterialTheme.colorScheme.onSurface,
     ) {
         Column(
-            Modifier.padding(vertical = 12.dp, horizontal = 8.dp),
+            Modifier.padding(vertical = 12.dp, horizontal = 8.dp).width(RAIL_WIDE - 16.dp),
             verticalArrangement = Arrangement.spacedBy(2.dp),
         ) {
             // The app already knows its own name; the space is better spent on
@@ -112,19 +131,37 @@ private fun RailItem(
             .heightIn(min = ROW_HEIGHT)
             .clip(RoundedCornerShape(10.dp))
             .background(background)
-            .clickable(interactionSource = interaction, indication = null, onClick = onClick)
-            .padding(horizontal = if (labelled) 12.dp else 0.dp),
+            .clickable(interactionSource = interaction, indication = null, onClick = onClick),
         verticalAlignment = Alignment.CenterVertically,
-        horizontalArrangement = if (labelled) Arrangement.Start else Arrangement.Center,
     ) {
-        icon(foreground)
-        if (labelled) {
+        // A fixed slot, so the icon holds its place while the panel moves.
+        Box(Modifier.width(ICON_SLOT).height(ROW_HEIGHT), contentAlignment = Alignment.Center) {
+            icon(foreground)
+        }
+        AnimatedVisibility(
+            visible = labelled,
+            // Anchored at the start, so a label is taken away from its far end
+            // like a panel closing over it. Left to itself it shrinks the other
+            // way, which eats the first letters and leaves "rary" of "Library".
+            enter = fadeIn(tween(RAIL_ANIMATION_MS)) +
+                expandHorizontally(
+                    tween(RAIL_ANIMATION_MS, easing = FastOutSlowInEasing),
+                    expandFrom = Alignment.Start,
+                ),
+            exit = fadeOut(tween(RAIL_ANIMATION_MS / 2)) +
+                shrinkHorizontally(
+                    tween(RAIL_ANIMATION_MS, easing = FastOutSlowInEasing),
+                    shrinkTowards = Alignment.Start,
+                ),
+        ) {
             Text(
                 label,
                 color = foreground,
                 style = MaterialTheme.typography.labelLarge,
                 fontWeight = if (selected) FontWeight.SemiBold else FontWeight.Normal,
-                modifier = Modifier.padding(start = 12.dp),
+                maxLines = 1,
+                softWrap = false,
+                modifier = Modifier.padding(end = 12.dp),
             )
         }
     }
@@ -134,6 +171,12 @@ private fun RailItem(
 val RAIL_WIDE = 188.dp
 val RAIL_NARROW = 68.dp
 private val ROW_HEIGHT = 44.dp
+
+/** The slot an icon keeps at the start of a row, whatever the rail is doing. */
+private val ICON_SLOT = 52.dp
+
+/** Long enough to be seen as movement, short enough not to be waited on. */
+private const val RAIL_ANIMATION_MS = 220
 
 /** Padding for content laid out beside the rail. */
 val railContentPadding = PaddingValues(0.dp)
