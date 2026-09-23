@@ -45,6 +45,20 @@ expect val hasWebView: Boolean
  */
 expect val isDesktop: Boolean
 
+/** The version running, as the release list spells it (no leading "v"). */
+expect val appVersion: String
+
+/** The name of the file a release carries for this platform. */
+expect val updateAssetName: String
+
+/**
+ * Put a downloaded build in place. On a phone that means handing the package to
+ * the system installer, which asks before replacing anything; on the desktop it
+ * means swapping the file the app is running from and starting it again. False
+ * if it couldn't be started at all.
+ */
+expect suspend fun installUpdate(file: java.io.File): Boolean
+
 /** A line about how a browser check will be answered on this device (which
  *  browser opens, or that one has to be fetched first), or null if there is
  *  nothing worth saying. */

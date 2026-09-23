@@ -20,6 +20,7 @@ import coil3.SingletonImageLoader
 import coil3.disk.DiskCache
 import com.novelscraper.app.data.LibraryPrefs
 import com.novelscraper.app.data.ReaderPrefs
+import com.novelscraper.app.update.AppUpdates
 import com.novelscraper.app.extensions.Extensions
 import com.novelscraper.app.library.Library
 import com.novelscraper.app.net.Account
@@ -47,6 +48,10 @@ fun initApp() {
     Net.init()
     Account.init()
     Extensions.init(Net.client)
+    AppUpdates.init(Net.client)
+    // A quiet look at the releases page on startup: a reader who didn't
+    // ask isn't told that GitHub was unreachable.
+    AppUpdates.check(quietly = true)
     Library.init()
     ReaderPrefs.init()
     LibraryPrefs.init()

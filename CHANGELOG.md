@@ -13,6 +13,9 @@ since moved to a repository of their own; this one holds the apps.
 
 ## 2026-09-24
 
+- **The apps update themselves (0.40.0).** They read the releases page, offer
+  the new version, and install it: the system installer on Android, an AppImage
+  swap and restart on Linux.
 - **The Android app is portrait-only (0.39.3).** In landscape a phone is wide
   enough to get the desktop layout, which is not what a phone wants.
 

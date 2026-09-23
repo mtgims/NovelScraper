@@ -3,6 +3,14 @@
 Newest first.
 
 
+## 0.40.0, 2026-09-24 · `versionCode 82`
+- **The app updates itself.** It asks the releases page what the newest version
+  is, quietly at startup and on demand under Settings, and offers to fetch it.
+  On the phone the downloaded package goes to the system installer, which asks
+  before anything is replaced; on Linux the AppImage is swapped for the new one
+  and the app restarts. Neither replaces anything without being told to, and
+  nothing about it requires going to a web page and finding a file.
+
 ## 0.39.3, 2026-09-24 · `versionCode 81`
 - **The phone app stays upright.** Laid on its side, a phone is wide enough in
   density-independent pixels to cross the width where the layout switches to the

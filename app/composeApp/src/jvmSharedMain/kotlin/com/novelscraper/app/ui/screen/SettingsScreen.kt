@@ -53,6 +53,7 @@ import com.novelscraper.app.data.ReaderPrefs
 import com.novelscraper.app.library.LibrarySyncRunner
 import com.novelscraper.app.ui.components.ContentWidth
 import com.novelscraper.app.platform.isDesktop
+import com.novelscraper.app.ui.components.UpdateSection
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
@@ -85,6 +86,9 @@ fun SettingsScreen(onSignIn: () -> Unit, onLogout: () -> Unit) {
             .padding(top = 20.dp, bottom = if (isDesktop) 40.dp else 120.dp),
     ) {
         Text("Settings", style = MaterialTheme.typography.headlineMedium)
+
+        Section("THIS APP")
+        UpdateSection()
 
         Section("APPEARANCE")
         Row(horizontalArrangement = Arrangement.spacedBy(14.dp)) {
