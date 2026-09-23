@@ -32,6 +32,21 @@ crash report is unreadable without the matching one.
 
 ---
 
+## 0.38.4, 2026-09-23 · `versionCode 75`
+- **The browser doesn't sit there eating memory.** A whole Chromium, with its
+  own graphics, network and storage processes, was kept standing by for the
+  whole session, which is about a gigabyte for a reader who has settled into a
+  chapter. It now closes after three minutes with nothing asked of it; what it
+  has earned lives in its profile, not its memory, so the next page starts it
+  again.
+- **And it doesn't outlive the app.** A browser was only closed when the app
+  closed its window; a crash, a kill or a terminal interrupt left the whole tree
+  running with nobody driving it, for ever. It now goes with the app whatever
+  ends it, and anything found still running on the app's own profile is cleared
+  away before a new one starts.
+- **It runs leaner** while it is up: no extensions, no sync, no background
+  updates, no crash reporter, and at most two page processes.
+
 ## 0.38.3, 2026-09-23 · `versionCode 74`
 - **The themes reach the whole app now.** Each palette named a handful of
   colours and left the rest to Material, whose own are purple: that is why the

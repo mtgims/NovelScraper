@@ -69,6 +69,8 @@ object SystemBrowser {
      *  windows are in it, and it is not ours to close. */
     @Volatile private var adopted = false
     @Volatile private var connected = false
+    @Volatile private var lastUsed = 0L
+    @Volatile private var idleWatch: Thread? = null
 
     /** Whether the browser runs without a window at all. */
     @Volatile private var headless = System.getenv("NOVELSCRAPER_BROWSER_HEADLESS") == "1"
@@ -143,6 +145,7 @@ object SystemBrowser {
         onShown: () -> Unit = {},
     ): String? {
         if (!start()) return null
+        lastUsed = System.currentTimeMillis()
         // Once a page of the site is open, its other pages can be asked for from
         // inside it, the way the site's own scripts ask: an answer in a moment,
         // rather than a whole page loaded, drawn and waited on. Only an answer
@@ -339,6 +342,7 @@ object SystemBrowser {
         body: BrowserBody?,
     ): BrowserReply? {
         if (!start()) return null
+        lastUsed = System.currentTimeMillis()
         val origin = originOf(url) ?: return null
         if (currentOrigin() != origin) {
             navigate(origin)
@@ -461,8 +465,63 @@ object SystemBrowser {
     /** What the tab is showing right now, whatever state it is in. */
     internal suspend fun currentPage(): String? = html()
 
+    /**
+     * Closes the browser once nothing has asked it for anything in a while.
+     *
+     * A whole Chromium, with its own graphics, network and storage processes, is
+     * a lot to keep standing by for a reader who has settled into a chapter: on
+     * this machine about a gigabyte. What it has learned is in its profile, not
+     * in its memory, so the next page simply starts it again.
+     */
+    private fun watchForIdle() {
+        if (idleWatch?.isAlive == true) return
+        idleWatch = Thread {
+            while (true) {
+                Thread.sleep(20_000)
+                if (socket == null && process == null) break
+                if (System.currentTimeMillis() - lastUsed < IDLE_MS) continue
+                Log.i(TAG, "nothing has needed the browser for a while; closing it")
+                stop()
+                break
+            }
+        }.apply { isDaemon = true; name = "browser-idle"; start() }
+    }
+
     /** Close the browser when the app closes. */
     fun dispose() = stop()
+
+    init {
+        // Whatever takes the app down, the browser goes with it: a window closed,
+        // a terminal interrupted, a session logged out. Only an outright kill can
+        // leave one behind now, and the next run sweeps that up.
+        runCatching {
+            Runtime.getRuntime().addShutdownHook(Thread { runCatching { stop() } })
+        }
+    }
+
+    /**
+     * Ends any browser still running on [profile] that this run didn't start.
+     * They are ours by definition: nothing else is given that folder.
+     */
+    private fun sweepStrays(profile: File) {
+        val mine = process?.pid()
+        val marker = "--user-data-dir=${profile.absolutePath}"
+        val found = runCatching {
+            File("/proc").listFiles().orEmpty().mapNotNull { dir ->
+                val pid = dir.name.toLongOrNull() ?: return@mapNotNull null
+                if (pid == mine) return@mapNotNull null
+                val cmdline = runCatching { File(dir, "cmdline").readText() }.getOrNull() ?: return@mapNotNull null
+                pid.takeIf { marker in cmdline }
+            }
+        }.getOrDefault(emptyList())
+        if (found.isEmpty()) return
+        Log.i(TAG, "clearing ${found.size} browser processes left on our profile")
+        for (pid in found) runCatching { ProcessHandle.of(pid).ifPresent { it.destroy() } }
+        Thread.sleep(800)
+        for (pid in found) runCatching {
+            ProcessHandle.of(pid).ifPresent { if (it.isAlive) it.destroyForcibly() }
+        }
+    }
 
     // --- starting and stopping -----------------------------------------------------
 
@@ -486,6 +545,10 @@ object SystemBrowser {
         val bin = binary ?: return null
         if (process?.isAlive == true) return bin
         val profile = File(appFilesDir(), "browser-profile").apply { mkdirs() }
+        // A browser left over from a run that ended badly is a whole Chromium
+        // sitting on the machine with nobody driving it, and starting another
+        // beside it doubles that. Anything still on our own profile goes.
+        sweepStrays(profile)
         File(profile, "DevToolsActivePort").delete()
         // Under Wayland a window cannot ask to be placed, so it would open in the
         // middle of the screen on every check. Through XWayland it can be parked
@@ -522,6 +585,15 @@ object SystemBrowser {
             // not finish in a hidden page: it waits, gives up and starts again,
             // which is what a check that never ends looks like from outside.
             "--disable-features=CalculateNativeWinOcclusion",
+            // Nothing here needs extensions, sync, background updates or a crash
+            // reporter, and each of them is another process and another slice of
+            // memory for a browser that exists to fetch pages.
+            "--disable-extensions",
+            "--disable-sync",
+            "--disable-background-networking",
+            "--disable-component-update",
+            "--disable-breakpad",
+            "--renderer-process-limit=2",
             // Chromium tells every page it is being driven whenever the app is
             // attached to it, and a site's check refuses a browser that says so,
             // however ordinary the browsing behind it. This app is an embedded
@@ -580,6 +652,8 @@ object SystemBrowser {
         // Remembered, so the app's own requests claim the right browser from the
         // first request of the next run, before this one has been started.
         userAgent?.let { settingsStore("site-checks").putString("user-agent", it) }
+        lastUsed = System.currentTimeMillis()
+        watchForIdle()
         Log.i(TAG, "driving ${binary?.name}: ${version?.get("product")?.jsonPrimitive?.contentOrNull}")
         reportGraphics()
         val opened = openTab()
@@ -847,6 +921,9 @@ object SystemBrowser {
      *  it is given to get there. */
     private const val HELD_STILL_MS = 1_000L
     private const val SETTLE_MAX_MS = 5_000L
+
+    /** How long a browser stands unused before it is closed. */
+    private const val IDLE_MS = 3 * 60_000L
 
     /** How long a check gets before it is asked again, and how many times. */
     private const val RETRY_MS = 8_000L

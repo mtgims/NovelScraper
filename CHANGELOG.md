@@ -10,6 +10,10 @@ what's in that APK, so you can tell what's on your phone.
 
 ## 2026-09-23
 
+- **The app's browser stops hoarding memory (0.38.4).** It is closed after three
+  minutes unused, goes with the app whatever ends it, and any left running on the
+  app's profile by an earlier crash are cleared before a new one starts. It also
+  runs without extensions, sync, background updates or a crash reporter.
 - **Themes apply everywhere, and source chapters have paragraphs (0.38.3).** The
   palettes only named some colours, so Material filled the rest in purple, which
   is what the sidebar was. Chapters from a source ran together into a wall of
