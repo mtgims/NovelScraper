@@ -68,6 +68,10 @@ object SystemBrowser {
     /** True when the browser at the other end was already running: someone else's
      *  windows are in it, and it is not ours to close. */
     @Volatile private var adopted = false
+    @Volatile private var connected = false
+
+    /** Whether the browser runs without a window at all. */
+    @Volatile private var headless = System.getenv("NOVELSCRAPER_BROWSER_HEADLESS") == "1"
 
     /** `NOVELSCRAPER_BROWSER_VISIBLE=1` keeps the window on screen the whole
      *  time, for a desktop where a check won't finish out of sight. */
@@ -399,6 +403,11 @@ object SystemBrowser {
 
     /** Bring the window on screen, for a check that wants a person. */
     suspend fun show() {
+        // Where the compositor holds the window, it is also what brings it back.
+        if (Compositor.reveal()) {
+            call("Page.bringToFront", buildJsonObject {}, pageSession)
+            return
+        }
         val id = windowId ?: return
         call(
             "Browser.setWindowBounds",
@@ -431,6 +440,7 @@ object SystemBrowser {
      */
     suspend fun hide() {
         if (keepVisible) return
+        if (Compositor.conceal()) return
         val id = windowId ?: return
         call(
             "Browser.setWindowBounds",
@@ -440,6 +450,12 @@ object SystemBrowser {
             },
             browserSession,
         )
+    }
+
+    /** Kills the browser the way a reader closing its window would, without the
+     *  app being told: for the test that the app picks itself up afterwards. */
+    internal fun endItBehindOurBack() {
+        runCatching { process?.destroyForcibly() }
     }
 
     /** What the tab is showing right now, whatever state it is in. */
@@ -479,6 +495,10 @@ object SystemBrowser {
             System.getenv("XDG_SESSION_TYPE").equals("wayland", ignoreCase = true)
         val command = listOfNotNull(
             bin.path,
+            if (headless) "--headless=new" else null,
+            // A name of its own, so a desktop can be told where to put this
+            // window without that rule catching the reader's own browsing.
+            "--class=$WINDOW_CLASS",
             if (wayland) "--ozone-platform=x11" else null,
             "--user-data-dir=${profile.absolutePath}",
             "--remote-debugging-port=0",
@@ -562,7 +582,11 @@ object SystemBrowser {
         userAgent?.let { settingsStore("site-checks").putString("user-agent", it) }
         Log.i(TAG, "driving ${binary?.name}: ${version?.get("product")?.jsonPrimitive?.contentOrNull}")
         reportGraphics()
-        openTab()
+        val opened = openTab()
+        // Only a browser the app started is moved aside: an adopted one has the
+        // reader's own windows in it, and those are theirs to place.
+        process?.pid()?.let { Compositor.keepAside(it) }
+        opened
     }
 
     /**
@@ -632,9 +656,10 @@ object SystemBrowser {
         return true
     }
 
-    /** True while there is a browser at the other end: one we started, or one we
-     *  adopted and whose socket is still answering. */
-    private fun alive(): Boolean = process?.isAlive == true || (process == null && socket != null)
+    /** True while there is a browser at the other end and it is still talking to
+     *  us. A window the reader closes takes the browser with it, and until this
+     *  noticed that, every request after it quietly went nowhere. */
+    private fun alive(): Boolean = connected && (process?.isAlive == true || adopted)
 
     private suspend fun connect(endpoint: String): Boolean {
         val open = CompletableDeferred<Boolean>()
@@ -663,18 +688,22 @@ object SystemBrowser {
                 }
 
                 override fun onFailure(webSocket: WebSocket, t: Throwable, response: Response?) {
+                    connected = false
                     open.complete(false)
                     pending.values.forEach { it.complete(buildJsonObject { put("error", t.message ?: "closed") }) }
                     pending.clear()
                 }
 
                 override fun onClosed(webSocket: WebSocket, code: Int, reason: String) {
+                    connected = false
                     pending.values.forEach { it.complete(buildJsonObject { put("error", "closed") }) }
                     pending.clear()
                 }
             },
         )
-        return withTimeoutOrNull(10_000) { open.await() } == true
+        val up = withTimeoutOrNull(10_000) { open.await() } == true
+        connected = up
+        return up
     }
 
     /** One tab, kept for the whole run, so a site that has been let through stays
@@ -732,6 +761,7 @@ object SystemBrowser {
         runCatching { process?.destroy() }
         socket = null
         process = null
+        connected = false
         pageSession = null
         browserSession = null
         targetId = null
@@ -806,6 +836,9 @@ object SystemBrowser {
     }
 
     private const val OFFSCREEN = -2400
+
+    /** What the browser's window calls itself, for a desktop's own rules. */
+    private const val WINDOW_CLASS = "NovelScraperCheck"
 
     /** How long a loaded page gets to go quiet before it is read anyway. */
     private const val SETTLE_AFTER_LOAD_MS = 2_500L

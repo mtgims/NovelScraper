@@ -10,6 +10,11 @@ what's in that APK, so you can tell what's on your phone.
 
 ## 2026-09-23
 
+- **The app's browser keeps out of the way, and closing it is survivable
+  (0.37.3).** On Hyprland, which places every window itself and cannot minimise,
+  the browser is sent to a workspace kept aside and only brought over for a
+  check. Closing it used to leave the app unable to read anything at all; it now
+  notices and starts another.
 - **Sources behind a browser at normal speed (0.37.2).** Every request used to
   load a whole page in the browser and wait for it to settle. Now one page of
   the site is opened per session and the rest are asked for from inside it, as

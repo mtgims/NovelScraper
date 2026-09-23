@@ -32,6 +32,24 @@ crash report is unreadable without the matching one.
 
 ---
 
+## 0.37.3, 2026-09-23 · `versionCode 70`
+The browser that wouldn't get out of the way, and what happened when you closed
+it.
+- **On a tiling desktop the browser now goes to a workspace of its own.**
+  Hyprland places every window itself, has no notion of minimising, and ignores
+  a window asking to be put anywhere, so the app's browser sat in the middle of
+  your work all session. It is now sent, by its own window address so nothing of
+  yours is touched, to a workspace kept aside, and that workspace is brought
+  into view only when a check needs you. Other desktops still minimise it.
+- **Closing the browser no longer stops the app reading anything.** It noticed a
+  browser it had started, and a browser it had taken up with, but not one that
+  had gone away: every request after that quietly went nowhere. It now sees the
+  connection drop and gets itself another browser. There is a test for it that
+  closes the browser behind the app's back.
+- Running the app's browser without a window at all was tried and does not work:
+  a browser with no window has no graphics, and a check reads that as something
+  other than a person's browser.
+
 ## 0.37.2, 2026-09-23 · `versionCode 69`
 Sources behind a browser, at something like normal speed.
 - **Pages are asked for from inside the site, not loaded one by one.** Landing

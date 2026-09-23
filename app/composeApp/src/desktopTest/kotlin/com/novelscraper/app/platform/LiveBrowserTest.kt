@@ -47,6 +47,23 @@ class LiveBrowserTest {
             assertTrue(page != null && page.length > 200, "nothing came back from the browser")
         }
     }
+
+    /** The reader closes the browser window; the app should get itself another
+     *  one rather than quietly failing every request after it. */
+    @Test
+    fun survivesTheBrowserBeingClosed() {
+        val url = target ?: return
+        runBlocking {
+            val first = SystemBrowser.load(url, patienceMs = 8_000, interactiveMs = 20_000, loadMs = 60_000)
+            assertTrue(first != null, "the page didn't load in the first place")
+            SystemBrowser.endItBehindOurBack()
+            kotlinx.coroutines.delay(2_000)
+            val second = SystemBrowser.load(url, patienceMs = 8_000, interactiveMs = 20_000, loadMs = 60_000)
+            println("after the browser was closed: ${second?.length ?: -1} chars")
+            SystemBrowser.dispose()
+            assertTrue(second != null, "the app didn't recover from the browser being closed")
+        }
+    }
 }
 
 /**
