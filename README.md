@@ -34,36 +34,23 @@ This keeps its own copy and gets out of the way.
 
 [`app/CHANGELOG.md`](app/CHANGELOG.md) tracks every version.
 
-## Building it
+## Installing it
 
-Kotlin Multiplatform: one `composeApp` module holds the app, `androidApp` is the
-Android shell, and the desktop target builds from the same code.
-
-```bash
-cd app && mise exec -- ./gradlew :androidApp:assembleRelease        # Android
-cd app && mise exec -- ./gradlew :composeApp:packageLinuxAppImage   # Linux
-cd app && mise exec -- ./gradlew :composeApp:run                    # Linux, from source
-```
-
-The phone build lands at `novelscraper.apk` in the repo root and the Linux one
-at `novelscraper-x86_64.AppImage` (one file with its own Java runtime: make it
-executable and run it; it needs FUSE 2, `fuse2` on Arch).
+Every version is published on the
+[releases page](https://github.com/mtgims/NovelScraper/releases): the phone
+build as an APK, and the Linux one as a single AppImage that carries its own
+Java runtime (make it executable and run it; it needs FUSE 2, `fuse2` on Arch).
 
 ## Sources
 
 Sources live in their own repository,
 [novelscraper-extensions](https://github.com/mtgims/novelscraper-extensions),
 which also explains how to write one. The app ships with none: under Browse,
-Extensions, Repositories, add
+Extensions, Repositories, add that repository's index, or LNReader's, or any
+index in the same format, then install what is wanted.
 
-```
-https://raw.githubusercontent.com/mtgims/novelscraper-extensions/master/index.json
-```
-
-or LNReader's repository, or any index in the same format, then install what is
-wanted. Plugins run in QuickJS inside the app; the JavaScript host they run
-against lives in `app/composeApp/pluginHost/` (`npm install && npm run build`
-regenerates the bundled `host.js`).
+Plugins run in QuickJS inside the app; the JavaScript host they run against
+lives in `app/composeApp/pluginHost/`.
 
 ## Where things live
 
