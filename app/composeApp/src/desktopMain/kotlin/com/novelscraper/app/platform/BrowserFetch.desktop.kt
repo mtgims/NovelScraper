@@ -113,8 +113,11 @@ private suspend fun keepSystemCookies(url: String) {
     val http = url.toHttpUrlOrNull() ?: return
     val cookies = runCatching { SystemBrowser.cookies(url) }.getOrDefault(emptyList())
     if (cookies.isEmpty()) return
-    Log.i(TAG, "kept ${cookies.size} cookies for ${http.host}")
-    Extensions.cookies.acceptFromBrowser(http, cookies)
+    // Filing them away is bookkeeping: if it goes wrong, the page we just went
+    // to all that trouble for is still a page, and it is not thrown away for it.
+    runCatching { Extensions.cookies.acceptFromBrowser(http, cookies) }
+        .onSuccess { Log.i(TAG, "kept ${cookies.size} cookies for ${http.host}") }
+        .onFailure { Log.w(TAG, "couldn't keep cookies for ${http.host}: ${it.message}") }
 }
 
 /** Give what the browser collected to the extensions' cookie jar. */
@@ -122,8 +125,9 @@ private suspend fun keepCookies(url: String) {
     val http = url.toHttpUrlOrNull() ?: return
     val cookies = runCatching { readCookies(url) }.getOrDefault(emptyList())
     if (cookies.isEmpty()) return
-    Log.i(TAG, "kept ${cookies.size} cookies for ${http.host}")
-    Extensions.cookies.acceptFromBrowser(http, cookies)
+    runCatching { Extensions.cookies.acceptFromBrowser(http, cookies) }
+        .onSuccess { Log.i(TAG, "kept ${cookies.size} cookies for ${http.host}") }
+        .onFailure { Log.w(TAG, "couldn't keep cookies for ${http.host}: ${it.message}") }
 }
 
 /** The shared browser, made on first use. */
@@ -181,3 +185,16 @@ internal fun disposeFetchBrowser() {
 
 private const val OFFSCREEN_X = -3000
 private const val OFFSCREEN_Y = -3000
+
+/** A request made from inside the page, through the browser already driving it. */
+actual suspend fun requestThroughBrowser(
+    url: String,
+    method: String,
+    headers: Map<String, String>,
+    body: BrowserBody?,
+): BrowserReply? = lock.withLock {
+    if (!SystemBrowser.available) return null
+    val reply = SystemBrowser.request(url, method, headers, body)
+    if (reply != null) keepSystemCookies(url)
+    reply
+}

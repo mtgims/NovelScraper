@@ -7,6 +7,9 @@ import com.dokar.quickjs.binding.AsyncFunctionBinding
 import com.dokar.quickjs.binding.FunctionBinding
 import com.novelscraper.app.platform.Log
 import com.novelscraper.app.platform.fetchThroughBrowser
+import com.novelscraper.app.platform.BrowserBody
+import com.novelscraper.app.platform.BrowserReply
+import com.novelscraper.app.platform.requestThroughBrowser
 import com.novelscraper.app.platform.canFetchThroughBrowser
 import com.novelscraper.app.platform.looksLikeBrowserCheck
 import kotlinx.coroutines.Dispatchers
@@ -211,18 +214,16 @@ class PluginRuntime private constructor(
             builder.method(method, requestBody(method, r["body"] as? JsonObject, contentType))
             // A site that has already refused plain requests is asked through the
             // browser from the start, rather than being refused once every time.
-            if (method.equals("GET", true) && SiteChecks.wantsBrowser(url)) {
-                browserResponse(url)?.let { return@withContext it }
+            if (SiteChecks.wantsBrowser(url)) {
+                viaBrowser(url, method, headers, r["body"] as? JsonObject)?.let { return@withContext it }
             }
             env.http.newCall(builder.build()).execute().use { resp ->
                 val bytes = resp.body?.bytes() ?: ByteArray(0)
                 if (isChallenge(resp.code, resp.headers, bytes)) {
                     // Cloudflare reads more than cookies, so a browser check can't
-                    // hand this client a pass: load the page in the browser instead.
-                    if (method.equals("GET", true)) {
-                        SiteChecks.needsBrowser(url)
-                        browserResponse(url)?.let { return@withContext it }
-                    }
+                    // hand this client a pass: ask through the browser instead.
+                    SiteChecks.needsBrowser(url)
+                    viaBrowser(url, method, headers, r["body"] as? JsonObject)?.let { return@withContext it }
                     challengedUrl = url
                 }
                 val id = responseSeq.incrementAndGet()
@@ -248,6 +249,43 @@ class PluginRuntime private constructor(
 
     /** The page as a real browser sees it, shaped like a fetch response. Null if
      *  this device has no browser, or it couldn't load the page. */
+    /** The same request, made by the browser: the page itself for a GET, the
+     *  site's own kind of request for anything else. */
+    private suspend fun viaBrowser(
+        url: String,
+        method: String,
+        headers: Map<String, String>,
+        body: JsonObject?,
+    ): String? {
+        if (method.equals("GET", true)) return browserResponse(url)
+        // Text and form bodies can be handed to a page as they are; a binary one
+        // keeps to the plain client.
+        val kind = body?.get("kind")?.jsonPrimitive?.contentOrNull
+        val value = body?.get("value")
+        val sending: BrowserBody? = when (kind) {
+            null -> null
+            "form", "text" -> value?.jsonPrimitive?.contentOrNull?.let { BrowserBody.Text(it) }
+            "multipart" -> BrowserBody.Form(
+                value!!.jsonArray.map { part ->
+                    val (name, content) = part.jsonArray.map { it.jsonPrimitive.content }
+                    name to content
+                },
+            )
+            else -> return null
+        }
+        val reply: BrowserReply? = try {
+            requestThroughBrowser(url, method, headers, sending)
+        } catch (e: kotlinx.coroutines.CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            Log.w(TAG, "browser request failed: ${e.message}")
+            null
+        }
+        if (reply == null) return null
+        if (looksLikeBrowserCheck(reply.body)) return null
+        return synthetic(reply.status, url, reply.body, "text/html; charset=utf-8")
+    }
+
     private suspend fun browserResponse(url: String): String? {
         if (!canFetchThroughBrowser) return null
         val html = runCatching { fetchThroughBrowser(url) }
@@ -257,16 +295,22 @@ class PluginRuntime private constructor(
             Log.w(TAG, "browser fetch: the site is still asking the browser itself")
             return null
         }
-        val bytes = html.toByteArray()
+        return synthetic(200, url, html, "text/html; charset=utf-8")
+    }
+
+    /** A response built from what the browser came back with, shaped like the
+     *  one an ordinary request would have produced. */
+    private fun synthetic(status: Int, url: String, text: String, contentType: String): String {
+        val bytes = text.toByteArray()
         val id = responseSeq.incrementAndGet()
         synchronized(responseBodies) { responseBodies[id] = bytes }
         return buildJsonObject {
-            put("status", 200)
-            put("statusText", "OK")
+            put("status", status)
+            put("statusText", if (status == 200) "OK" else "")
             put("url", url)
             put("redirected", false)
-            put("headers", buildJsonObject { put("content-type", "text/html; charset=utf-8") })
-            put("text", html)
+            put("headers", buildJsonObject { put("content-type", contentType) })
+            put("text", text)
             put("bodyId", id.toString())
         }.toString()
     }

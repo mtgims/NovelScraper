@@ -32,6 +32,26 @@ crash report is unreadable without the matching one.
 
 ---
 
+## 0.37.0, 2026-09-23 · `versionCode 67`
+Scribble Hub, read in the app at last, and why it wouldn't be.
+- **The app's browser no longer announces itself as automated.** Chromium sets
+  `navigator.webdriver` on every page while a program is attached to it, and a
+  check that wants a person refuses a browser that says it is being driven: the
+  same window, opened by hand, passed first time. The app's browser is an
+  embedded one with a reader in front of it, answering checks by hand, which is
+  what the phone's WebView already looks like to a site. The desktop now matches
+  it. Measured: with the flag, the check that had looped for days handed over
+  the page.
+- **Requests the site's own scripts make.** A chapter list is often fetched by
+  the page rather than sitting in it, and such a request is refused unless it
+  comes from the page too. Those now go through the browser as the site's own
+  script would, forms and all, on both desktop and phone. Scribble Hub's
+  chapters arrive through exactly this.
+- **Pages are read once they hold still.** A page's load event is not the end of
+  it: Scribble Hub handed back 817 characters of shell, filling itself in four
+  seconds later. Waiting for it to settle turns that into the whole page.
+- Cookies failing to be filed away no longer throws out the page they came with.
+
 ## 0.36.2, 2026-09-23 · `versionCode 66`
 - **The check window says what it is.** A browser appearing on its own explained
   nothing; the app now says which site is asking and that the answer goes in

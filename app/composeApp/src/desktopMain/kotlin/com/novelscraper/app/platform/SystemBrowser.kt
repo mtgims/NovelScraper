@@ -6,6 +6,7 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.withTimeoutOrNull
+import kotlinx.serialization.encodeToString
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.add
@@ -70,9 +71,11 @@ object SystemBrowser {
         System.getenv("NOVELSCRAPER_BROWSER_VISIBLE").orEmpty().let { it == "1" || it.equals("true", true) }
 
     private fun locate(): File? {
-        // Under test, only the test that asks for a browser gets one.
+        // Under test, only the tests that ask for a browser get one: the live
+        // browser check, and the live plugin runs against real sites.
         if (System.getProperty("novelscraper.tests") == "true" &&
-            System.getProperty("live.browser").isNullOrBlank()
+            System.getProperty("live.browser").isNullOrBlank() &&
+            System.getProperty("live.plugins").isNullOrBlank()
         ) return null
         return find() ?: ChromeDownload.installed
     }
@@ -104,6 +107,7 @@ object SystemBrowser {
 
     @Volatile private var navigatedAt = 0L
     @Volatile private var loadedAt = 0L
+    @Volatile private var idleAt = 0L
 
     private val pending = ConcurrentHashMap<Int, CompletableDeferred<JsonObject>>()
     private val nextId = AtomicInteger(1)
@@ -185,14 +189,91 @@ object SystemBrowser {
         return call("Page.navigate", buildJsonObject { put("url", url) }, pageSession)
     }
 
-    /** Waits for the page to finish loading (or [deadline]), then reads it. */
+    /**
+     * Waits for the page to finish loading (or [deadline]), then reads it once it
+     * has stopped fetching things. A page's load event is not the end of it:
+     * sites that fill themselves in afterwards hand back a document with nothing
+     * in it yet, which a plugin reads as a source with no novels on it. If a page
+     * never goes quiet, its load event will do.
+     */
     private suspend fun settled(deadline: Long): String? {
         while (System.currentTimeMillis() < deadline) {
-            if (ready()) break
-            delay(250)
+            if (idleAt >= navigatedAt) break
+            if (loadedAt >= navigatedAt && System.currentTimeMillis() - loadedAt > SETTLE_AFTER_LOAD_MS) break
+            delay(200)
         }
-        return html()
+        // Quiet is not the same as finished: a site can sit on a bare shell for a
+        // second or two and then fill it in, or replace the document outright.
+        // The page is taken once it has held still.
+        var page = html()
+        var changed = System.currentTimeMillis()
+        val until = minOf(deadline, System.currentTimeMillis() + SETTLE_MAX_MS)
+        while (System.currentTimeMillis() < until) {
+            delay(500)
+            val next = html() ?: continue
+            if (next.length != page?.length) {
+                page = next
+                changed = System.currentTimeMillis()
+            } else if (System.currentTimeMillis() - changed > HELD_STILL_MS) {
+                break
+            }
+        }
+        return page
     }
+
+    /**
+     * Makes a request from inside the page, the way the site's own scripts do.
+     *
+     * A site that only answers a browser will not answer this app's own client
+     * however good its cookies are, and a chapter list is usually fetched by the
+     * site's script rather than sitting in the page. The tab is put on the site's
+     * own address first, so the request goes out from there, with everything a
+     * page of that site carries.
+     */
+    suspend fun request(
+        url: String,
+        method: String,
+        headers: Map<String, String>,
+        body: BrowserBody?,
+    ): BrowserReply? {
+        if (!start()) return null
+        val origin = runCatching { java.net.URI(url) }.getOrNull()
+            ?.let { "${it.scheme}://${it.authority}" } ?: return null
+        if (evaluate("location.origin") != origin) {
+            navigate(origin)
+            settled(System.currentTimeMillis() + 45_000)
+        }
+        // A form is built in the page, so the browser sets its own boundary and
+        // the request looks like the one the site's own script would make.
+        val makeBody = when (body) {
+            null -> "undefined"
+            is BrowserBody.Text -> q(body.value)
+            is BrowserBody.Form -> buildString {
+                append("(() => { const f = new FormData(); ")
+                for ((name, value) in body.parts) append("f.append(${q(name)}, ${q(value)}); ")
+                append("return f; })()")
+            }
+        }
+        val script = """
+            (async () => {
+              const r = await fetch(${q(url)}, {
+                method: ${q(method)},
+                headers: ${Json.encodeToString(headers.filterKeys { !it.equals("content-type", true) })},
+                body: $makeBody,
+                credentials: 'include',
+              });
+              return r.status + '\u0000' + await r.text();
+            })()
+        """.trimIndent()
+        val answer = evaluate(script, await = true) ?: return null
+        val cut = answer.indexOf('\u0000')
+        if (cut < 0) return null
+        val status = answer.take(cut).toIntOrNull() ?: return null
+        Log.i(TAG, "$method $url through the page -> $status, ${answer.length - cut - 1} chars")
+        return BrowserReply(status, answer.substring(cut + 1))
+    }
+
+    private fun q(value: String): String = Json.encodeToString(value)
 
     /** The cookies the browser holds for [url] (what a passed check left behind). */
     suspend fun cookies(url: String): List<BrowserCookieJar.BrowserCookie> {
@@ -310,6 +391,13 @@ object SystemBrowser {
             // not finish in a hidden page: it waits, gives up and starts again,
             // which is what a check that never ends looks like from outside.
             "--disable-features=CalculateNativeWinOcclusion",
+            // Chromium tells every page it is being driven whenever the app is
+            // attached to it, and a site's check refuses a browser that says so,
+            // however ordinary the browsing behind it. This app is an embedded
+            // browser with a reader sitting in front of it, answering the checks
+            // by hand, which is what the phone's WebView already looks like: it
+            // has no such flag to set. This puts the desktop on the same footing.
+            "--disable-blink-features=AutomationControlled",
             "about:blank",
         )
         process = ProcessBuilder(command)
@@ -446,6 +534,12 @@ object SystemBrowser {
                         // Not an answer: the browser saying the page finished.
                         val event = message["method"]?.jsonPrimitive?.contentOrNull
                         if (event == "Page.loadEventFired") loadedAt = System.currentTimeMillis()
+                        // The page has stopped fetching things: what is in the
+                        // document now is what the reader would see.
+                        if (event == "Page.lifecycleEvent" &&
+                            message["params"]?.jsonObject?.get("name")
+                                ?.jsonPrimitive?.contentOrNull == "networkIdle"
+                        ) idleAt = System.currentTimeMillis()
                         return
                     }
                     val result = message["result"]?.jsonObject
@@ -489,6 +583,7 @@ object SystemBrowser {
         ) ?: return false
         pageSession = attached["sessionId"]?.jsonPrimitive?.contentOrNull ?: return false
         call("Page.enable", buildJsonObject {}, pageSession)
+        call("Page.setLifecycleEventsEnabled", buildJsonObject { put("enabled", true) }, pageSession)
         call("Network.enable", buildJsonObject {}, pageSession)
         windowId = call(
             "Browser.getWindowForTarget",
@@ -551,6 +646,20 @@ object SystemBrowser {
      * for by the very checks this browser exists to get through. Reading the
      * document leaves that machinery alone.
      */
+    /** Runs an expression in the page and hands back its value as text. */
+    private suspend fun evaluate(expression: String, await: Boolean = false): String? {
+        val result = call(
+            "Runtime.evaluate",
+            buildJsonObject {
+                put("expression", expression)
+                put("returnByValue", true)
+                put("awaitPromise", await)
+            },
+            pageSession,
+        ) ?: return null
+        return result["result"]?.jsonObject?.get("value")?.jsonPrimitive?.contentOrNull
+    }
+
     private suspend fun html(): String? {
         val root = call(
             "DOM.getDocument",
@@ -565,6 +674,14 @@ object SystemBrowser {
     }
 
     private const val OFFSCREEN = -2400
+
+    /** How long a loaded page gets to go quiet before it is read anyway. */
+    private const val SETTLE_AFTER_LOAD_MS = 6_000L
+
+    /** How long a page must hold still to count as finished, and the longest
+     *  it is given to get there. */
+    private const val HELD_STILL_MS = 2_000L
+    private const val SETTLE_MAX_MS = 10_000L
 
     /** How long a check gets before it is asked again, and how many times. */
     private const val RETRY_MS = 8_000L

@@ -10,6 +10,12 @@ what's in that APK, so you can tell what's on your phone.
 
 ## 2026-09-23
 
+- **Scribble Hub works in the app (0.37.0).** Its check refused the app's
+  browser because Chromium tells every page it is being driven while a program
+  is attached to it; the same window opened by hand passed first time. The app's
+  browser no longer says so, which is what the phone's WebView already looked
+  like. Requests a site's own scripts make (the chapter list) now go through the
+  browser too, and pages are read once they have stopped changing.
 - **Browser checks: a notice, no second browser, and a log file (0.36.2).** The
   check window now says which site is asking, closing it no longer starts the
   carried browser behind it, and the app writes a log with the browser's

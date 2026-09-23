@@ -155,6 +155,34 @@ expect val canFetchThroughBrowser: Boolean
  */
 expect suspend fun fetchThroughBrowser(url: String): String?
 
+/** What a request made from inside the browser came back with. */
+data class BrowserReply(val status: Int, val body: String)
+
+/** A body for [requestThroughBrowser], in the shapes a page can send. */
+sealed interface BrowserBody {
+    /** An already encoded body (a form string, JSON, plain text). */
+    data class Text(val value: String) : BrowserBody
+
+    /** Named parts, which the page sends as a form the way its own scripts do,
+     *  boundary and all. */
+    data class Form(val parts: List<Pair<String, String>>) : BrowserBody
+}
+
+/**
+ * Make a request from inside the browser's own page, for a site that only
+ * accepts what a browser asks for. A chapter list is often fetched by the site's
+ * own script rather than being in the page, and that request has to come from
+ * the page too, on the same address, carrying what the page carries.
+ *
+ * Null if it couldn't be made.
+ */
+expect suspend fun requestThroughBrowser(
+    url: String,
+    method: String,
+    headers: Map<String, String>,
+    body: BrowserBody?,
+): BrowserReply?
+
 /**
  * True if this page is a site's browser check rather than its content.
  * Cloudflare puts its challenge script on ordinary pages too, so that alone
