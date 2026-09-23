@@ -32,6 +32,22 @@ crash report is unreadable without the matching one.
 
 ---
 
+## 0.38.1, 2026-09-23 · `versionCode 72`
+The desktop layout, gone over again.
+- **A novel lights up whole.** The mark under the pointer was a square patch the
+  size of the cover, behind a card that had grown a little larger than it. The
+  tile itself now lights, cover, title and all, in the same rounded shape as
+  everything else, and nothing grows.
+- **Opening a novel no longer lurches.** The side navigation used to disappear
+  on the way in, so the page arrived narrow and widened a moment later. It stays
+  now, as a sidebar should; only the reader takes the whole window.
+- **The novel's page is the same colour as the rest of the app**, and the shade
+  it used to be painted in has gone to the chapters, which are now rounded rows
+  sitting on it, lit under the pointer, with the one you are on picked out.
+- **The sidebar collapses.** The app's name at the top has become the control
+  that narrows the bar to its icons and widens it again, remembered between runs.
+- Scrollbars in the novel's details and its chapter list.
+
 ## 0.38.0, 2026-09-23 · `versionCode 71`
 The Linux app stops being a phone app on a monitor.
 - **Navigation down the side.** A row of small targets floating at the bottom is

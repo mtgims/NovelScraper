@@ -22,6 +22,9 @@ import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.lazy.rememberLazyListState
+import com.novelscraper.app.ui.components.ColumnScrollbar
+import com.novelscraper.app.ui.components.ListScrollbar
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -52,6 +55,7 @@ import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
+import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -116,8 +120,14 @@ fun BookScreen(
     }
 
     Scaffold(
+        // The same ground as the rest of the app: the lighter shade belongs to
+        // the chapters sitting on it, not to the page behind them.
+        containerColor = MaterialTheme.colorScheme.background,
         topBar = {
             TopAppBar(
+                colors = TopAppBarDefaults.topAppBarColors(
+                    containerColor = MaterialTheme.colorScheme.background,
+                ),
                 title = { Text(book?.title ?: "", maxLines = 1, overflow = TextOverflow.Ellipsis) },
                 navigationIcon = {
                     IconButton(onClick = onBack) {
@@ -345,13 +355,19 @@ private fun BookContent(
         if (maxWidth >= TWO_PANE_MIN_WIDTH) {
             // Wide window: details on the left, the chapter list beside them.
             Row(Modifier.fillMaxSize()) {
-                Column(Modifier.width(DETAILS_PANE_WIDTH).fillMaxHeight().verticalScroll(rememberScrollState())) {
-                    header()
+                val detailScroll = rememberScrollState()
+                Box(Modifier.width(DETAILS_PANE_WIDTH).fillMaxHeight()) {
+                    Column(Modifier.fillMaxSize().verticalScroll(detailScroll)) { header() }
+                    ColumnScrollbar(detailScroll, Modifier.align(Alignment.CenterEnd).fillMaxHeight())
                 }
                 VerticalDivider(color = MaterialTheme.colorScheme.outline.copy(alpha = 0.3f))
                 Column(Modifier.weight(1f).fillMaxHeight()) {
                     selectionBar()
-                    LazyColumn(Modifier.fillMaxSize(), content = chapters)
+                    Box(Modifier.fillMaxSize()) {
+                        val listState = rememberLazyListState()
+                        LazyColumn(Modifier.fillMaxSize(), state = listState, content = chapters)
+                        ListScrollbar(listState, Modifier.align(Alignment.CenterEnd).fillMaxHeight())
+                    }
                 }
             }
         } else {

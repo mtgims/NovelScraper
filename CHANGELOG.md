@@ -10,6 +10,11 @@ what's in that APK, so you can tell what's on your phone.
 
 ## 2026-09-23
 
+- **Desktop layout, second pass (0.38.1).** Hovering a novel lights the whole
+  tile in the app's rounded shape instead of a square patch behind it, opening a
+  novel no longer lurches (the sidebar used to vanish and the page widen after
+  it), the novel's page now matches the app's colour with the chapters as rounded
+  rows on it, and the sidebar collapses to its icons.
 - **A desktop layout for the desktop app (0.38.0).** Navigation moved from a
   floating phone-style pill to a rail down the side with proper hit targets and
   hover, library covers can be resized and remembered, novels drag with a

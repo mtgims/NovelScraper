@@ -1,6 +1,13 @@
 package com.novelscraper.app.ui.components
 
 import androidx.compose.foundation.ExperimentalFoundationApi
+import androidx.compose.foundation.hoverable
+import androidx.compose.foundation.interaction.MutableInteractionSource
+import androidx.compose.foundation.interaction.collectIsHoveredAsState
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.remember
+import androidx.compose.ui.draw.clip
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.combinedClickable
@@ -100,13 +107,22 @@ fun ChapterRow(
     onToggleRead: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
-    val bg = if (current) MaterialTheme.colorScheme.primary.copy(alpha = 0.10f)
-    else if (selected) MaterialTheme.colorScheme.primary.copy(alpha = 0.16f)
-    else MaterialTheme.colorScheme.surface
+    val interaction = remember { MutableInteractionSource() }
+    val hovered by interaction.collectIsHoveredAsState()
+    val bg = when {
+        current -> MaterialTheme.colorScheme.primary.copy(alpha = 0.16f)
+        selected -> MaterialTheme.colorScheme.primary.copy(alpha = 0.22f)
+        hovered -> MaterialTheme.colorScheme.surfaceContainerHigh
+        else -> MaterialTheme.colorScheme.surface
+    }
     Row(
-        modifier.fillMaxWidth().background(bg)
+        modifier.fillMaxWidth()
+            .padding(horizontal = 10.dp, vertical = 2.dp)
+            .clip(RoundedCornerShape(10.dp))
+            .background(bg)
+            .hoverable(interaction)
             .combinedClickable(onClick = onClick, onLongClick = onLongClick)
-            .padding(start = 20.dp, end = 8.dp, top = 12.dp, bottom = 12.dp),
+            .padding(start = 14.dp, end = 8.dp, top = 12.dp, bottom = 12.dp),
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(4.dp),
     ) {

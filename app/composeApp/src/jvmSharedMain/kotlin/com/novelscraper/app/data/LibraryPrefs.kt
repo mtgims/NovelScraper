@@ -16,6 +16,7 @@ import kotlinx.coroutines.flow.asStateFlow
 object LibraryPrefs {
 
     private const val KEY_COVER = "cover-width"
+    private const val KEY_RAIL = "rail-collapsed"
 
     /** The width a cover is laid out at. The grid fits as many as will go. */
     private val _coverWidth = MutableStateFlow(if (isDesktop) 168 else 150)
@@ -25,16 +26,27 @@ object LibraryPrefs {
     val max = 300
     private const val STEP = 26
 
+    /** Whether the side navigation is down to its icons. */
+    private val _railCollapsed = MutableStateFlow(false)
+    val railCollapsed: StateFlow<Boolean> = _railCollapsed.asStateFlow()
+
     private val prefs by lazy { settingsStore("library") }
 
     fun init() {
         _coverWidth.value = prefs.getInt(KEY_COVER, _coverWidth.value).coerceIn(min, max)
+        _railCollapsed.value = prefs.getBoolean(KEY_RAIL, false)
     }
 
     fun setCoverWidth(width: Int) {
         val next = width.coerceIn(min, max)
         _coverWidth.value = next
         prefs.putInt(KEY_COVER, next)
+    }
+
+    fun toggleRail() {
+        val next = !_railCollapsed.value
+        _railCollapsed.value = next
+        prefs.putBoolean(KEY_RAIL, next)
     }
 
     fun bigger() = setCoverWidth(_coverWidth.value + STEP)

@@ -34,6 +34,7 @@ import androidx.navigation.compose.currentBackStackEntryAsState
 import androidx.navigation.compose.rememberNavController
 import androidx.navigation.navArgument
 import androidx.savedstate.read
+import com.novelscraper.app.data.LibraryPrefs
 import com.novelscraper.app.platform.encodeRouteArg
 import com.novelscraper.app.ui.browse.BrowseScreen
 import com.novelscraper.app.ui.browse.ExtensionsScreen
@@ -96,8 +97,12 @@ private fun MainApp() {
         // Which navigation is shown follows the window, as layout should: a rail
         // on anything desktop-sized, with labels when there is room for them.
         val wide = maxWidth >= RAIL_MIN_WIDTH
-        val labelled = maxWidth >= RAIL_LABEL_MIN_WIDTH
-        val onRail = wide && isTopLevelRoute(route)
+        val collapsed by LibraryPrefs.railCollapsed.collectAsState()
+        val labelled = maxWidth >= RAIL_LABEL_MIN_WIDTH && !collapsed
+        // The rail stays while you read a novel's page too. It used to go, and the
+        // page jumped wider a moment after opening, which read as the app
+        // stumbling. Only the reader takes the whole window, as it should.
+        val onRail = wide && route?.startsWith("reader/") != true
 
         Row(Modifier.fillMaxSize()) {
             if (onRail) {
@@ -105,6 +110,7 @@ private fun MainApp() {
                     current = route,
                     labelled = labelled,
                     onSelect = { dest -> go(nav, route, dest) },
+                    onToggleWidth = { LibraryPrefs.toggleRail() },
                 )
             }
             Box(Modifier.weight(1f).fillMaxSize()) {

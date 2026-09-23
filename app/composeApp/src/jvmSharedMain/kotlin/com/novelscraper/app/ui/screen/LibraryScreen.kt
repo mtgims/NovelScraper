@@ -1,6 +1,6 @@
 package com.novelscraper.app.ui.screen
 
-import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.animateColorAsState
 import androidx.compose.foundation.border
 import androidx.compose.foundation.hoverable
 import androidx.compose.foundation.interaction.MutableInteractionSource
@@ -197,36 +197,48 @@ private fun BookCard(
 ) {
     val interaction = remember { MutableInteractionSource() }
     val hovered by interaction.collectIsHoveredAsState()
-    // Under a pointer, something should say what is about to be clicked; a
-    // finger already knows, because it is on it.
-    val lift by animateFloatAsState(if (elevated) 1.03f else if (hovered) 1.02f else 1f, label = "lift")
-    WithContextMenu(actions = menu, modifier = modifier.hoverable(interaction), onClick = onClick) {
-      Column(Modifier.fillMaxWidth().scale(lift)) {
-        Box {
-            BookCover(
-                book,
-                Modifier.fillMaxWidth().aspectRatio(3f / 4f).clip(RoundedCornerShape(10.dp))
-                    .border(
-                        width = if (hovered) 2.dp else 0.dp,
-                        color = if (hovered) MaterialTheme.colorScheme.primary else Color.Transparent,
-                        shape = RoundedCornerShape(10.dp),
-                    ),
+    // The tile is what the pointer is over, so the tile is what lights up: cover,
+    // title and all, inside the same rounded shape as everything else. It used to
+    // be a square patch behind a cover that had grown out of it.
+    val shape = RoundedCornerShape(14.dp)
+    val background by animateColorAsState(
+        when {
+            elevated -> MaterialTheme.colorScheme.secondaryContainer
+            hovered -> MaterialTheme.colorScheme.onSurface.copy(alpha = 0.07f)
+            else -> Color.Transparent
+        },
+        label = "tile",
+    )
+    WithContextMenu(
+        actions = menu,
+        modifier = modifier
+            .clip(shape)
+            .background(background)
+            .hoverable(interaction),
+        onClick = onClick,
+    ) {
+        Column(Modifier.fillMaxWidth().padding(6.dp)) {
+            Box {
+                BookCover(book, Modifier.fillMaxWidth().aspectRatio(3f / 4f).clip(RoundedCornerShape(10.dp)))
+                // Unread chapters, and a mark when chapters are downloaded.
+                Row(Modifier.padding(6.dp), horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                    if (book.unreadCount > 0) Badge(book.unreadCount.toString())
+                    if (book.downloadedCount > 0) Badge(null)
+                }
+            }
+            Text(
+                book.title, style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.SemiBold,
+                maxLines = 2, overflow = TextOverflow.Ellipsis, modifier = Modifier.padding(top = 6.dp),
             )
-            // Unread chapters, and a mark when chapters are downloaded.
-            Row(Modifier.padding(6.dp), horizontalArrangement = Arrangement.spacedBy(4.dp)) {
-                if (book.unreadCount > 0) Badge(book.unreadCount.toString())
-                if (book.downloadedCount > 0) Badge(null)
+            Text(
+                book.author.ifBlank { book.site }, style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 1, overflow = TextOverflow.Ellipsis,
+            )
+            // Row always reserved, so rated and unrated cards keep the same height.
+            Box(Modifier.height(16.dp).padding(top = 2.dp)) {
+                if ((book.rating ?: 0) > 0) StarRating(book.rating, size = 13.dp)
             }
         }
-        Text(book.title, style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.SemiBold,
-            maxLines = 2, overflow = TextOverflow.Ellipsis, modifier = Modifier.padding(top = 6.dp))
-        Text(book.author.ifBlank { book.site }, style = MaterialTheme.typography.bodySmall,
-            color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 1, overflow = TextOverflow.Ellipsis)
-        // Row always reserved, so rated and unrated cards keep the same height.
-        Box(Modifier.height(16.dp).padding(top = 2.dp)) {
-            if ((book.rating ?: 0) > 0) StarRating(book.rating, size = 13.dp)
-        }
-      }
     }
 }
 

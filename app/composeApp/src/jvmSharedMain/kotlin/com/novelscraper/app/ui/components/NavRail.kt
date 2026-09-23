@@ -16,6 +16,8 @@ import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Menu
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
@@ -46,6 +48,7 @@ fun NavRail(
     current: String?,
     labelled: Boolean,
     onSelect: (String) -> Unit,
+    onToggleWidth: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
     Surface(
@@ -57,17 +60,16 @@ fun NavRail(
             Modifier.padding(vertical = 12.dp, horizontal = 8.dp),
             verticalArrangement = Arrangement.spacedBy(2.dp),
         ) {
-            if (labelled) {
-                Text(
-                    "NovelScraper",
-                    style = MaterialTheme.typography.titleSmall,
-                    fontWeight = FontWeight.SemiBold,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    modifier = Modifier.padding(start = 12.dp, top = 6.dp, bottom = 14.dp),
-                )
-            } else {
-                Spacer(Modifier.height(12.dp))
-            }
+            // The app already knows its own name; the space is better spent on
+            // the one control the rail itself needs.
+            RailItem(
+                label = if (labelled) "Collapse" else "Expand",
+                selected = false,
+                labelled = labelled,
+                icon = { tint -> Icon(Icons.Filled.Menu, contentDescription = "Narrow or widen the sidebar", tint = tint) },
+                onClick = onToggleWidth,
+            )
+            Spacer(Modifier.height(8.dp))
             for (item in navItems) {
                 RailItem(
                     label = item.label,
