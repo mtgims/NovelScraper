@@ -153,10 +153,11 @@ private suspend fun ensureBrowser(onStatus: (String) -> Unit): Boolean {
                     // already name a display backend, and the first one wins.
                     args(
                         "--ozone-platform=x11",
-                        // Draw without a GPU: this window only runs a check, and GPU
-                        // setups vary far more than software drawing does.
-                        "--disable-gpu", "--disable-software-rasterizer", "--disable-dev-shm-usage",
+                        "--disable-dev-shm-usage",
                     )
+                    // The GPU is deliberately left on: a browser that reports no
+                    // WebGL looks like a bot, and these checks are exactly what
+                    // that judgement is for.
                 },
                 onError = {
                     failure = "The browser couldn't start: ${it?.message ?: "unknown error"}"
@@ -203,5 +204,6 @@ private suspend fun readCookies(url: String): List<BrowserCookieJar.BrowserCooki
 
 /** Let go of the browser when the app closes. */
 fun disposeSiteCheckBrowser() {
+    disposeFetchBrowser()
     if (browserReady) runCatching { KCEF.disposeBlocking() }
 }

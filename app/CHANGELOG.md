@@ -32,6 +32,16 @@ crash report is unreadable without the matching one.
 
 ---
 
+## 0.34.2, 2026-09-23 · `versionCode 61`
+Browser checks on Linux now work the way they do on the phone: one browser is
+kept out of sight and used to load pages from sources that refuse the app's
+plain requests. If a check doesn't pass by itself in a few seconds, its window
+comes to the front so you can tick the box, and waits five minutes for you; it
+disappears again as soon as the page comes through. The browser is kept for the
+rest of the session, so a source only asks once. It is no longer started with
+its graphics turned off: a browser without WebGL looks like a bot to exactly
+the checks it has to pass.
+
 ## 0.34.1, 2026-09-23 · `versionCode 60`
 The Linux app no longer dies when a source asks for a browser check. Chromium
 was told to draw the way a Wayland desktop does, while the window it was given

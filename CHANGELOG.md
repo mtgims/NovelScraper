@@ -10,6 +10,9 @@ what's in that APK, so you can tell what's on your phone.
 
 ## 2026-09-23
 
+- **Browser checks on Linux, the way the phone does them (0.34.2).** A hidden
+  browser loads pages for sources that refuse plain requests, and shows itself
+  only when a check needs a tap, which is how Mihon handles this on Android.
 - **Fixed: the Linux app crashed on a source's browser check (0.34.1).**
   Chromium was started with a display backend that didn't match the window it
   was given, and with the wrong path to its helper programs; either one killed
