@@ -35,7 +35,6 @@ import androidx.navigation.compose.rememberNavController
 import androidx.navigation.navArgument
 import androidx.savedstate.read
 import com.novelscraper.app.data.LibraryPrefs
-import com.novelscraper.app.platform.encodeRouteArg
 import com.novelscraper.app.ui.browse.BrowseScreen
 import com.novelscraper.app.ui.browse.ExtensionsScreen
 import com.novelscraper.app.ui.browse.SourceScreen
@@ -46,8 +45,6 @@ import com.novelscraper.app.ui.components.isTopLevelRoute
 import com.novelscraper.app.ui.screen.BookScreen
 import com.novelscraper.app.ui.screen.LibraryScreen
 import com.novelscraper.app.ui.screen.LoginScreen
-import com.novelscraper.app.ui.screen.NewScrapeScreen
-import com.novelscraper.app.ui.screen.NuBrowserScreen
 import com.novelscraper.app.ui.screen.ProgressScreen
 import com.novelscraper.app.ui.screen.ReaderScreen
 import com.novelscraper.app.ui.screen.RegisterScreen
@@ -74,7 +71,7 @@ private fun NeedsServer(what: String, onSignIn: () -> Unit, content: @Composable
     }
 }
 
-private val TAB_ORDER = listOf("library", "browse", "new", "jobs", "stats", "settings", "login", "register")
+private val TAB_ORDER = listOf("library", "browse", "jobs", "stats", "settings", "login", "register")
 // Tab rank drives slide direction; detail screens (book/reader) rank high so
 // opening them slides forward (left), and back-navigation slides right.
 private fun routeRank(route: String?): Int {
@@ -169,71 +166,6 @@ private fun MainApp() {
                     onRegister = { u, p, i -> auth.register(u, p, i) { nav.popBackStack("login", inclusive = true) } },
                     onBack = { auth.clearError(); nav.popBackStack() },
                 )
-            }
-            composable("new") {
-                NeedsServer("Scraping a novel by its web address and importing EPUBs happen on your " +
-                    "NovelScraper server. Novels from sources need no account: see Browse.", signIn) {
-                NewScrapeScreen(
-                    onScraped = {
-                        nav.navigate("jobs") {
-                            launchSingleTop = true
-                            popUpTo("library") { saveState = true }
-                            restoreState = true
-                        }
-                    },
-                    onImported = {
-                        nav.navigate("library") {
-                            launchSingleTop = true
-                            popUpTo("library") { inclusive = true }
-                        }
-                    },
-                    onAddFromNu = { url ->
-                        nav.navigate(if (url != null) "nu?url=${encodeRouteArg(url)}" else "nu")
-                    },
-                )
-                }
-            }
-            composable(
-                "nu?url={url}",
-                arguments = listOf(navArgument("url") {
-                    type = NavType.StringType; nullable = true; defaultValue = null
-                }),
-            ) { e ->
-                NuBrowserScreen(
-                    startUrl = e.arguments?.read { getStringOrNull("url") },
-                    onBack = { nav.popBackStack() },
-                    onScraped = {
-                        nav.navigate("jobs") {
-                            launchSingleTop = true
-                            popUpTo("library") { saveState = true }
-                            restoreState = true
-                        }
-                    },
-                )
-            }
-            composable("browse") {
-                BrowseScreen(
-                    onOpenSource = { id -> nav.navigate("source/${encodeRouteArg(id)}") },
-                    onManage = { nav.navigate("extensions") },
-                )
-            }
-            composable("extensions") { ExtensionsScreen(onBack = { nav.popBackStack() }) }
-            composable("source/{plugin}") { e ->
-                val plugin = e.arguments!!.read { getString("plugin") }
-                SourceScreen(
-                    pluginId = plugin,
-                    onBack = { nav.popBackStack() },
-                    onOpenNovel = { id -> nav.navigate("book/$id") },
-                )
-            }
-            composable("jobs") {
-                NeedsServer("Scrapes running on your NovelScraper server show here.", signIn) { ProgressScreen() }
-            }
-            composable("stats") {
-                NeedsServer("Reading stats come from your NovelScraper server for now.", signIn) { StatsScreen() }
-            }
-            composable("settings") {
-                SettingsScreen(onSignIn = signIn, onLogout = { scope.launch { Account.logout() } })
             }
             composable(
                 "book/{id}",

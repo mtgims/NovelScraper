@@ -32,6 +32,21 @@ crash report is unreadable without the matching one.
 
 ---
 
+## 0.39.0, 2026-09-23 · `versionCode 78`
+Novels come from sources now, so the app stops asking for web addresses.
+- **Scrape is gone.** Pasting a novel's address and having the server go and
+  fetch it was how novels got in before there were sources. A novel now comes
+  from Browse and is kept with the Download button on its own page, or with
+  "Download all chapters" on a right-click in the library. The NovelUpdates
+  browser that existed to feed the scraper went with it.
+- **Importing an EPUB moved to the library**, where the novels are, rather than
+  living under Scrape. It is unchanged otherwise and still needs a server.
+- **Long novels are split into parts of a hundred chapters.** A novel from a
+  source arrives as one run, however many there are, and reaching chapter nine
+  hundred meant scrolling to it. Those runs are now cut into collapsible parts
+  ("CHAPTERS 101-200"), the way a novel with real volumes already was, and the
+  part you are reading is the one that opens.
+
 ## 0.38.6, 2026-09-23 · `versionCode 77`
 - **A right-click opens its menu where you clicked.** It was appearing at a
   fixed spot beside the novel, because a dropdown measures from the bottom of

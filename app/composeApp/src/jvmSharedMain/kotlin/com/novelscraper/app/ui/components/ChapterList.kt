@@ -36,11 +36,34 @@ import androidx.compose.ui.unit.dp
 import com.novelscraper.app.library.LibChapter
 import com.novelscraper.app.ui.theme.Kicker
 
-/** A volume with its chapters, in reading order. */
-data class TocVolume(val number: Int, val chapters: List<LibChapter>)
+/** A volume with its chapters, in reading order. [label] names it when the
+ *  novel has no volumes of its own and it is a stretch of chapters instead. */
+data class TocVolume(val number: Int, val chapters: List<LibChapter>, val label: String? = null)
 
-/** Group a flat chapter list into volumes, preserving order. */
+/** How many chapters go in one part of a novel that has no volumes of its own. */
+const val CHAPTERS_PER_PART = 100
+
+/**
+ * Group a flat chapter list into volumes, preserving order.
+ *
+ * A novel from a source arrives as one run of chapters, however many there are,
+ * and scrolling to chapter nine hundred of a thousand is nobody's idea of
+ * navigation. Where there are no volumes to group by, the run is cut into parts
+ * of [CHAPTERS_PER_PART], which the list can then collapse like volumes.
+ */
 fun groupVolumes(chapters: List<LibChapter>): List<TocVolume> {
+    val byVolume = volumesOf(chapters)
+    if (byVolume.size > 1 || chapters.size <= CHAPTERS_PER_PART) return byVolume
+    return chapters.chunked(CHAPTERS_PER_PART).mapIndexed { i, part ->
+        TocVolume(
+            number = i + 1,
+            chapters = part,
+            label = "CHAPTERS ${part.first().position}-${part.last().position}",
+        )
+    }
+}
+
+private fun volumesOf(chapters: List<LibChapter>): List<TocVolume> {
     val out = ArrayList<TocVolume>()
     var num = Int.MIN_VALUE
     var cur = ArrayList<LibChapter>()
@@ -61,6 +84,7 @@ fun groupVolumes(chapters: List<LibChapter>): List<TocVolume> {
 fun VolumeHeaderRow(
     number: Int,
     chapterCount: Int,
+    label: String? = null,
     expanded: Boolean,
     onClick: () -> Unit,
     modifier: Modifier = Modifier,
@@ -71,7 +95,7 @@ fun VolumeHeaderRow(
         verticalAlignment = Alignment.CenterVertically,
     ) {
         Text(
-            "VOLUME $number",
+            label ?: "VOLUME $number",
             style = Kicker.copy(fontSize = MaterialTheme.typography.labelMedium.fontSize),
             color = MaterialTheme.colorScheme.primary,
             modifier = Modifier.weight(1f),

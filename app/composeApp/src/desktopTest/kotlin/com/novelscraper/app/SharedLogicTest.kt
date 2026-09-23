@@ -1,7 +1,6 @@
 package com.novelscraper.app
 
 import com.novelscraper.app.net.AppCookieJar
-import com.novelscraper.app.net.NuExtract
 import com.novelscraper.app.net.detail
 import com.novelscraper.app.platform.KeyValueStore
 import okhttp3.HttpUrl.Companion.toHttpUrl
@@ -16,37 +15,6 @@ import kotlin.test.assertTrue
 
 /** Shared (jvmSharedMain) logic that used Android APIs before the move. */
 class SharedLogicTest {
-
-    // --- NuExtract.toChapterOne (was android.net.Uri, now OkHttp HttpUrl) -----
-
-    @Test fun rewindsTrailingChapterNumber() {
-        assertEquals(
-            "https://tl.example.com/novel/some-novel/chapter-1",
-            NuExtract.toChapterOne("https://tl.example.com/novel/some-novel/chapter-58"),
-        )
-    }
-
-    @Test fun keepsSuffixAfterNumber() {
-        assertEquals(
-            "https://tl.example.com/some-novel-1.html",
-            NuExtract.toChapterOne("https://tl.example.com/some-novel-58.html"),
-        )
-    }
-
-    @Test fun keepsQueryAndFragment() {
-        assertEquals(
-            "https://tl.example.com/n/chapter-1/?lang=en#top",
-            NuExtract.toChapterOne("https://tl.example.com/n/chapter-12/?lang=en#top"),
-        )
-    }
-
-    @Test fun leavesChapterOneAndNonNumericAlone() {
-        val one = "https://tl.example.com/n/chapter-1"
-        assertEquals(one, NuExtract.toChapterOne(one))
-        val slug = "https://tl.example.com/n/prologue"
-        assertEquals(slug, NuExtract.toChapterOne(slug))
-        assertEquals("not a url", NuExtract.toChapterOne("not a url"))
-    }
 
     // --- HttpException.detail (was org.json) ----------------------------------
 

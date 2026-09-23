@@ -4,6 +4,7 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.novelscraper.app.library.LibBook
 import com.novelscraper.app.library.LibCollection
+import com.novelscraper.app.library.ChapterDownloads
 import com.novelscraper.app.library.Library
 import com.novelscraper.app.library.LibrarySyncRunner
 import com.novelscraper.app.library.LibraryUpdates
@@ -78,6 +79,9 @@ class LibraryViewModel : ViewModel() {
     // --- what a right-click offers -------------------------------------------
 
     fun markAllRead(id: Int) { viewModelScope.launch { lib.markAllRead(id) } }
+
+    /** Keep the whole novel on this device, from the library, without opening it. */
+    fun downloadAll(id: Int) = ChapterDownloads.download(id, null)
 
     fun removeFromLibrary(id: Int) {
         viewModelScope.launch {

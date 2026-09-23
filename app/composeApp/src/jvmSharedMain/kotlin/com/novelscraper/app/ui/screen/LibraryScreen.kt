@@ -47,6 +47,11 @@ import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Remove
 import com.novelscraper.app.data.LibraryPrefs
 import com.novelscraper.app.platform.isDesktop
+import androidx.compose.material.icons.filled.FileUpload
+import com.novelscraper.app.platform.rememberEpubPicker
+import com.novelscraper.app.platform.showToast
+import com.novelscraper.app.ui.ImportUi
+import com.novelscraper.app.ui.ImportViewModel
 import com.novelscraper.app.library.LibBook
 import com.novelscraper.app.net.Account
 import androidx.compose.foundation.layout.fillMaxHeight
@@ -94,7 +99,29 @@ fun LibraryScreen(onOpenBook: (Int) -> Unit) {
 
     Column(Modifier.fillMaxSize()) {
         val coverWidth by LibraryPrefs.coverWidth.collectAsState()
+        // Importing an EPUB used to live under Scrape, beside pasting a novel's
+        // web address. That way of adding a novel is gone, but bringing one in
+        // from a file is not, and the library is where it belongs.
+        val importVm: ImportViewModel = viewModel { ImportViewModel() }
+        val importUi by importVm.ui.collectAsState()
+        val pickEpubs = rememberEpubPicker { files -> importVm.importEpubs(files) }
+        LaunchedEffect(importUi) {
+            when (val ui = importUi) {
+                is ImportUi.Done -> { showToast("Imported ${'$'}{ui.book.title}."); importVm.reset(); vm.refresh() }
+                is ImportUi.Error -> { showToast(ui.message, long = true); importVm.reset() }
+                else -> Unit
+            }
+        }
         ScreenTitle("Library", action = {
+            if (Account.signedIn) {
+                if (importUi is ImportUi.Uploading) {
+                    Box(Modifier.size(48.dp), contentAlignment = Alignment.Center) {
+                        CircularProgressIndicator(Modifier.size(22.dp))
+                    }
+                } else IconButton(onClick = pickEpubs) {
+                    Icon(Icons.Filled.FileUpload, contentDescription = "Import an EPUB")
+                }
+            }
             if (isDesktop) {
                 IconButton(onClick = { LibraryPrefs.smaller() }, enabled = LibraryPrefs.canShrink) {
                     Icon(Icons.Filled.Remove, contentDescription = "Smaller covers")
@@ -156,6 +183,10 @@ fun LibraryScreen(onOpenBook: (Int) -> Unit) {
                             ReorderableItem(reorderState, key = book.id) { dragging ->
                                 val menu = listOf(
                                     MenuAction("Open") { onOpenBook(book.id) },
+                                    MenuAction("Download all chapters") {
+                                        vm.downloadAll(book.id)
+                                        showToast("Downloading ${'$'}{book.title}…")
+                                    },
                                     MenuAction("Mark all read") { vm.markAllRead(book.id) },
                                     MenuAction("Remove downloads") { vm.removeDownloads(book.id) },
                                     MenuAction("Remove from library") { vm.removeFromLibrary(book.id) },

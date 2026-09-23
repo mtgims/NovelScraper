@@ -15,18 +15,7 @@ expect object ScrapeRelay {
     fun stop()
 }
 
-/**
- * Reads NovelUpdates pages with the user's NovelUpdates login. Returns an empty
- * series / null when it can't, and the caller falls back to the visible browser.
- */
-expect object NuResolver {
-    /** The series (title/author + groups), or empty groups if the page couldn't be
-     *  read logged-in. */
-    suspend fun extractSeries(seriesUrl: String): NuSeries
 
-    /** Follow a group's /extnu/ link to the translator's URL, or null on failure. */
-    suspend fun resolveExtnu(extnu: String): String?
-}
 
 /** Download file names: the same rule as the server's, so what you get matches
  *  what the web gives. */

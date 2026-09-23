@@ -24,12 +24,7 @@ actual object ScrapeRelay {
     actual fun stop() = client.stop()
 }
 
-/** Reading NovelUpdates needs the user's logged-in browser session, which only
- *  the Android app has; the scrape screen doesn't offer it on desktop. */
-actual object NuResolver {
-    actual suspend fun extractSeries(seriesUrl: String): NuSeries = NuSeries()
-    actual suspend fun resolveExtnu(extnu: String): String? = null
-}
+
 
 /**
  * Volume downloads into the user's Downloads folder, through the shared client

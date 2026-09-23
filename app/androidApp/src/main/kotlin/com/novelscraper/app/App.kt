@@ -13,7 +13,6 @@ import com.novelscraper.app.library.DownloadKeeper
 import com.novelscraper.app.library.Library
 import com.novelscraper.app.net.Account
 import com.novelscraper.app.net.Net
-import com.novelscraper.app.net.NuResolver
 import com.novelscraper.app.net.ScrapeRelay
 import com.novelscraper.app.net.buildImageLoader
 import com.novelscraper.app.platform.initPlatform
@@ -36,7 +35,6 @@ class App : Application(), SingletonImageLoader.Factory {
         ThemeController.init()
         TtsController.player = AndroidTtsPlayer(this)
         ScrapeRelay.init(this)  // lets the relay create its offscreen render WebView
-        NuResolver.init(this)   // offscreen NovelUpdates reader (no visible browser when logged in)
         // Keep a scrape-relay WebSocket open while the app is foregrounded, so
         // scrapes fetch through this phone's IP (bypassing the server's Cloudflare
         // block). Dropped when backgrounded — the server then fetches server-side.

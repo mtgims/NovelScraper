@@ -93,7 +93,7 @@ fun ChaptersSheet(
                 val isOpen = expanded == vol.number
                 item(key = "vol-${vol.number}") {
                     VolumeHeaderRow(
-                        number = vol.number, chapterCount = vol.chapters.size,
+                        number = vol.number, chapterCount = vol.chapters.size, label = vol.label,
                         expanded = isOpen,
                         onClick = { expanded = if (isOpen) null else vol.number },
                     )

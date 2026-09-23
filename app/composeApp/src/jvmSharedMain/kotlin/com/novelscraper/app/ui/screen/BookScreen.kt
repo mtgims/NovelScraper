@@ -279,8 +279,10 @@ private fun BookContent(
     // 30-volume book isn't 3000 rows to scroll.
     var expanded by remember(chapters.size) {
         mutableStateOf(
-            setOf(chapters.firstOrNull { it.position == resumePos }?.volume
-                ?: volumes.firstOrNull()?.number ?: 0),
+            setOf(
+                volumes.firstOrNull { vol -> vol.chapters.any { it.position == resumePos } }?.number
+                    ?: volumes.firstOrNull()?.number ?: 0,
+            ),
         )
     }
     var selection by remember(chapters.size) { mutableStateOf<Set<Int>>(emptySet()) }
@@ -309,7 +311,8 @@ private fun BookContent(
             val isOpen = flat || vol.number in expanded
             if (!flat) item(key = "vol-${vol.number}") {
                 VolumeHeaderRow(
-                    number = vol.number, chapterCount = vol.chapters.size, expanded = isOpen,
+                    number = vol.number, chapterCount = vol.chapters.size, label = vol.label,
+                    expanded = isOpen,
                     onClick = {
                         expanded = if (isOpen) expanded - vol.number else expanded + vol.number
                     },
