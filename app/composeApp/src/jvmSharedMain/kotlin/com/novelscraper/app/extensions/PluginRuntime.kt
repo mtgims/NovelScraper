@@ -6,6 +6,9 @@ import com.dokar.quickjs.alias.def
 import com.dokar.quickjs.binding.AsyncFunctionBinding
 import com.dokar.quickjs.binding.FunctionBinding
 import com.novelscraper.app.platform.Log
+import com.novelscraper.app.platform.fetchThroughBrowser
+import com.novelscraper.app.platform.canFetchThroughBrowser
+import com.novelscraper.app.platform.looksLikeBrowserCheck
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.sync.Mutex
@@ -206,9 +209,22 @@ class PluginRuntime private constructor(
             }
             val contentType = headers.entries.firstOrNull { it.key.equals("content-type", true) }?.value
             builder.method(method, requestBody(method, r["body"] as? JsonObject, contentType))
+            // A site that has already refused plain requests is asked through the
+            // browser from the start, rather than being refused once every time.
+            if (method.equals("GET", true) && SiteChecks.wantsBrowser(url)) {
+                browserResponse(url)?.let { return@withContext it }
+            }
             env.http.newCall(builder.build()).execute().use { resp ->
                 val bytes = resp.body?.bytes() ?: ByteArray(0)
-                if (isChallenge(resp.code, resp.headers, bytes)) challengedUrl = url
+                if (isChallenge(resp.code, resp.headers, bytes)) {
+                    // Cloudflare reads more than cookies, so a browser check can't
+                    // hand this client a pass: load the page in the browser instead.
+                    if (method.equals("GET", true)) {
+                        SiteChecks.needsBrowser(url)
+                        browserResponse(url)?.let { return@withContext it }
+                    }
+                    challengedUrl = url
+                }
                 val id = responseSeq.incrementAndGet()
                 synchronized(responseBodies) { responseBodies[id] = bytes }
                 // Like fetch's Response.text(): UTF-8 unless the caller (fetchText) asks.
@@ -228,6 +244,31 @@ class PluginRuntime private constructor(
         } catch (e: Exception) {
             buildJsonObject { put("error", e.message ?: e.javaClass.simpleName) }.toString()
         }
+    }
+
+    /** The page as a real browser sees it, shaped like a fetch response. Null if
+     *  this device has no browser, or it couldn't load the page. */
+    private suspend fun browserResponse(url: String): String? {
+        if (!canFetchThroughBrowser) return null
+        val html = runCatching { fetchThroughBrowser(url) }
+            .onFailure { Log.w(TAG, "browser fetch failed: ${it.message}") }
+            .getOrNull()?.takeIf { it.isNotBlank() } ?: return null
+        if (looksLikeBrowserCheck(html)) {
+            Log.w(TAG, "browser fetch: the site is still asking the browser itself")
+            return null
+        }
+        val bytes = html.toByteArray()
+        val id = responseSeq.incrementAndGet()
+        synchronized(responseBodies) { responseBodies[id] = bytes }
+        return buildJsonObject {
+            put("status", 200)
+            put("statusText", "OK")
+            put("url", url)
+            put("redirected", false)
+            put("headers", buildJsonObject { put("content-type", "text/html; charset=utf-8") })
+            put("text", html)
+            put("bodyId", id.toString())
+        }.toString()
     }
 
     /** Cloudflare's interstitial ("Just a moment..."): 403/503 with its marker

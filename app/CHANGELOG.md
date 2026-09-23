@@ -32,6 +32,22 @@ crash report is unreadable without the matching one.
 
 ---
 
+## 0.34.1, 2026-09-23 · `versionCode 60`
+The Linux app no longer dies when a source asks for a browser check. Chromium
+was told to draw the way a Wayland desktop does, while the window it was given
+is an X11 one (Java's windows always are, through XWayland), and it was also
+looking for its own helper programs beside the app's Java runtime instead of in
+the downloaded browser. Either one took the whole app down. It now draws
+off-screen into the app's own window, on X11, with the right paths, and refuses
+to start at all (with a message) when there is no display to draw on.
+
+Also: pages that a site refuses to hand to the app are now loaded through that
+browser instead, and cookies it collects keep the domain and path the site set
+them for. This gets through some sites, but not the ones whose check only
+passes for a browser window you can see, Scribble Hub among them: for those the
+app still says so and points at the phone or an EPUB. See the note in
+CHANGELOG.md.
+
 ## 0.34.0, 2026-09-23 · `versionCode 59`
 The rough edges, smoothed.
 - **Keep scrolling to the next chapter.** At the end of a chapter, carrying on

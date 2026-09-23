@@ -139,3 +139,27 @@ expect val canPassSiteChecks: Boolean
  * site let us through. [onStatus] reports what is happening, for the UI.
  */
 expect suspend fun passSiteCheck(url: String, onStatus: (String) -> Unit = {}): Boolean
+
+/** True if this device can load a page in a real browser (see [fetchThroughBrowser]). */
+expect val canFetchThroughBrowser: Boolean
+
+/**
+ * Load [url] in a real browser and hand back the page's HTML, for sites that
+ * refuse plain requests however good the cookies are (Cloudflare reads more than
+ * cookies). Null if the page couldn't be loaded. GET only.
+ */
+expect suspend fun fetchThroughBrowser(url: String): String?
+
+/**
+ * True if this page is a site's browser check rather than its content.
+ * Cloudflare puts its challenge script on ordinary pages too, so that alone
+ * means nothing: the interstitial names itself in the title and carries the
+ * challenge's own options.
+ */
+fun looksLikeBrowserCheck(html: String): Boolean {
+    val head = html.take(6000)
+    return head.contains("Just a moment", ignoreCase = true) ||
+        head.contains("cf_chl_opt", ignoreCase = true) ||
+        head.contains("cf-chl-bypass", ignoreCase = true) ||
+        head.contains("Checking your browser before accessing", ignoreCase = true)
+}

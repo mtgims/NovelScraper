@@ -1,12 +1,15 @@
 package com.novelscraper.app.platform
 
+import com.novelscraper.app.extensions.BrowserCookieJar
 import com.novelscraper.app.extensions.Extensions
+import com.novelscraper.app.platform.browserUserAgent
 import dev.datlag.kcef.KCEF
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.withTimeoutOrNull
 import okhttp3.HttpUrl.Companion.toHttpUrlOrNull
+import org.cef.browser.CefRendering
 import org.cef.network.CefCookie
 import org.cef.network.CefCookieManager
 import java.awt.BorderLayout
@@ -20,9 +23,11 @@ actual val canPassSiteChecks: Boolean = true
 
 private const val CLEARANCE = "cf_clearance"
 private const val WAIT_MS = 180_000L
+/** How long a loaded page must stay loaded before its cookies are taken. */
+private const val SETTLE_MS = 3_000L
 private const val TAG = "SiteCheck"
 
-@Volatile private var ready = false
+@Volatile internal var browserReady = false
 @Volatile private var failure: String? = null
 
 /**
@@ -35,6 +40,12 @@ private const val TAG = "SiteCheck"
  */
 actual suspend fun passSiteCheck(url: String, onStatus: (String) -> Unit): Boolean {
     val http = url.toHttpUrlOrNull() ?: return false
+    // Without an X display there is nothing to put the browser in, and Chromium
+    // would take the whole app down rather than fail.
+    if (System.getenv("DISPLAY").orEmpty().isBlank()) {
+        onStatus("The browser needs an X display (XWayland on a Wayland desktop).")
+        return false
+    }
     if (!ensureBrowser(onStatus)) return false
 
     onStatus("Opening the site…")
@@ -45,7 +56,10 @@ actual suspend fun passSiteCheck(url: String, onStatus: (String) -> Unit): Boole
         onStatus(failure ?: "The browser couldn't start on this system.")
         return false
     }
-    val browser = client.createBrowser(url)
+    // Off-screen rendering: Chromium paints into a Java component instead of
+    // owning an X11 window of its own. Embedding its window inside an AWT one
+    // is what crashed (and, when it didn't, drew nothing).
+    val browser = client.createBrowser(url, CefRendering.OFFSCREEN, false)
     val frame = withContext(Dispatchers.Main) {
         JFrame("Browser check").apply {
             defaultCloseOperation = WindowConstants.DISPOSE_ON_CLOSE
@@ -59,15 +73,31 @@ actual suspend fun passSiteCheck(url: String, onStatus: (String) -> Unit): Boole
     // The native browser can only be built once its window is on screen.
     withContext(Dispatchers.Main) { runCatching { browser.createImmediately() } }
     try {
-        val cookies = withTimeoutOrNull(WAIT_MS) {
+        val cookies: List<BrowserCookieJar.BrowserCookie>? = withTimeoutOrNull(WAIT_MS) {
+            var settledSince = 0L
             while (true) {
-                if (!frame.isDisplayable) return@withTimeoutOrNull emptyList<Pair<String, String>>()
-                val found = runCatching { readCookies(url) }.getOrDefault(emptyList())
-                if (found.any { it.first == CLEARANCE }) return@withTimeoutOrNull found
+                // The reader closed the window: take whatever it collected.
+                if (!frame.isDisplayable) {
+                    return@withTimeoutOrNull runCatching { readCookies(url) }
+                        .getOrDefault(emptyList<BrowserCookieJar.BrowserCookie>())
+                }
+                val found = runCatching { readCookies(url) }.getOrDefault(emptyList<BrowserCookieJar.BrowserCookie>())
+                // A passed Cloudflare check leaves this behind.
+                if (found.any { it.name == CLEARANCE }) return@withTimeoutOrNull found
+                // Some sites let us through without one: the page finished loading
+                // and stayed loaded, so whatever it set is what we need.
+                val loading = runCatching { browser.isLoading }.getOrDefault(true)
+                if (!loading && found.isNotEmpty()) {
+                    if (settledSince == 0L) settledSince = System.currentTimeMillis()
+                    if (System.currentTimeMillis() - settledSince > SETTLE_MS) return@withTimeoutOrNull found
+                } else {
+                    settledSince = 0L
+                }
                 delay(700)
             }
-            @Suppress("UNREACHABLE_CODE") emptyList<Pair<String, String>>()
+            @Suppress("UNREACHABLE_CODE") emptyList<BrowserCookieJar.BrowserCookie>()
         }
+        Log.i(TAG, "browser check: " + cookies.orEmpty().joinToString { "${it.name}@${it.domain}" })
         if (cookies.isNullOrEmpty()) {
             onStatus("The check didn't pass.")
             return false
@@ -82,14 +112,18 @@ actual suspend fun passSiteCheck(url: String, onStatus: (String) -> Unit): Boole
     }
 }
 
-/** Fetch and start Chromium once; false if it couldn't be set up. */
+/** Fetch and start Chromium once; false if it couldn't be set up. Shared with
+ *  [fetchThroughBrowser]. */
+internal suspend fun ensureSiteCheckBrowser(onStatus: (String) -> Unit): Boolean = ensureBrowser(onStatus)
+
 private suspend fun ensureBrowser(onStatus: (String) -> Unit): Boolean {
-    if (ready) return true
+    if (browserReady) return true
     return withContext(Dispatchers.IO) {
         try {
+            val install = File(appFilesDir(), "browser")
             KCEF.init(
                 builder = {
-                    installDir(File(appFilesDir(), "browser"))
+                    installDir(install)
                     progress {
                         onDownloading { percent ->
                             onStatus("Getting the browser ready… ${percent.toInt()}%")
@@ -98,17 +132,27 @@ private suspend fun ensureBrowser(onStatus: (String) -> Unit): Boolean {
                     }
                     settings {
                         cachePath = File(appCacheDir(), "browser").absolutePath
-                        windowlessRenderingEnabled = false
+                        windowlessRenderingEnabled = true
                         // Sandboxing needs setuid helpers an AppImage doesn't have.
                         noSandbox = true
+                        // Chromium's own helper processes and resources live in the
+                        // downloaded bundle, not beside the app's Java runtime, which
+                        // is where it looks by default: without these it can't start
+                        // its helpers and takes the app down with it.
+                        // The same browser the app's own requests claim to be: a
+                        // clearance cookie is tied to the user agent that earned it.
+                        userAgent = browserUserAgent
+                        browserSubProcessPath = File(install, "jcef_helper").absolutePath
+                        resourcesDirPath = install.absolutePath
+                        localesDirPath = File(install, "locales").absolutePath
                     }
-                    // Chromium picks its display backend itself and gives up if it
-                    // guesses wrong, so it is told which one this session runs.
-                    val wayland = System.getenv("WAYLAND_DISPLAY").orEmpty().isNotBlank()
+                    // X11 always: the browser is put inside an AWT window, and those
+                    // are X11 even on a Wayland desktop (through XWayland). A Wayland
+                    // surface in an X11 window crashes Chromium outright.
                     // args() rather than addArgs(): the defaults JCEF works out
                     // already name a display backend, and the first one wins.
                     args(
-                        if (wayland) "--ozone-platform=wayland" else "--ozone-platform=x11",
+                        "--ozone-platform=x11",
                         // Draw without a GPU: this window only runs a check, and GPU
                         // setups vary far more than software drawing does.
                         "--disable-gpu", "--disable-software-rasterizer", "--disable-dev-shm-usage",
@@ -128,7 +172,7 @@ private suspend fun ensureBrowser(onStatus: (String) -> Unit): Boolean {
                 onStatus(failure ?: "The browser couldn't start on this system.")
                 return@withContext false
             }
-            ready = true
+            browserReady = true
             true
         } catch (e: Exception) {
             Log.w(TAG, "couldn't set up the browser: ${e.message}")
@@ -138,13 +182,16 @@ private suspend fun ensureBrowser(onStatus: (String) -> Unit): Boolean {
     }
 }
 
-/** Cookies the browser holds for [url]. */
-private suspend fun readCookies(url: String): List<Pair<String, String>> = withContext(Dispatchers.IO) {
-    val out = ArrayList<Pair<String, String>>()
+/** Cookies the browser holds for [url], as it holds them. */
+private suspend fun readCookies(url: String): List<BrowserCookieJar.BrowserCookie> = withContext(Dispatchers.IO) {
+    val out = ArrayList<BrowserCookieJar.BrowserCookie>()
     val done = java.util.concurrent.CountDownLatch(1)
     val visitor = object : org.cef.callback.CefCookieVisitor {
         override fun visit(cookie: CefCookie, count: Int, total: Int, delete: org.cef.misc.BoolRef): Boolean {
-            out += cookie.name to cookie.value
+            out += BrowserCookieJar.BrowserCookie(
+                name = cookie.name, value = cookie.value, domain = cookie.domain, path = cookie.path,
+                expiresAt = cookie.expires?.time ?: 0L, secure = cookie.secure, httpOnly = cookie.httponly,
+            )
             if (count + 1 >= total) done.countDown()
             return true
         }
@@ -156,5 +203,5 @@ private suspend fun readCookies(url: String): List<Pair<String, String>> = withC
 
 /** Let go of the browser when the app closes. */
 fun disposeSiteCheckBrowser() {
-    if (ready) runCatching { KCEF.disposeBlocking() }
+    if (browserReady) runCatching { KCEF.disposeBlocking() }
 }

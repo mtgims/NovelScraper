@@ -31,6 +31,21 @@ object SiteChecks {
         if (_status.value == null) _pending.value = url
     }
 
+    // Sites that refuse this app's plain requests, so their pages are loaded in
+    // the browser from the start. Kept for the run; a restart tries plainly again.
+    private val browserHosts = java.util.Collections.synchronizedSet(HashSet<String>())
+
+    /** Remember that this site only answers a real browser. */
+    fun needsBrowser(url: String) {
+        host(url)?.let { browserHosts.add(it) }
+    }
+
+    /** True if this site's pages should go straight through the browser. */
+    fun wantsBrowser(url: String): Boolean = host(url)?.let { it in browserHosts } == true
+
+    private fun host(url: String): String? =
+        runCatching { java.net.URI(url).host }.getOrNull()?.lowercase()
+
     fun dismiss() {
         _pending.value = null
     }

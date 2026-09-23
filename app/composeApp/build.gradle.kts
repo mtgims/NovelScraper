@@ -175,6 +175,10 @@ kotlin {
                 // A real browser (Chromium through JCEF) for sites that ask for a
                 // browser check; its runtime is fetched on first use, not shipped.
                 implementation("dev.datlag:kcef:2025.03.23")
+                // The browser draws off-screen through JOGL, whose native libraries
+                // ship as their own artifacts; without them it can't paint.
+                implementation("org.jogamp.gluegen:gluegen-rt:2.5.0:natives-linux-amd64")
+                implementation("org.jogamp.jogl:jogl-all:2.5.0:natives-linux-amd64")
 
                 // Media keys, and the desktop's media widget, through MPRIS on D-Bus.
                 implementation("com.github.hypfvieh:dbus-java-core:5.1.1")
@@ -304,12 +308,12 @@ abstract class BuildAppImage : DefaultTask() {
                 """
                 #!/bin/sh
                 HERE="${'$'}(dirname "${'$'}(readlink -f "${'$'}0")")"
-                # The embedded browser (site checks) picks its display backend from
-                # the environment and gives up if it guesses wrong.
-                if [ -z "${'$'}OZONE_PLATFORM" ]; then
-                  if [ -n "${'$'}WAYLAND_DISPLAY" ]; then OZONE_PLATFORM=wayland; else OZONE_PLATFORM=x11; fi
-                  export OZONE_PLATFORM
-                fi
+                # Java's windows are always X11 (XWayland under a Wayland session),
+                # so the embedded browser (site checks) has to draw on X11 too:
+                # a Wayland surface in an X11 window crashes Chromium outright.
+                # Chromium reads both of these when it picks its backend.
+                export OZONE_PLATFORM=x11
+                export XDG_SESSION_TYPE=x11
                 exec "${'$'}HERE/bin/novelscraper" "${'$'}@"
                 """.trimIndent() + "\n",
             )

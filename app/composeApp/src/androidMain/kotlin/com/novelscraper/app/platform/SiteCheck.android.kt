@@ -2,6 +2,7 @@ package com.novelscraper.app.platform
 
 import android.webkit.CookieManager
 import android.webkit.WebView
+import com.novelscraper.app.extensions.BrowserCookieJar
 import com.novelscraper.app.extensions.Extensions
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
@@ -47,7 +48,7 @@ actual suspend fun passSiteCheck(url: String, onStatus: (String) -> Unit): Boole
             onStatus("The check didn't pass.")
             return false
         }
-        Extensions.cookies.acceptFromBrowser(http, parse(passed))
+        Extensions.cookies.acceptFromBrowser(http, parse(passed, http.host))
         onStatus("Done.")
         return true
     } finally {
@@ -55,9 +56,13 @@ actual suspend fun passSiteCheck(url: String, onStatus: (String) -> Unit): Boole
     }
 }
 
-/** "a=1; b=2" as pairs. */
-private fun parse(header: String): List<Pair<String, String>> =
+/** "a=1; b=2" as cookies for [host]. The WebView's cookie header carries no
+ *  domain or path, so they are the host's, which is what it was loaded from. */
+private fun parse(header: String, host: String): List<BrowserCookieJar.BrowserCookie> =
     header.split(';').mapNotNull { part ->
         val i = part.indexOf('=')
-        if (i <= 0) null else part.substring(0, i).trim() to part.substring(i + 1).trim()
+        if (i <= 0) null else BrowserCookieJar.BrowserCookie(
+            name = part.substring(0, i).trim(), value = part.substring(i + 1).trim(),
+            domain = host, path = "/", expiresAt = 0L, secure = false, httpOnly = false,
+        )
     }

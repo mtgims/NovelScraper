@@ -30,9 +30,10 @@ fun SiteCheckPrompt() {
         text = {
             Text(
                 status ?: if (SiteChecks.possible) {
-                    "The site wants to see a browser before it hands over chapters. " +
-                        "The app can open one and wait for the check to pass; you may have to " +
-                        "tick a box. The first time on this computer, the browser is downloaded."
+                    "The site wants to see a browser before it hands over chapters, and no " +
+                        "amount of cookies changes that. The app can open one, and from then on " +
+                        "it loads this site's pages through it. The first time on this computer, " +
+                        "the browser is downloaded (about 500 MB)."
                 } else {
                     "The site wants to see a browser before it hands over chapters, which this " +
                         "device can't do. Read this novel on the phone, or import it as an EPUB."

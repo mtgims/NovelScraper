@@ -10,6 +10,13 @@ what's in that APK, so you can tell what's on your phone.
 
 ## 2026-09-23
 
+- **Fixed: the Linux app crashed on a source's browser check (0.34.1).**
+  Chromium was started with a display backend that didn't match the window it
+  was given, and with the wrong path to its helper programs; either one killed
+  the app. Pages a site refuses to hand over are now fetched through that
+  browser, which works for some sources; sites that only accept a browser
+  window you can watch (Scribble Hub) still can't be read on the desktop.
+
 - **Reliability and parity (0.34.0).** Reading carries on into the next chapter
   by scrolling, the library checks its source novels for new chapters, downloads
   retry and skip instead of stopping (and survive leaving the app on Android),
