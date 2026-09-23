@@ -4,7 +4,7 @@ What changed and when, newest first. Dates are when the work landed.
 
 The Android app has its own version numbers on top of this, see
 [`app/CHANGELOG.md`](app/CHANGELOG.md), which maps each `versionCode` to
-what's in that APK, so you can tell what's on your phone.
+what's in that APK, so a build on a phone can be identified.
 
 ---
 
@@ -60,11 +60,11 @@ what's in that APK, so you can tell what's on your phone.
   Novel Hall's search answers instead of timing out. The check window is also
   minimised rather than moved off-screen, which a Wayland desktop ignored.
 - **Scribble Hub: the site's own ranking, its own search, and no more steering
-  your browser window (0.37.1).** The source listed highest-rated novels and
+  the reader's browser window (0.37.1).** The source listed highest-rated novels and
   called them popular; it now shows the ranking the site itself shows (Rising
   today, with its weekly, monthly, all-time, Popularity, Favourites, Activity
   and Readers rankings as sort options), and searches the way the site does. The
-  app also stops taking over a browser window you opened yourself.
+  app also stops taking over a browser window opened by hand.
 - **Scribble Hub works in the app (0.37.0).** Its check refused the app's
   browser because Chromium tells every page it is being driven while a program
   is attached to it; the same window opened by hand passed first time. The app's
@@ -75,7 +75,7 @@ what's in that APK, so you can tell what's on your phone.
   check window now says which site is asking, closing it no longer starts the
   carried browser behind it, and the app writes a log with the browser's
   graphics state, which is what a check mostly judges.
-- **Fixed: checks failing in the app that pass in your own browser (0.36.1).** A
+- **Fixed: checks failing in the app that pass in an ordinary browser (0.36.1).** A
   browser left behind by a bad exit kept the app's profile, so later runs fell
   back to the old carried browser; the app now adopts or clears it. An
   off-screen window could also be judged covered, which makes a page count as
@@ -87,7 +87,7 @@ what's in that APK, so you can tell what's on your phone.
   asked again, and asked once more when its window comes on screen, since some
   never finish in a window that isn't drawn. Pages are read out of the document
   rather than by running script in them.
-- **Browser checks use the browser you already have (0.35.0).** The Linux app
+- **Browser checks use the browser already installed (0.35.0).** The Linux app
   drives the installed Chromium, Brave, Chrome, Edge or Vivaldi over its
   debugging connection, in a profile of its own, instead of the two-year-old
   Chromium it carried: current, with the graphics card behind it, which is what
@@ -108,7 +108,7 @@ what's in that APK, so you can tell what's on your phone.
   was given, and with the wrong path to its helper programs; either one killed
   the app. Pages a site refuses to hand over are now fetched through that
   browser, which works for some sources; sites that only accept a browser
-  window you can watch (Scribble Hub) still can't be read on the desktop.
+  window that can be watched (Scribble Hub) still can't be read on the desktop.
 
 - **Reliability and parity (0.34.0).** Reading carries on into the next chapter
   by scrolling, the library checks its source novels for new chapters, downloads
@@ -141,7 +141,7 @@ what's in that APK, so you can tell what's on your phone.
   and caught a crash in extensions using `urlencode` on Android 12 and older.
 - **Sources live in their own repository (0.30.1).** All 15 of NovelScraper's
   sources are extensions in github.com/mtgims/novelscraper-extensions; the app
-  ships with none and adds repositories only when you do (ours, LNReader's, or
+  ships with none and adds repositories only when told to (this project's, LNReader's, or
   any other in the same format).
 - **Source extensions (0.30.0).** A Browse tab reads novels straight from their
   sites through extensions: LNReader's 280 community-maintained plugins run as
@@ -165,7 +165,7 @@ what's in that APK, so you can tell what's on your phone.
 - **Android app restructured for desktop (0.28.2).** No visible change. The
   project moved from `APKcode/` to `app/` and is now Kotlin Multiplatform:
   screens, networking and the reader are shared JVM code, so the coming Linux
-  app runs the same code. Installing over 0.28.1 keeps your login and settings.
+  app runs the same code. Installing over 0.28.1 keeps the login and settings.
 - **Android reader:** the Listen pill slides up from the bottom with the
   Prev / Next bar as one piece, instead of popping in above it.
 - **Android: ratings.** Rate a book 1 to 5 stars from its page; the rating
@@ -234,7 +234,7 @@ Android app.
 
 ## 2026-08-14
 
-**Scrape through your phone's IP.** Cloudflare blocks the server's datacentre
+**Scrape through the phone's IP.** Cloudflare blocks the server's datacentre
 address range for several sources but not a residential one, so the raw fetch is
 relayed over a WebSocket to the phone. Caddy routes the relay straight to the
 backend, since Next.js rewrites don't forward WebSocket upgrades.
@@ -281,7 +281,7 @@ sheet.
 ## 2026-08-09
 
 TTS voice picker grouped by language and gender; fixed the highlight running
-away and losing its place when you changed voice or speed mid-playback.
+away and losing its place when the voice or speed changed mid-playback.
 
 ## 2026-08-01
 
@@ -309,7 +309,7 @@ duplicated interaction logic was deduplicated. The conventions that came out of
 it are in `CONTRIBUTING.md`.
 
 Several rounds of on-device TTS work establishing what actually runs on a phone
-GPU: the answer being "less than you'd hope".
+GPU: the answer being "less than hoped".
 
 ## 2026-07-02 → 07-03
 

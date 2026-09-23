@@ -9,7 +9,6 @@
 #
 # After it syncs, on the server run:
 #   cd /opt/novelscraper && docker compose up -d --build
-# (or, for the bare-metal systemd setup: `ns restart`)
 set -euo pipefail
 
 DEST=${1:?usage: deploy/push.sh [user@]host:/path/   e.g. root@vps:/opt/novelscraper/}

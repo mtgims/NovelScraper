@@ -3,9 +3,9 @@
 Notes for working on this repo, mostly hard-won constraints that aren't obvious
 from the code, and conventions worth keeping.
 
-## Before you call something done
+## Before calling something done
 
-After any non-trivial change, read your own diff and check for:
+After any non-trivial change, read the diff and check for:
 
 - **Security**, injection (SQL, command, and SSRF especially, since this thing
   fetches arbitrary URLs), unsafe deserialisation, secrets in code, missing input
@@ -16,7 +16,7 @@ After any non-trivial change, read your own diff and check for:
 - **Performance**, N+1 queries, blocking I/O on hot paths, unbounded memory or
   request counts, missing rate limiting or caching in the scraper.
 
-Then say what you actually checked, not "reviewed".
+State what was actually checked, not "reviewed".
 
 ## Scraping conduct
 
@@ -99,7 +99,7 @@ doesn't grow back. Prefer these over re-rolling local variants:
   `ArchivedProgress` carry `user_id`, and child rows inherit ownership through their
   parent `Book`/`Collection`. **Every query must scope to the caller**, use
   `_owned_book`/`_owned_job`/`_owned_collection` (or `.where(... .user_id == user.id)`),
-  and single-item lookups **404 (never 403) on rows the user doesn't own** so ids
+  and single-item lookups **404 (never 403) on rows the caller doesn't own** so ids
   don't leak. New rows must set `user_id`; `manager.submit` takes the owner. Sessions
   are DB-backed opaque tokens in an httpOnly cookie (`app/auth.py`); passwords are
   stdlib scrypt (`app/security.py`, no external crypto deps). The cross-user

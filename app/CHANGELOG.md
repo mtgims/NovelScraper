@@ -1,36 +1,7 @@
 # NovelScraper for Android and Linux, changelog
 
-Newest first. One entry per change that shipped; `versionCode` increments by one
-each time, so it doubles as the build number.
+Newest first.
 
-**Versioning**, `x.z.y`:
-- **`z`** (middle) rises for a new capability: a screen, an engine, a source, a
-  new way to get content in.
-- **`y`** (last) rises for a small fix: a bug, a tuning pass, polish, a rename.
-- **`x`** stays 0 until you call it 1.0.
-
-**`versionCode` must increase for every build you sideload**, or Android refuses
-to install it over the previous one. Both fields (`appVersionCode`,
-`appVersionName`) live in `gradle.properties`.
-
-```bash
-cd app && mise exec -- ./gradlew :androidApp:assembleRelease
-```
-
-The Linux app: `./gradlew :composeApp:packageLinuxAppImage` writes
-**`novelscraper-x86_64.AppImage` in the project root**; `./gradlew :composeApp:run`
-starts it from source. Both apps share this version.
-
-The phone build is copied to **`novelscraper.apk` in the project root** on every
-release build, overwriting the previous one: that is the file to install or
-send. The emulator's x86_64 build stays at
-`app/androidApp/build/outputs/apk/release/androidApp-x86_64-release.apk`.
-
-Since 0.25.0 the release is minified by R8. **Archive
-`androidApp/build/outputs/mapping/release/mapping.txt` with every APK you ship**, a
-crash report is unreadable without the matching one.
-
----
 
 ## 0.39.2, 2026-09-23 · `versionCode 80`
 - **Novels can be dragged again on a phone.** The right-click menu took the long
@@ -63,10 +34,10 @@ Novels come from sources now, so the app stops asking for web addresses.
   source arrives as one run, however many there are, and reaching chapter nine
   hundred meant scrolling to it. Those runs are now cut into collapsible parts
   ("CHAPTERS 101-200"), the way a novel with real volumes already was, and the
-  part you are reading is the one that opens.
+  part being read is the one that opens.
 
 ## 0.38.6, 2026-09-23 · `versionCode 77`
-- **A right-click opens its menu where you clicked.** It was appearing at a
+- **A right-click opens its menu where the pointer is.** It was appearing at a
   fixed spot beside the novel, because a dropdown measures from the bottom of
   whatever it is attached to and it was attached to the whole tile. It now hangs
   off a point of no size sitting exactly where the press landed, whether that
@@ -131,7 +102,7 @@ The desktop layout, gone over again.
   now, as a sidebar should; only the reader takes the whole window.
 - **The novel's page is the same colour as the rest of the app**, and the shade
   it used to be painted in has gone to the chapters, which are now rounded rows
-  sitting on it, lit under the pointer, with the one you are on picked out.
+  sitting on it, lit under the pointer, with the current one picked out.
 - **The sidebar collapses.** The app's name at the top has become the control
   that narrows the bar to its icons and widens it again, remembered between runs.
 - Scrollbars in the novel's details and its chapter list.
@@ -143,7 +114,7 @@ The Linux app stops being a phone app on a monitor.
   Destinations now live along the left edge, always in the same place, each one a
   full row wide enough to hit without care, lit as the pointer crosses it, with
   the names shown when the window is wide enough. Phones keep the pill.
-- **Covers the size you want them.** Plus and minus in the library's header,
+- **Covers at whatever size suits.** Plus and minus in the library's header,
   remembered between runs, from small enough for a wall of books to large enough
   to read the titles across the room.
 - **The library stops jumping.** Entering it started a check for new chapters,
@@ -159,17 +130,17 @@ The Linux app stops being a phone app on a monitor.
 - **Settings, Browse and Progress keep to a readable column** rather than a line
   of text with a metre of nothing after it.
 - Screens fade between each other on a computer instead of sliding in from the
-  side, which was the phone telling you which way it went.
+  side, which was the phone showing which way it went.
 
 ## 0.37.3, 2026-09-23 · `versionCode 70`
-The browser that wouldn't get out of the way, and what happened when you closed
-it.
+The browser that wouldn't get out of the way, and what happened when it was
+closed.
 - **On a tiling desktop the browser now goes to a workspace of its own.**
   Hyprland places every window itself, has no notion of minimising, and ignores
   a window asking to be put anywhere, so the app's browser sat in the middle of
-  your work all session. It is now sent, by its own window address so nothing of
-  yours is touched, to a workspace kept aside, and that workspace is brought
-  into view only when a check needs you. Other desktops still minimise it.
+  the way all session. It is now sent, by its own window address so no other
+  window is touched, to a workspace kept aside, and that workspace is brought
+  into view only when a check needs answering. Other desktops still minimise it.
 - **Closing the browser no longer stops the app reading anything.** It noticed a
   browser it had started, and a browser it had taken up with, but not one that
   had gone away: every request after that quietly went nowhere. It now sees the
@@ -201,11 +172,11 @@ Sources behind a browser, at something like normal speed.
   treated as two sites, so every request to it took the slow way round.
 
 ## 0.37.1, 2026-09-23 · `versionCode 68`
-- **The app stops steering your browser window.** When it finds a browser
-  already running on its own profile (one you opened yourself, or one left by a
+- **The app stops steering a browser window it didn't open.** When it finds a
+  browser already running on its own profile (one opened by hand, or one left by a
   run that ended badly), it now opens a window of its own in it and parks that
-  out of sight, instead of taking over the tab in front of you. Closing your
-  window no longer stops the app fetching, and yours is left where it was.
+  out of sight, instead of taking over the tab already in front. Closing that
+  window no longer stops the app fetching, and it is left where it was.
 - The live source check can search now, not only list and read.
 
 ## 0.37.0, 2026-09-23 · `versionCode 67`
@@ -241,7 +212,7 @@ Scribble Hub, read in the app at last, and why it wouldn't be.
   the first thing to read when one won't pass.
 
 ## 0.36.1, 2026-09-23 · `versionCode 65`
-Why a check that passes in your own browser wouldn't pass in the app's.
+Why a check that passes in an ordinary browser wouldn't pass in the app's.
 - **A browser left behind blocked the next one.** If the app ended badly, its
   browser kept running and kept the profile, and every later run failed to start
   one and quietly fell back to the old browser it carries, which no hard check
@@ -279,14 +250,14 @@ Checks that wouldn't finish, and machines with no browser to finish them in.
   the app, and now says so instead of "the check didn't pass".
 
 ## 0.35.0, 2026-09-23 · `versionCode 63`
-Browser checks, answered by the browser you already have.
-- **Your own browser does the check now.** On Linux the app drives the Chromium,
+Browser checks, answered by the browser already installed.
+- **The installed browser does the check now.** On Linux the app drives the Chromium,
   Brave, Chrome, Edge or Vivaldi already installed, over its debugging
-  connection, in a profile of the app's own under the app's data folder: your
-  real browsing is untouched. The window stays parked off-screen while a site
+  connection, in a profile of the app's own under the app's data folder, so
+  ordinary browsing is untouched. The window stays parked off-screen while a site
   behaves, and comes to the front only when a check wants a person. The browser
   the app used to carry is Chrome 126, from two years ago, and a browser that
-  old is held against you by exactly the checks it has to pass; it is still
+  old is held against it by exactly the checks it has to pass; it is still
   there as a fallback for machines with no browser of their own.
 - **Ranobes comes through.** Its guard hands over after one pass in a real
   browser, and the cookies it leaves make the requests after it ordinary ones.
@@ -295,7 +266,7 @@ Browser checks, answered by the browser you already have.
   to the browser that earned it.
 - **A check passed stays passed.** What a check leaves behind is written down
   and read back on the next run, along with which sites need a browser at all,
-  so a site that let you in yesterday doesn't ask again today.
+  so a site that let the app in yesterday doesn't ask again today.
 - **The phone tells the truth about itself.** Android used to claim a fixed
   Chrome 126 while running whatever WebView the phone has; it now says what it
   actually is, which is one less thing for a check to hold against it.
@@ -322,7 +293,7 @@ Two sources that wouldn't behave.
 Browser checks on Linux now work the way they do on the phone: one browser is
 kept out of sight and used to load pages from sources that refuse the app's
 plain requests. If a check doesn't pass by itself in a few seconds, its window
-comes to the front so you can tick the box, and waits five minutes for you; it
+comes to the front for the box to be ticked, and waits five minutes; it
 disappears again as soon as the page comes through. The browser is kept for the
 rest of the session, so a source only asks once. It is no longer started with
 its graphics turned off: a browser without WebGL looks like a bot to exactly
@@ -340,7 +311,7 @@ to start at all (with a message) when there is no display to draw on.
 Also: pages that a site refuses to hand to the app are now loaded through that
 browser instead, and cookies it collects keep the domain and path the site set
 them for. This gets through some sites, but not the ones whose check only
-passes for a browser window you can see, Scribble Hub among them: for those the
+passes for a browser window on screen, Scribble Hub among them: for those the
 app still says so and points at the phone or an EPUB. See the note in
 CHANGELOG.md.
 
@@ -348,8 +319,8 @@ CHANGELOG.md.
 The rough edges, smoothed.
 - **Keep scrolling to the next chapter.** At the end of a chapter, carrying on
   moves to the next one (and pulling down at the top goes back), with a line at
-  the end telling you so. Narration already did this; now reading does too.
-- **New chapters, found for you.** Opening the library looks over your source
+  the end saying so. Narration already did this; now reading does too.
+- **New chapters, found automatically.** Opening the library looks over source
   novels for chapters that appeared since last time (at most every six hours,
   one novel at a time so no site gets a burst), and the refresh button checks
   now and says what it found. New chapters show as the unread count.
@@ -357,10 +328,10 @@ The rough edges, smoothed.
   then set aside so the rest carry on; the novel's page says how many were set
   aside, with "Try again" and "Forget". If everything is failing, the queue
   waits instead of hammering the site. On Android, downloads now keep going
-  when you leave the app, with a notification.
+  after the app is left, with a notification.
 - **A copy before the library changes shape.** Whenever an update changes the
   library's schema, the old file is copied aside first (the newest two are
-  kept), so a bad migration can't take your library with it.
+  kept), so a bad migration can't take the library with it.
 - **Browser checks on the desktop.** When a source asks for a browser check,
   the Linux app can now open a real browser, let the check run, and carry on
   with what it collected. Chromium is fetched on first use (about 500 MB, into
@@ -374,7 +345,7 @@ Narration, the way it should have been.
   still being heard, into the same audio stream. The reader follows what is
   being read, chapter by chapter.
 - **Asides are passed over.** Site plugs, patron and chat links and translator
-  notes aren't read aloud, and you can add your own lines to skip (Settings,
+  notes aren't read aloud, and further lines to skip can be added (Settings,
   Narration). Nothing is hidden from the page: only narration skips them.
 - **Pronunciation.** Tell the app how a word should sound ("Xianxia" →
   "shyen shya") and every voice says it that way.
@@ -391,16 +362,16 @@ Narration, the way it should have been.
   read when they are heard, in order.
 
 ## 0.32.0, 2026-09-22 · `versionCode 57`
-Your devices now keep the same library.
-- **Sync.** Signed in to your server, the phone and the desktop share the novels
-  in your library, their order, ratings, collections, which chapters you have
-  read, and where you are in the one you are reading. A novel added on one
+Devices now keep the same library.
+- **Sync.** Signed in to a server, the phone and the desktop share the novels
+  in the library, their order, ratings, collections, which chapters have been
+  read, and the position in the one being read. A novel added on one
   device appears on the other (with its source; install that source there to
   read it). The server stores this metadata only, never chapter text.
-- **Where you left off, to the sentence.** Stopping mid-chapter on one device
+- **The reading position, to the sentence.** Stopping mid-chapter on one device
   and continuing on the other opens at the same line, whatever the screen size,
   and narration counts as reading: pausing it sets the resume point too.
-- **Offline changes are kept.** What you read, rate or shelve without a
+- **Offline changes are kept.** Anything read, rated or shelved without a
   connection is sent when there is one again. When two devices changed the same
   thing while apart, the later change wins, chapter by chapter, so marks made on
   both sides all arrive.
@@ -414,7 +385,7 @@ bundled Java runtime lacked the database module (`java.sql`) the new library
 needs. The Android app is unchanged.
 
 ## 0.31.0, 2026-09-22 · `versionCode 55`
-Your library now lives on the device, and an account is optional.
+The library now lives on the device, and an account is optional.
 - **Read from sources without a server.** Opening a novel in Browse shows the
   same novel page as the library (cover, summary, chapters, progress), with
   **Add to library**. Its chapters stream from the site and are cached; the
@@ -432,7 +403,7 @@ Your library now lives on the device, and an account is optional.
   progress, ratings and collections) and kept in step: progress, ratings and
   shelf changes made here are sent to the server, and ones made offline are
   sent when it can be reached again. Without an account, Scrape, Progress and
-  Stats ask you to sign in. A saved sign-in no longer drops you at the login
+  Stats ask for a sign-in. A saved sign-in no longer lands on the login
   screen when the server can't be reached.
 - Under the hood: SQLDelight, with the schema pinned to Android 8's SQLite.
 
@@ -448,9 +419,9 @@ which caught one real bug: an extension using `urlencode` crashed on Android 12
 and older (it called a method that only exists from Android 13); fixed.
 
 ## 0.30.1, 2026-09-22 · `versionCode 53`
-Sources now come only from repositories you add. The app ships with no sources
+Sources now come only from repositories added by hand. The app ships with no sources
 and no repositories: under Browse, Extensions, Repositories, add the address of a
-repository's index.json and install what you want from it, the way LNReader
+repository's index.json and installs from it, the way LNReader
 works. NovelScraper's own sources, all 15 of them, live in their own repository,
 github.com/mtgims/novelscraper-extensions; add
 `https://raw.githubusercontent.com/mtgims/novelscraper-extensions/master/index.json`.
@@ -470,11 +441,11 @@ through extensions, on the phone and on Linux:
   has its details and chapters (side by side in a wide window), and chapters open
   in a reader with the library reader's type and measure (arrows move between
   chapters on a keyboard).
-- Requests go out from your own device and connection. A site that shows a
+- Requests go out from the device and its own connection. A site that shows a
   browser check (Cloudflare) is reported as such; passing those checks comes
   later.
 
-Reading from a source doesn't add anything to your library yet, and narration
+Reading from a source doesn't add anything to the library yet, and narration
 works on library books only for now; both come with the local library.
 
 Under the hood: Kotlin 2.3.21 and compileSdk 36 (the JavaScript engine needs
@@ -490,7 +461,7 @@ are the engines). Built as one AppImage file.
   by side above ~900 dp, the reader keeps a comfortable text column, and the
   reader takes keys: ←/→ chapters, Space/Page Down and Shift+Space/Page Up turn
   the page, P plays or pauses, Ctrl +/- font size, Esc goes back.
-- Scrapes relay through your computer's connection, as they do through the phone.
+- Scrapes relay through the computer's connection, as they do through the phone.
   The NovelUpdates browser needs Android's web view, so it isn't offered on Linux
   yet; paste the translator's link instead.
 - Sentence splitting is byte-for-byte the phone's (a port of Android's HTML
@@ -539,7 +510,7 @@ saved to the server and shows as small stars on the library card.
 Download volumes from the book screen: ⋮ → Download lists every volume, each
 saved as an EPUB, plus all of them as one zip when there's more than one. Files
 go through the system download manager, so they get a notification, keep going
-if you leave the app, and land in Downloads.
+after the app is left, and land in Downloads.
 
 ## 0.26.2, 2026-09-20 · `versionCode 45`
 Covers are requested at the size they're drawn (`?w=800`), instead of at
@@ -592,7 +563,7 @@ and it showed a wrong chapter count instead of the latest chapter.
 Add novels from NovelUpdates: an in-app browser and a translation-group chooser.
 NU sits behind a Cloudflare challenge that only reveals group and chapter links
 when logged in, so the backend can't fetch it: a real in-app WebView passes the
-challenge and you log into NU on its own page.
+challenge and NU is logged into on its own page.
 
 ## 0.21.0, 2026-08-24 · `versionCode 36`
 WebView render fallback for JS-only and Cloudflare-gated pages: when the static
@@ -600,7 +571,7 @@ HTML is unusable the page is rendered in the phone's WebView and extracted from
 the post-JS DOM, feeding the normal pipeline.
 
 ## 0.20.0, 2026-08-20 · `versionCode 35`
-Due books auto-update when the app comes to the foreground or you sign in.
+Due books auto-update when the app comes to the foreground or on sign-in.
 Cloudflare-gated sources 403 from the server, so the background updater can
 never fetch them; this queues the work while the phone relay is up.
 
@@ -614,7 +585,7 @@ Three library-management features: delete a novel (overflow menu → confirm),
 check for new chapters, and export reading progress.
 
 ## 0.17.0, 2026-08-14 · `versionCode 32`
-**Scrape through your phone's IP.** Cloudflare 403s the server's datacentre IP
+**Scrape through the phone's IP.** Cloudflare 403s the server's datacentre IP
 for some sources (novelfire/novelphoenix, freewebnovel, novelhall) but not a
 residential or mobile one, so each scrape's raw HTTP fetch is routed through the
 phone over a WebSocket relay.
@@ -625,7 +596,7 @@ proportional estimate that landed it near the bottom, where the floating Listen
 pill covered it; it now uses the real on-screen position from the text layout.
 
 ## 0.16.1, 2026-08-13 · `versionCode 30`
-Narration stops when you leave a chapter, but survives backgrounding, screen-off
+Narration stops on leaving a chapter, but survives backgrounding, screen-off
 and rotation.
 
 ## 0.16.0, 2026-08-13 · `versionCode 29`

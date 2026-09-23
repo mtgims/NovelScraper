@@ -16,7 +16,6 @@ import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.interaction.collectIsHoveredAsState
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxHeight
@@ -177,6 +176,3 @@ private val ICON_SLOT = 52.dp
 
 /** Long enough to be seen as movement, short enough not to be waited on. */
 private const val RAIL_ANIMATION_MS = 220
-
-/** Padding for content laid out beside the rail. */
-val railContentPadding = PaddingValues(0.dp)

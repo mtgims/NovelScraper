@@ -1,7 +1,7 @@
 # NovelScraper
 
 A self-hosted library for web novels. It scrapes a novel into a proper database,
-gives you a reader that remembers where you were, and can narrate chapters out
+is a reader that remembers where reading stopped, and can narrate chapters out
 loud, in the browser or on Android, with the screen off.
 
 I built it because I read a lot of serialised fiction on sites that are, to put
@@ -19,11 +19,11 @@ isolation, but it is not a service and I wouldn't run it as one.
 - **Scrapes a novel from a URL.** Paste a link, it works out the source, enumerates
   the chapters and pulls them down at a polite rate. 15 sources are supported by
   YAML profile; unknown sites fall back to a generic extractor.
-- **Reads.** Typeset reader with your choice of font, size and line spacing. It
-  remembers your position per chapter, restores it after images and fonts settle,
-  and marks chapters read as you finish them.
+- **Reads.** Typeset reader with a choice of font, size and line spacing. It
+  remembers the position in each chapter, restores it after images and fonts
+  settle, and marks chapters read as they are finished.
 - **Narrates.** Three engines on the web (a server-side one, an on-device WebGPU
-  one, and your OS voices) and two on Android (Kokoro and Piper, both running
+  one, and the OS voices) and two on Android (Kokoro and Piper, both running
   locally via sherpa-onnx). Android does background and lock-screen playback.
 - **Imports and exports EPUB,** so nothing is trapped here.
 - **Keeps up.** Books can re-scrape themselves for new chapters.
@@ -44,12 +44,12 @@ dependencies on first run. Set an admin password before the first start, or the
 bootstrap will skip account creation:
 
 ```bash
-export NOVELSCRAPER_ADMIN_USERNAME=you
+export NOVELSCRAPER_ADMIN_USERNAME=admin
 export NOVELSCRAPER_ADMIN_PASSWORD='something long'
 ```
 
 There is no forgot-password flow. The admin is created only when the database
-has no users at all, so if you lose it you'll be editing `password_hash`
+has no users at all, so losing it means editing `password_hash`
 directly.
 
 ## Deploying
@@ -58,9 +58,9 @@ directly.
 HTTPS). Create a `.env` next to it:
 
 ```
-DOMAIN=your-domain.com
-ACME_EMAIL=you@example.com
-NOVELSCRAPER_ADMIN_USERNAME=you
+DOMAIN=example.com
+ACME_EMAIL=admin@example.com
+NOVELSCRAPER_ADMIN_USERNAME=admin
 NOVELSCRAPER_ADMIN_PASSWORD=something long
 ```
 
@@ -70,20 +70,21 @@ then:
 docker compose up -d --build
 ```
 
-On the server it's a git clone, so updates are:
+Updates push the working tree and rebuild:
 
 ```bash
-ssh <server> 'cd /opt/novelscraper && git pull && docker compose up -d --build'
+deploy/push.sh <server>:/opt/novelscraper/
+ssh <server> 'cd /opt/novelscraper && docker compose up -d --build'
 ```
 
-Two things that aren't obvious and will cost you an afternoon if you get them
+Two things that aren't obvious and cost an afternoon when they are got
 wrong:
 
-- **Keep the domain DNS-only (grey cloud) if you use Cloudflare.** Proxying it
+- **Keep the domain DNS-only (grey cloud) behind Cloudflare.** Proxying it
   caps uploads at 100 MB, which breaks large EPUB imports, and it stops Caddy
   reaching the box to issue a certificate.
 - **Keep the deploy directory named `novelscraper`.** Compose derives the
-  project name from it, and your library lives in the `novelscraper_nsdata`
+  project name from it, and the library lives in the `novelscraper_nsdata`
   volume. Rename the directory and Compose will happily start with an empty
   new one.
 
@@ -117,8 +118,8 @@ also explains how to write one. The app ships with no sources: under Browse,
 Extensions, Repositories, add
 `https://raw.githubusercontent.com/mtgims/novelscraper-extensions/master/index.json`
 (or LNReader's repository, or any in the same format), then install sources and
-browse, search and read them straight from the site, from your own connection.
-Add a novel to your library to keep it; Download keeps its chapters for reading
+browse, search and read them straight from the site, over the reader's own
+connection. Adding a novel to the library keeps it; Download keeps its chapters for reading
 (and listening) offline.
 Plugins run in QuickJS inside the app; the JavaScript host they run against lives
 in `app/composeApp/pluginHost/` (`npm install && npm run build` regenerates the
@@ -127,9 +128,9 @@ bundled `host.js`).
 **The library lives on the device** (`library.db`, SQLite): novels, chapter
 lists, downloaded chapters, progress, ratings and collections. A NovelScraper
 server account is optional: signed in (Settings, Server account), the server's
-novels are brought into the library, and **your devices sync**: the novels in
-your library, their order, ratings, collections, read chapters and where you are
-in the one you are reading (to the sentence, so you carry on at the same line on
+novels are brought into the library, and **devices sync**: the novels in the
+library, their order, ratings, collections, read chapters and the position in
+the one being read (to the sentence, so reading carries on at the same line on
 the phone and on the desktop). Only that metadata is synced, never chapter text;
 each device fetches text from the source itself. Changes made offline are sent
 when the server can be reached, and when two devices change the same thing the
@@ -138,25 +139,25 @@ server.
 
 On Linux the app keeps its settings and login in `~/.config/novelscraper`,
 the library and downloaded voices in `~/.local/share/novelscraper` and its image cache in
-`~/.cache/novelscraper`; volume downloads go to your Downloads folder. Narration
+`~/.cache/novelscraper`; volume downloads go to the Downloads folder. Narration
 uses the Kokoro or Piper voices (download one in Settings), plays through
 chapters without a gap, and answers the keyboard's media keys (MPRIS, so
 playerctl and the desktop's media widget work too). Under Settings, Narration:
 which asides to skip and how words should sound; in the reader's narration
 panel: the sleep timer. A novel's menu has "Save as audio", which reads
-chapters out to WAV files in your Downloads. Keys in the reader:
+chapters out to WAV files in Downloads. Keys in the reader:
 ←/→ chapters, Space/Page Down and Shift+Space/Page Up to turn the page, P to play
 or pause, Ctrl +/- font size, Esc back.
 
-## A thing you'll hit: Cloudflare
+## A thing to expect: Cloudflare
 
 Several sources return 403 to a datacentre IP but serve a residential one
 happily. Cloudflare blocks hosting-provider address ranges by reputation, and no
-amount of header fiddling changes that, I tried. So if you host this on a VPS,
+amount of header fiddling changes that. So on a VPS,
 some sources won't scrape from the server.
 
 Two ways around it, both built in: scrape on a device with a normal connection
-and import the EPUB, or use the Android app, which relays the fetch through your
+and import the EPUB, or use the Android app, which relays the fetch through its
 phone.
 
 ## How it's put together
@@ -168,7 +169,7 @@ backend/     FastAPI + SQLModel over SQLite. The scraper lives in app/scraper/,
 frontend/    Next.js 15, App Router. Proxies /api/* to the backend, so there's
              one origin and no CORS.
 app/         The Android app (Kotlin Multiplatform; desktop targets share it).
-deploy/      Compose, Caddy, the push script and the hosting runbook.
+deploy/      The push script that rsyncs a working tree to a server.
 docs/        Performance audit, an engineering risk brief, older handoff notes.
 ```
 
@@ -201,8 +202,8 @@ a script that prints its own summary and exits non-zero on failure.
 
 It respects `robots.txt`, rate-limits itself, backs off on errors and caches what
 it fetches so a re-run doesn't re-hammer a site. Please leave that alone. The
-point is a personal library of things you already read, not a way to strip-mine
+point is a personal library of things already read, not a way to strip-mine
 someone's site, and the sources here are largely aggregators reposting other
 people's translations, which is its own mess.
 
-Whatever you scrape is still under someone else's copyright. Keep it to yourself.
+Anything scraped is still under someone else's copyright; it is not for redistribution.
