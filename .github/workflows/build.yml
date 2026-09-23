@@ -24,7 +24,10 @@ jobs:
       - uses: gradle/actions/setup-gradle@v4
       - name: Build the installer
         working-directory: app
-        run: ./gradlew :composeApp:packageExe --no-daemon
+        shell: pwsh
+        # gradlew.bat, not ./gradlew: PowerShell will happily "run" the Unix
+        # script and carry on as though a build had happened.
+        run: .\gradlew.bat :composeApp:packageExe --no-daemon
       - name: Name it as the app expects
         working-directory: app
         shell: pwsh
