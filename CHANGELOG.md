@@ -13,6 +13,10 @@ since moved to a repository of their own; this one holds the apps.
 
 ## 2026-09-24
 
+- **The browser sources like Scribble Hub need runs on a screen of its own
+  (0.41.4).** It is invisible, the check passes unattended, and nothing lands on
+  the desktop.
+
 - **Windows: a maximised window, a quiet update, and a browser that keeps to
   itself (0.41.3).** Maximising no longer covers the taskbar, an update installs
   itself instead of asking to be clicked through, and the browser a guarded site

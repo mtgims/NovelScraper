@@ -3,6 +3,18 @@
 Newest first.
 
 
+## 0.41.4, 2026-09-24 · `versionCode 87`
+- **No browser on screen for sites like Scribble Hub.** Such a site refuses this
+  app's own client whatever cookies it carries, so its pages are fetched through
+  a browser; what the site's check insists on is a window that is being painted,
+  not one anybody looks at. The browser is now given an X server of its own with
+  no monitor behind it: the check passes by itself in a couple of seconds and
+  nothing appears on the desktop. Where there is no Xvfb, the window is parked
+  far off the side of the screen rather than minimised, because a minimised
+  window stops being painted, which is what left checks looping and ending up on
+  screen to be answered by hand. A check that does still want a person is moved
+  to the reader's screen for that one answer, and closed ten seconds later.
+
 ## 0.41.3, 2026-09-24 · `versionCode 86`
 - **A maximised window on Windows leaves the taskbar where it is.** A window
   that draws its own bar has nothing telling it where the usable screen ends, so
