@@ -13,6 +13,10 @@ since moved to a repository of their own; this one holds the apps.
 
 ## 2026-09-24
 
+- **Narration on an NVIDIA graphics card (0.44.0).** An optional CUDA pack,
+  downloaded from Settings and checked file by file; narration falls back to
+  the processor whenever the card can't take it.
+
 - **Windows: updates stop deleting the library, and narration costs half
   the processor (0.43.0).** The app's data moves out of the folder the
   installer replaces on every update; Kokoro runs on four threads at most.

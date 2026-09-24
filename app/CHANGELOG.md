@@ -3,6 +3,17 @@
 Newest first.
 
 
+## 0.44.0, 2026-09-24 · `versionCode 91`
+- **Narration on an NVIDIA graphics card.** Settings → Narration → GPU
+  acceleration appears where the driver reports a card CUDA 12 can use, and
+  downloads what the card needs: about 2 GB, 2.6 GB once unpacked, every file
+  checked against its published checksum. Switched on, the neural voices run on
+  the card: on a GTX 1060, three times faster than four processor cores, with
+  the whole app at 2% of the machine while it reads aloud. If the card or its
+  driver turns the model down, narration uses the processor as before and
+  Settings says why. The pack can be removed from the same place. On Linux the
+  same pack is offered but has not yet been tried on a machine.
+
 ## 0.43.0, 2026-09-24 · `versionCode 90`
 - **Updates on Windows no longer delete the app's data.** The installer puts
   the program in `%LOCALAPPDATA%\NovelScraper` and removes that folder whole
