@@ -3,6 +3,20 @@
 Newest first.
 
 
+## 0.41.3, 2026-09-24 · `versionCode 86`
+- **A maximised window on Windows leaves the taskbar where it is.** A window
+  that draws its own bar has nothing telling it where the usable screen ends, so
+  it maximised over everything.
+- **Updates on Windows install themselves.** No installer to click through for
+  every version, and no errors about files the app still had open: the app steps
+  aside, the installer runs on its own, and the new app starts.
+- **The browser for sites like Scribble Hub stays out of sight and does not
+  stand around.** A site whose check once wanted a person had its window put on
+  screen at every request afterwards; now the check gets a couple of seconds to
+  pass unseen first, and a site that passes on its own stops bringing a window
+  up at all. The window is put away after every page, and a browser nothing has
+  needed for a minute is closed rather than kept for three.
+
 ## 0.41.2, 2026-09-24 · `versionCode 85`
 - **The window wears the app's own title bar on Windows**, in whichever theme is
   chosen, with the minimise, maximise and close buttons where Windows puts them,

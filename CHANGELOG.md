@@ -13,6 +13,11 @@ since moved to a repository of their own; this one holds the apps.
 
 ## 2026-09-24
 
+- **Windows: a maximised window, a quiet update, and a browser that keeps to
+  itself (0.41.3).** Maximising no longer covers the taskbar, an update installs
+  itself instead of asking to be clicked through, and the browser a guarded site
+  needs stays off screen and closes once nothing needs it.
+
 - **Windows: the app's own title bar, and its own name (0.41.2).** The window is
   undecorated and the bar is drawn in the app's theme; the program calls itself
   NovelScraper rather than its own description.
