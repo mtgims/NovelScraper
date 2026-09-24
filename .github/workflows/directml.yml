@@ -63,9 +63,12 @@ jobs:
           grep -n "_URL \|SHA256" $f
           grep -q "ort.zip" $f && grep -q "dml.zip" $f
           # sherpa-onnx always takes DirectX's first adapter, which on a laptop
-          # is the integrated one. SHERPA_ONNX_DML_DEVICE picks another.
+          # is the integrated one. SHERPA_ONNX_DML_DEVICE picks another. Read
+          # with GetEnvironmentVariableA, which sees the process's environment
+          # as it is now; the C runtime's getenv keeps a copy taken at start,
+          # which a running Java process can't change.
           s=sherpa-onnx/csrc/session.cc
-          sed -i 's|      int32_t device_id = 0;|      int32_t device_id = std::getenv("SHERPA_ONNX_DML_DEVICE") ? std::atoi(std::getenv("SHERPA_ONNX_DML_DEVICE")) : 0;|' $s
+          sed -i 's|      int32_t device_id = 0;|      int32_t device_id = [] { char v[16] = {0}; return GetEnvironmentVariableA("SHERPA_ONNX_DML_DEVICE", v, sizeof(v)) ? std::atoi(v) : 0; }();|' $s
           grep -n "SHERPA_ONNX_DML_DEVICE" $s
           grep -q "#include <cstdlib>" $s || sed -i '0,/#include/s//#include <cstdlib>\n#include/' $s
 
