@@ -3,6 +3,16 @@
 Newest first.
 
 
+## 0.41.1, 2026-09-24 · `versionCode 84`
+- **The Windows installer no longer carries Linux libraries.** It shipped JOGL's
+  Linux native libraries, which Windows cannot load and never needs, since the
+  carried browser is only reached where no browser is installed and Windows
+  always has Edge.
+- A second Windows build is published beside the first, `novelscraper-setup-
+  console.exe`, which keeps a console window. The ordinary launcher reports any
+  failure as "failed to launch JVM" and nothing else; this one prints what
+  actually went wrong.
+
 ## 0.41.0, 2026-09-24 · `versionCode 83`
 - **A Windows app.** The same code, packaged as a per-user installer that needs
   no administrator and puts NovelScraper in the start menu. What differed by
