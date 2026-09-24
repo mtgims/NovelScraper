@@ -187,10 +187,15 @@ kotlin {
                 // A real browser (Chromium through JCEF) for sites that ask for a
                 // browser check; its runtime is fetched on first use, not shipped.
                 implementation("dev.datlag:kcef:2025.03.23")
-                // The browser draws off-screen through JOGL, whose native libraries
-                // ship as their own artifacts; without them it can't paint.
-                implementation("org.jogamp.gluegen:gluegen-rt:2.5.0:natives-linux-amd64")
-                implementation("org.jogamp.jogl:jogl-all:2.5.0:natives-linux-amd64")
+                // The carried browser draws off-screen through JOGL, whose native
+                // libraries ship as their own artifacts; without them it can't
+                // paint. They are Linux's, and Windows has no use for them: there
+                // the carried browser is never reached, because Edge is always
+                // present and is what gets driven.
+                if (!buildingOnWindows) {
+                    implementation("org.jogamp.gluegen:gluegen-rt:2.5.0:natives-linux-amd64")
+                    implementation("org.jogamp.jogl:jogl-all:2.5.0:natives-linux-amd64")
+                }
 
                 // Media keys, and the desktop's media widget, through MPRIS on D-Bus.
                 // The desktop's media keys (MPRIS): a Linux protocol on a Unix
@@ -293,6 +298,10 @@ compose.desktop {
             }
             windows {
                 iconFile.set(project.file("src/desktopMain/resources/icon.ico"))
+                // -PwinConsole builds a version that keeps a console window, which
+                // is the only way to see why a Windows launcher failed: on its own
+                // it says "failed to launch JVM" and nothing else.
+                console = providers.gradleProperty("winConsole").isPresent
                 // A per-user install, so it needs no administrator, and a shortcut
                 // where a Windows program is looked for.
                 perUserInstall = true
