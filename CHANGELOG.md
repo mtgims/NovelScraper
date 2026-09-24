@@ -13,6 +13,9 @@ since moved to a repository of their own; this one holds the apps.
 
 ## 2026-09-24
 
+- **Supertonic as a third narration engine (0.46.0).** Ten voices, close to
+  Kokoro's naturalness for a fraction of its processor, on desktop and phone.
+
 - **No freeze while the graphics cards are tried (0.45.1).** The trying runs
   in the background instead of inside narration, which closing the window
   waited on.

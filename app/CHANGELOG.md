@@ -3,6 +3,16 @@
 Newest first.
 
 
+## 0.46.0, 2026-09-24 · `versionCode 94`
+- **Supertonic, a third narration voice.** Settings → Narration → Engine now
+  offers Supertonic 3 beside Kokoro and Piper: a 122 MB download, ten voices,
+  nearly as natural as Kokoro and several times lighter. On a laptop's
+  processor it reads a chapter at a fifth to a third of real time with the
+  whole app at 8% of the machine, where Kokoro needs half of real time and
+  four times the processor; with GPU acceleration on, the graphics card takes
+  it and the app drops to 2%. That margin is what should let a phone narrate
+  with a natural voice. English for now.
+
 ## 0.45.1, 2026-09-24 · `versionCode 93`
 - **The app no longer freezes while it tries the graphics cards.** In 0.45.0
   the cards were tried the first time Listen was pressed, and while that ran,
