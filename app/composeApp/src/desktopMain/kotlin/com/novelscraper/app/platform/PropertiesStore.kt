@@ -56,11 +56,20 @@ class PropertiesStore(private val file: File) : KeyValueStore {
         scheduleSave()
     }
 
+    /** A save is queued and hasn't taken its snapshot yet. */
+    private val savePending = java.util.concurrent.atomic.AtomicBoolean(false)
+
+    /** One save queued at a time: a change made while one waits is in the
+     *  snapshot it takes, so a slider dragged across fifty values is a couple of
+     *  writes of the file rather than fifty. */
     private fun scheduleSave() {
-        writer.execute(::save)
+        if (savePending.compareAndSet(false, true)) writer.execute(::save)
     }
 
     private fun save() {
+        // Cleared before the snapshot, so anything changed after this point
+        // queues a save of its own.
+        savePending.set(false)
         val snapshot = synchronized(props) { Properties().also { it.putAll(props) } }
         runCatching {
             file.parentFile.mkdirs()
