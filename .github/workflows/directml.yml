@@ -62,6 +62,12 @@ jobs:
             $f
           grep -n "_URL \|SHA256" $f
           grep -q "ort.zip" $f && grep -q "dml.zip" $f
+          # sherpa-onnx always takes DirectX's first adapter, which on a laptop
+          # is the integrated one. SHERPA_ONNX_DML_DEVICE picks another.
+          s=sherpa-onnx/csrc/session.cc
+          sed -i 's|      int32_t device_id = 0;|      int32_t device_id = std::getenv("SHERPA_ONNX_DML_DEVICE") ? std::atoi(std::getenv("SHERPA_ONNX_DML_DEVICE")) : 0;|' $s
+          grep -n "SHERPA_ONNX_DML_DEVICE" $s
+          grep -q "#include <cstdlib>" $s || sed -i '0,/#include/s//#include <cstdlib>\n#include/' $s
 
       - name: Configure
         shell: bash
