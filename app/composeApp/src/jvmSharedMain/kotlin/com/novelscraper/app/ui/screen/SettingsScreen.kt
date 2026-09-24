@@ -173,7 +173,13 @@ private fun NarrationEngine() {
 
     Text("Engine", style = MaterialTheme.typography.bodyMedium,
         modifier = Modifier.padding(top = 14.dp, bottom = 6.dp))
-    Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+    // Four engines on a phone (its own voice too) don't fit one row: they wrap
+    // instead of pushing the last off the screen and squeezing the others.
+    @OptIn(androidx.compose.foundation.layout.ExperimentalLayoutApi::class)
+    androidx.compose.foundation.layout.FlowRow(
+        horizontalArrangement = Arrangement.spacedBy(10.dp),
+        verticalArrangement = Arrangement.spacedBy(8.dp),
+    ) {
         if (hasSystemTts) {
             EngineChip("Device", engine == ReaderPrefs.ENGINE_DEVICE) {
                 ReaderPrefs.setTtsEngine(ReaderPrefs.ENGINE_DEVICE)
@@ -367,10 +373,14 @@ private fun NeuralModel(engine: String) {
 
 @Composable
 private fun EngineChip(label: String, selected: Boolean, onClick: () -> Unit) {
+    // One line whatever the width: a name broken over two lines turned the
+    // pill into a circle.
+    val padding = androidx.compose.foundation.layout.PaddingValues(horizontal = 18.dp, vertical = 8.dp)
+    val text: @Composable () -> Unit = { Text(label, maxLines = 1, softWrap = false) }
     if (selected) {
-        Button(onClick = onClick) { Text(label) }
+        Button(onClick = onClick, contentPadding = padding) { text() }
     } else {
-        OutlinedButton(onClick = onClick) { Text(label) }
+        OutlinedButton(onClick = onClick, contentPadding = padding) { text() }
     }
 }
 

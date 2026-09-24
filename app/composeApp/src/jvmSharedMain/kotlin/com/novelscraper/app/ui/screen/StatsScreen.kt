@@ -33,6 +33,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.viewmodel.compose.viewModel
+import com.novelscraper.app.net.Account
 import com.novelscraper.app.data.StatsRead
 import com.novelscraper.app.platform.SaveTarget
 import com.novelscraper.app.platform.rememberFileSaver
@@ -73,7 +74,8 @@ fun StatsScreen() {
             is StatsUi.Loading -> CircularProgressIndicator(Modifier.align(Alignment.Center))
             is StatsUi.Error -> Text(s.message, Modifier.align(Alignment.Center),
                 color = MaterialTheme.colorScheme.error)
-            is StatsUi.Data -> StatsContent(s.stats, onExport = { chooser = true })
+            // The export is the server's file, so it is offered only when signed in.
+            is StatsUi.Data -> StatsContent(s.stats, onExport = if (Account.signedIn) ({ chooser = true }) else null)
         }
     }
 
@@ -97,7 +99,7 @@ fun StatsScreen() {
 }
 
 @Composable
-private fun StatsContent(s: StatsRead, onExport: () -> Unit) {
+private fun StatsContent(s: StatsRead, onExport: (() -> Unit)?) {
     LazyColumn(
         modifier = Modifier.fillMaxSize().statusBarsPadding(),
         contentPadding = PaddingValues(start = 20.dp, end = 20.dp, top = 20.dp, bottom = 110.dp),
@@ -107,7 +109,7 @@ private fun StatsContent(s: StatsRead, onExport: () -> Unit) {
             Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
                 Text("Statistics", style = MaterialTheme.typography.headlineMedium,
                     modifier = Modifier.weight(1f))
-                OutlinedButton(onClick = onExport) { Text("Export") }
+                if (onExport != null) OutlinedButton(onClick = onExport) { Text("Export") }
             }
         }
         item {

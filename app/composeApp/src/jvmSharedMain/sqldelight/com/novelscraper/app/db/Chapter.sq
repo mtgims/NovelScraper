@@ -156,3 +156,8 @@ SELECT id FROM chapter WHERE book_id = ? AND path = ?;
 failedForBook:
 SELECT count(*) FROM download_queue q JOIN chapter c ON c.id = q.chapter_id
 WHERE c.book_id = ? AND q.failed = 1;
+
+-- The stored text of a novel's read chapters, for the words-read statistic.
+readText:
+SELECT cc.html FROM chapter c JOIN chapter_content cc ON cc.chapter_id = c.id
+WHERE c.book_id = ? AND c.read = 1;

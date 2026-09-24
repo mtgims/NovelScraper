@@ -100,6 +100,14 @@ class LibraryStore(
                 counts?.total?.toInt() ?: 0, r?.sentence?.toInt())
         }
 
+    /** Words in the chapters of [id] that are read and whose text is on this
+     *  device (downloaded, or kept from reading them). */
+    suspend fun wordsRead(id: Int): Int = io {
+        chapters.readText(id.toLong()).executeAsList().sumOf { html ->
+            com.novelscraper.app.platform.htmlToPlain(html).split(WHITESPACE).count { it.isNotBlank() }
+        }
+    }
+
     /** The library as it is now (for a one-off pass, not a screen). */
     suspend fun libraryFlowOnce(): List<LibBook> = io {
         val members = shelves.memberships().executeAsList().groupBy({ it.book_id.toInt() }, { it.collection_id.toInt() })
@@ -632,5 +640,6 @@ class LibraryStore(
         const val UNUSED_DAYS = 30
         private const val SYNC_BATCH = 500L
         private const val MAX_SYNC_ROUNDS = 40
+        private val WHITESPACE = Regex("\\s+")
     }
 }

@@ -186,9 +186,8 @@ private fun MainApp() {
             composable("jobs") {
                 NeedsServer("Updates running on your NovelScraper server show here.", signIn) { ProgressScreen() }
             }
-            composable("stats") {
-                NeedsServer("Reading stats come from your NovelScraper server for now.", signIn) { StatsScreen() }
-            }
+            // Worked out from the library on this device, so no account needed.
+            composable("stats") { StatsScreen() }
             composable("settings") {
                 SettingsScreen(onSignIn = signIn, onLogout = { scope.launch { Account.logout() } })
             }
