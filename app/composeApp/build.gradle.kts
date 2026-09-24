@@ -271,6 +271,9 @@ tasks.withType<Test>().configureEach {
     // LiveKokoroTest fetches a speech model and speaks with it.
     systemProperty("live.tts", providers.gradleProperty("liveTts").getOrElse(""))
     systemProperty("live.tts.out", providers.gradleProperty("liveTtsOut").getOrElse(""))
+    // LiveGpuTest fetches the GPU pack (about 2 GB) and narrates on the card.
+    systemProperty("live.gpu", providers.gradleProperty("liveGpu").getOrElse(""))
+    systemProperty("live.gpu.model", providers.gradleProperty("liveGpuModel").getOrElse(""))
     // LiveBrowserTest drives the browser on this machine; needs a display.
     systemProperty("live.browser", providers.gradleProperty("liveBrowser").getOrElse(""))
     systemProperty("live.dump", providers.gradleProperty("liveDump").getOrElse(""))
@@ -283,7 +286,8 @@ tasks.withType<Test>().configureEach {
         if (providers.gradleProperty("livePlugins").isPresent ||
             providers.gradleProperty("liveBrowser").isPresent ||
             providers.gradleProperty("fetchBrowser").isPresent ||
-            providers.gradleProperty("liveTts").isPresent
+            providers.gradleProperty("liveTts").isPresent ||
+            providers.gradleProperty("liveGpu").isPresent
         ) showStandardStreams = true
     }
 }

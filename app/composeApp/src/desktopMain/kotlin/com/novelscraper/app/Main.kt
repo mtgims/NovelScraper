@@ -90,6 +90,9 @@ private val icon by lazy {
 
 fun main() {
     initApp()
+    com.novelscraper.app.ui.screen.SettingsHooks.narration = {
+        com.novelscraper.app.ui.components.GpuAccelerationSetting()
+    }
     // Settings are saved in the background; make sure pending saves land however
     // the app exits (window close, logout, SIGTERM).
     Runtime.getRuntime().addShutdownHook(Thread { PropertiesStore.flush() })

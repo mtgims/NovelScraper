@@ -119,6 +119,7 @@ fun SettingsScreen(onSignIn: () -> Unit, onLogout: () -> Unit) {
             modifier = Modifier.fillMaxWidth(),
         )
         NarrationEngine()
+        SettingsHooks.narration?.invoke()
         NarrationWords()
 
         Section("READING")
@@ -153,6 +154,12 @@ fun SettingsScreen(onSignIn: () -> Unit, onLogout: () -> Unit) {
       }
       ColumnScrollbar(scroll, Modifier.align(Alignment.CenterEnd).fillMaxHeight())
     }
+}
+
+/** Settings only one platform has, filled in by that platform when it starts
+ *  (the desktop's GPU narration). */
+object SettingsHooks {
+    var narration: (@Composable () -> Unit)? = null
 }
 
 /**

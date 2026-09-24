@@ -20,6 +20,20 @@ actual fun defaultTtsThreads(): Int = (Runtime.getRuntime().availableProcessors(
 // sherpa-onnx's JVM binding (sherpa-onnx-jvm jar + the native-lib jar for this
 // OS, which it loads its JNI library from): builder-style config classes.
 actual fun buildOfflineTts(spec: TtsModels.Spec, dir: String, threads: Int): TtsModel {
+    // On the graphics card when the reader has the pack and it loads; the
+    // processor otherwise, and whenever the card turns the model down. One
+    // thread is all the card needs: the rest would only wait for it.
+    if (GpuVoice.prepare()) {
+        try {
+            return build(spec, dir, threads = 1, provider = "cuda")
+        } catch (t: Throwable) {
+            GpuVoice.failed(t)
+        }
+    }
+    return build(spec, dir, threads, provider = "cpu")
+}
+
+private fun build(spec: TtsModels.Spec, dir: String, threads: Int, provider: String): TtsModel {
     val model = OfflineTtsModelConfig.Builder().apply {
         if (spec.kind == "vits") {
             setVits(
@@ -42,7 +56,7 @@ actual fun buildOfflineTts(spec: TtsModels.Spec, dir: String, threads: Int): Tts
             )
         }
         setNumThreads(threads)
-        setProvider("cpu")
+        setProvider(provider)
         setDebug(false)
     }.build()
     val tts = OfflineTts(OfflineTtsConfig.Builder().setModel(model).build())
