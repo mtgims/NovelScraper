@@ -8,7 +8,7 @@ Windows
 Linux
 Android
 
-I originally wanted to make an iOS and MacOS version of the app but I don't have any way to test them as I'm in the possession of any Apple devices. If anyone is even reading this and has a Mac and iPhone and want's to contribute a working and tested verison of the app they are free to do it. 
+I originally wanted to make an iOS and MacOS version of the app but I don't have any way to test them as I'm not in the possession of any Apple devices. If anyone is even reading this and has a Mac and iPhone and want's to contribute a working and tested verison of the app they are free to do it. 
 ---
 
 ## What it does
