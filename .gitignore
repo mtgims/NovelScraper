@@ -4,5 +4,6 @@ node_modules/
 /novelscraper-*.apk
 /novelscraper-x86_64.AppImage
 /CHAT-HANDOFF.md
+/CHAT-HANDOFF-WINDOWS.md
 /hs_err_pid*.log
 /core.*
