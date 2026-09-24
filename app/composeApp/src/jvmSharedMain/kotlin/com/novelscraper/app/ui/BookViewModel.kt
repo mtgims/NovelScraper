@@ -209,8 +209,6 @@ class BookViewModel(private val bookId: Int) : ViewModel() {
 
     // --- audiobook ----------------------------------------------------------------
 
-    val audioExport = AudiobookExport.state
-
     /** Read chapters out to audio files in Downloads. */
     fun exportAudio(range: AudioRange) {
         val list = chapters.value ?: return
@@ -224,6 +222,4 @@ class BookViewModel(private val bookId: Int) : ViewModel() {
         if (positions.isEmpty()) { _action.value = "Nothing to save."; return }
         AudiobookExport.start(bookId, book.title, positions)
     }
-
-    fun cancelAudioExport() = AudiobookExport.cancel()
 }

@@ -6,5 +6,4 @@ object Os {
 
     val isWindows: Boolean = name.startsWith("windows")
     val isLinux: Boolean = name.startsWith("linux")
-    val isMac: Boolean = name.startsWith("mac")
 }

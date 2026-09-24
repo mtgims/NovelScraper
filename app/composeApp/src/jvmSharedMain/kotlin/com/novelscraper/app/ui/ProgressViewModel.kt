@@ -16,9 +16,6 @@ class ProgressViewModel : ViewModel() {
     private val _loaded = MutableStateFlow(false)
     val loaded: StateFlow<Boolean> = _loaded.asStateFlow()
 
-    val hasActive: Boolean
-        get() = _jobs.value.any { it.status == "queued" || it.status == "running" }
-
     init { refresh() }
 
     fun refresh() {

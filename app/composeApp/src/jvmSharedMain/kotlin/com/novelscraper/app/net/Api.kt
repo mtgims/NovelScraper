@@ -3,14 +3,12 @@ package com.novelscraper.app.net
 import com.novelscraper.app.data.AuthConfig
 import com.novelscraper.app.data.BookCollectionsUpdate
 import com.novelscraper.app.data.BookRead
-import com.novelscraper.app.data.BookReorder
 import com.novelscraper.app.data.BookUpdate
 import com.novelscraper.app.data.ChapterListItem
 import com.novelscraper.app.data.ChapterRead
 import com.novelscraper.app.data.CollectionCreate
 import com.novelscraper.app.data.CollectionRead
 import com.novelscraper.app.data.CollectionUpdate
-import com.novelscraper.app.data.JobCreate
 import com.novelscraper.app.data.JobRead
 import com.novelscraper.app.data.StatsRead
 import com.novelscraper.app.data.SyncRequest
@@ -67,16 +65,10 @@ interface Api {
     @DELETE("api/collections/{id}")
     suspend fun deleteCollection(@Path("id") id: Int)
 
-    @POST("api/books/reorder")
-    suspend fun reorderBooks(@Body body: BookReorder)
-
     @PUT("api/books/{id}/collections")
     suspend fun setBookCollections(@Path("id") id: Int, @Body body: BookCollectionsUpdate): BookRead
 
     // Scraping jobs
-    @POST("api/jobs")
-    suspend fun createJob(@Body body: JobCreate): JobRead
-
     @GET("api/jobs")
     suspend fun jobs(): List<JobRead>
 

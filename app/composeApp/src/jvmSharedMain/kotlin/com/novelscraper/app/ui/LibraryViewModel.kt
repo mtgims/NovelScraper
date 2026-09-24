@@ -92,10 +92,6 @@ class LibraryViewModel : ViewModel() {
 
     fun removeDownloads(id: Int) { viewModelScope.launch { lib.removeDownloads(id) } }
 
-    fun setCollections(id: Int, collectionIds: List<Int>) {
-        viewModelScope.launch { lib.setBookCollections(id, collectionIds) }
-    }
-
     fun createCollection(name: String) {
         if (name.isBlank()) return
         viewModelScope.launch { lib.createCollection(name) }

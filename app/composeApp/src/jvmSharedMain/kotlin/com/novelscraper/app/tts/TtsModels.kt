@@ -31,8 +31,6 @@ object TtsModels {
         PiperVoice("en_GB-northern_english_male-medium", "Northern", "British English", "Male"),
     )
 
-    fun defaultPiperVoice(): String = PIPER_VOICES.first().id
-
     data class Spec(
         val dir: String,
         val url: String,

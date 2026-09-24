@@ -69,20 +69,7 @@ data class CollectionCreate(val name: String)
 data class CollectionUpdate(val name: String? = null, val sort_order: Int? = null)
 
 @Serializable
-data class BookReorder(val ordered_ids: List<Int>)
-
-@Serializable
 data class BookCollectionsUpdate(val collection_ids: List<Int>)
-
-@Serializable
-data class JobCreate(
-    val url: String,
-    val chapters_per_volume: Int? = null,
-    val delay: Float? = null,
-    val concurrency: Int? = null,
-    val title: String? = null,
-    val author: String? = null,
-)
 
 @Serializable
 data class JobRead(

@@ -36,8 +36,6 @@ object SleepTimer {
     private val _remainingSec = MutableStateFlow(0)
     val remainingSec: StateFlow<Int> = _remainingSec.asStateFlow()
 
-    val armed: Boolean get() = _mode.value != Mode.Off
-
     internal val stopAtChapterEnd: Boolean get() = _mode.value == Mode.ChapterEnd
 
     /** Stop narrating in [minutes] minutes. */
