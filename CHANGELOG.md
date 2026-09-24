@@ -13,6 +13,10 @@ since moved to a repository of their own; this one holds the apps.
 
 ## 2026-09-24
 
+- **No freeze while the graphics cards are tried (0.45.1).** The trying runs
+  in the background instead of inside narration, which closing the window
+  waited on.
+
 - **GPU narration on Windows through DirectML (0.45.0).** Any DirectX 12
   card, a 343 MB pack in place of CUDA's 2 GB, the fastest adapter found by
   trying each in a separate process; Linux keeps CUDA.

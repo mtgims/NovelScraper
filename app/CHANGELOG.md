@@ -3,6 +3,16 @@
 Newest first.
 
 
+## 0.45.1, 2026-09-24 · `versionCode 93`
+- **The app no longer freezes while it tries the graphics cards.** In 0.45.0
+  the cards were tried the first time Listen was pressed, and while that ran,
+  narration and closing the window both waited on it: up to two and a half
+  minutes on an integrated chip. The cards are now tried in the background as
+  soon as GPU acceleration is downloaded or switched on, with progress shown
+  in Settings; until there is an answer the processor reads, and the next
+  time narration starts it moves to the card. Closing the app never waits on
+  narration for more than a moment.
+
 ## 0.45.0, 2026-09-24 · `versionCode 92`
 - **GPU narration on Windows for every graphics card, in a 343 MB download
   instead of 2 GB.** Windows now uses DirectML, which runs on AMD, Intel and
