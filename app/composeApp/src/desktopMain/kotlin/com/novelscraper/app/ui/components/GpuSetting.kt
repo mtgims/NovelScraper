@@ -56,6 +56,18 @@ fun GpuAccelerationSetting() {
         modifier = Modifier.padding(top = 4.dp),
     )
 
+    // Files from a pack this machine no longer uses (the CUDA pack on Windows).
+    var staleBytes by remember { mutableStateOf(0L) }
+    androidx.compose.runtime.LaunchedEffect(support, state) {
+        staleBytes = withContext(Dispatchers.IO) { GpuVoice.staleBytes }
+    }
+    if (support != null && staleBytes > 0) {
+        note("GPU files from an earlier version are no longer used.")
+        TextButton(onClick = {
+            scope.launch(Dispatchers.IO) { GpuVoice.removeStale(); staleBytes = GpuVoice.staleBytes }
+        }) { Text("Remove them (${"%.1f".format(staleBytes / 1e9)} GB)") }
+    }
+
     when (val s = support) {
         null -> note("Looking for a graphics card…")
         GpuVoice.Support.None -> note("No graphics card narration can use was found, so it runs on the processor.")
@@ -107,9 +119,10 @@ fun GpuAccelerationSetting() {
                             "leaving the processor nearly idle. This downloads NVIDIA's CUDA libraries: " +
                             "about ${"%.1f".format(GpuVoice.downloadBytes / 1e9)} GB, 2.6 GB once unpacked."
                     else
-                        "Narration can run on the graphics card through DirectML, which takes most of " +
-                            "the work off the processor. This downloads about " +
-                            "${GpuVoice.downloadBytes / 1_000_000} MB.",
+                        "Narration can run on the graphics card, leaving the processor nearly idle. " +
+                            "This downloads about ${GpuVoice.downloadBytes / 1_000_000} MB: DirectML's " +
+                            "libraries and a copy of Kokoro made to run on them. The first time a voice " +
+                            "is used, each graphics card is tried and the fastest one kept.",
                 )
                 (st as? GpuVoice.State.Failed)?.let { note("Download failed: ${it.message}", error = true) }
                 Row(horizontalArrangement = Arrangement.spacedBy(10.dp), modifier = Modifier.padding(top = 8.dp)) {

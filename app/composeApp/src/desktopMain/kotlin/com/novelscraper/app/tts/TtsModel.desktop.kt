@@ -25,7 +25,7 @@ actual fun buildOfflineTts(spec: TtsModels.Spec, dir: String, threads: Int): Tts
     // otherwise. One thread is all the card needs: the rest would only wait.
     if (GpuVoice.prepare() && GpuVoice.probe(spec, dir)) {
         try {
-            return buildModel(spec, dir, threads = 1, provider = GpuVoice.provider)
+            return buildModel(spec, dir, threads = 1, provider = GpuVoice.provider, modelPath = GpuVoice.modelFile(spec, dir))
         } catch (t: Throwable) {
             GpuVoice.failed(t)
         }
@@ -33,12 +33,18 @@ actual fun buildOfflineTts(spec: TtsModels.Spec, dir: String, threads: Int): Tts
     return buildModel(spec, dir, threads, provider = "cpu")
 }
 
-internal fun buildModel(spec: TtsModels.Spec, dir: String, threads: Int, provider: String): TtsModel {
+internal fun buildModel(
+    spec: TtsModels.Spec,
+    dir: String,
+    threads: Int,
+    provider: String,
+    modelPath: String = "$dir/${spec.onnx}",
+): TtsModel {
     val model = OfflineTtsModelConfig.Builder().apply {
         if (spec.kind == "vits") {
             setVits(
                 OfflineTtsVitsModelConfig.Builder()
-                    .setModel("$dir/${spec.onnx}")
+                    .setModel(modelPath)
                     .setTokens("$dir/tokens.txt")
                     .setDataDir("$dir/espeak-ng-data")
                     .build(),
@@ -46,7 +52,7 @@ internal fun buildModel(spec: TtsModels.Spec, dir: String, threads: Int, provide
         } else {
             setKokoro(
                 OfflineTtsKokoroModelConfig.Builder()
-                    .setModel("$dir/${spec.onnx}")
+                    .setModel(modelPath)
                     .setVoices("$dir/voices.bin")
                     .setTokens("$dir/tokens.txt")
                     .setDataDir("$dir/espeak-ng-data")

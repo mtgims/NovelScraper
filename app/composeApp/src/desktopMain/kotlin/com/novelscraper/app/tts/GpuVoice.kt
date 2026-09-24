@@ -21,10 +21,10 @@ import java.util.concurrent.TimeUnit
 import java.util.zip.ZipInputStream
 
 /**
- * Narration on the graphics card: through CUDA on an NVIDIA card, and through
- * DirectML on any other DirectX 12 card on Windows (see [Backend]).
+ * Narration on the graphics card: through DirectML on Windows, on any DirectX
+ * 12 card, and through CUDA on Linux, on an NVIDIA card (see [Backend]).
  *
- * The CUDA pack:
+ * The CUDA pack (Linux; it was Windows' too in 0.44.0):
  * sherpa-onnx's Java binding loads ONNX Runtime as a library of its own and
  * asks it at run time whether CUDA is there, so the build the app ships only
  * needs a CUDA-enabled ONNX Runtime beside it, plus NVIDIA's own libraries:
@@ -43,6 +43,13 @@ import java.util.zip.ZipInputStream
  * The DirectML pack is sherpa-onnx's binding built against ONNX Runtime
  * DirectML by this repository's own workflow (.github/workflows/directml.yml),
  * since nobody publishes one; it is small, because DirectX comes with Windows.
+ * It carries its own copy of Kokoro: DirectML refuses the published model's
+ * three upsampling layers (ConvTranspose with pads 1,1 and output_padding 1),
+ * which .github/workflows/kokoro-directml.yml writes as pads 1,0 without
+ * output_padding, the same layer, and checks that the output is unchanged.
+ * DirectML also takes whichever adapter DirectX lists first, the integrated
+ * one on most laptops (RTF 9.5 on a UHD 630 against 0.29 on the GTX 1060 of
+ * the same machine), so [probe] tries each and keeps the fastest.
  *
  * Whatever goes wrong, narration falls back to the processor: a pack that
  * won't load, a driver too old, a card CUDA doesn't know.
@@ -59,7 +66,7 @@ object GpuVoice {
         /** NVIDIA cards, through CUDA 12 and cuDNN. */
         CUDA("cuda12-sherpa1.13.8-ort1.28.2-cudnn9.10.2", "cuda"),
         /** Any DirectX 12 card on Windows (AMD, Intel, NVIDIA), through DirectML. */
-        DIRECTML("directml-sherpa1.13.8-ort1.24.4-dml1.15.4", "directml"),
+        DIRECTML("directml-sherpa1.13.8-ort1.24.4-dml1.15.4-kokoro1", "directml"),
     }
 
     private val prefs by lazy { settingsStore("tts-gpu") }
@@ -124,28 +131,41 @@ object GpuVoice {
 
     val downloadBytes: Long get() = pieces().sumOf { it.size }
 
+    /** Packs this machine no longer uses, such as the CUDA pack 0.44.0
+     *  installed on Windows before DirectML took its place. */
+    private val stale: List<File>
+        get() = root.listFiles().orEmpty().filter { it.name != backend?.packId }
+
+    val staleBytes: Long
+        get() = stale.sumOf { d -> d.walkTopDown().filter { it.isFile }.sumOf { it.length() } }
+
+    /** None of them is loaded: only the current backend's pack ever is. */
+    fun removeStale() = stale.forEach { it.deleteRecursively() }
+
     // --- what this machine has ------------------------------------------------------
 
     /**
-     * DirectML can't run Kokoro as it is published: its decoder's upsampling
-     * layers (ConvTranspose with output_padding, e.g. /N.1/pool/ConvTranspose)
-     * are refused with E_INVALIDARG by every ONNX Runtime DirectML from 1.17
-     * to 1.24, and the refusal ends the process. Off until that is solved.
+     * DirectML on Windows, for every make of card, and CUDA on Linux, where
+     * there is no DirectML and NVIDIA is the only way onto a card.
+     *
+     * DirectML took the place of CUDA on Windows: on a GTX 1060 it narrates at
+     * RTF 0.29 against CUDA's 0.16, both far ahead of the voice, for a 17 MB
+     * pack instead of 2 GB, and it works on AMD and Intel as well.
      */
-    private const val DIRECTML_OFFERED = false
-
     val support: Support by lazy {
-        val cuda = detectCuda()
-        if (cuda is Support.Ready || !Os.isWindows || !DIRECTML_OFFERED) cuda
-        // An NVIDIA card too old for CUDA 12 still has DirectX 12, and so has
-        // every AMD and Intel card of the last decade.
-        else detectDirectMl() ?: cuda
+        when {
+            Os.isWindows -> detectDirectMl() ?: Support.None
+            Os.isLinux -> detectCuda()
+            else -> Support.None
+        }
     }
 
+    /** How many real adapters DirectX may offer DirectML, for [probe] to try. */
+    @Volatile private var adapterCount = 1
+
     /**
-     * The first real display adapter Windows lists. DirectML runs on the one
-     * DirectX puts first, which on a laptop is usually the integrated one, so
-     * the name is only for the reader's information.
+     * The display adapters Windows lists. Which of them DirectML ends up on is
+     * decided by [probe], by trying them, so the name shown is the first one's.
      */
     private fun detectDirectMl(): Support? {
         val names = runCatching {
@@ -161,6 +181,7 @@ object GpuVoice {
             listOf("Microsoft Basic", "Remote", "Virtual", "Parsec", "Meta").any { n.contains(it, ignoreCase = true) }
         }
         val name = real.firstOrNull() ?: return null
+        adapterCount = real.size.coerceIn(1, 4)
         return Support.Ready(Card(name, 0.0, ""), Backend.DIRECTML)
     }
 
@@ -212,13 +233,20 @@ object GpuVoice {
 
     // --- getting it -------------------------------------------------------------------
 
-    private enum class Kind { TAR_BZ2, WHEEL, ZIP }
+    /** How a download is stored: an archive to take files from, or [FILE],
+     *  kept whole under the name its piece picks for "". */
+    private enum class Kind { TAR_BZ2, WHEEL, ZIP, FILE }
 
-    private const val DIRECTML_URL =
-        "https://github.com/mtgims/NovelScraper/releases/download/gpu-directml-1/" +
-            "sherpa-onnx-v1.13.8-directml-ort1.24.4-win-x64.zip"
-    private const val DIRECTML_SHA256 = "PENDING"
-    private const val DIRECTML_SIZE = 0L
+    private const val DIRECTML_RELEASE = "https://github.com/mtgims/NovelScraper/releases/download/gpu-directml-1/"
+    private const val DIRECTML_URL = DIRECTML_RELEASE + "sherpa-onnx-v1.13.8-directml-ort1.24.4-win-x64.zip"
+    private const val DIRECTML_SHA256 = "ccce25acf5bc2887cea851d31ec2859423dc12960fd97d43105c1a85eb402e91"
+    private const val DIRECTML_SIZE = 17_151_234L
+    private const val KOKORO_DML_URL = DIRECTML_RELEASE + "kokoro-multi-lang-v1_0-directml.onnx"
+    private const val KOKORO_DML_SHA256 = "7444909b011222414ad914e65b3efbdbcbe23e93de49809616ee73ae4d8703f5"
+    private const val KOKORO_DML_SIZE = 325_560_487L
+
+    /** The Kokoro the DirectML pack brings (see the class notes). */
+    private const val KOKORO_DML_FILE = "kokoro-model.onnx"
 
     private class Piece(
         val label: String,
@@ -240,6 +268,10 @@ object GpuVoice {
                 "DirectML narration libraries",
                 DIRECTML_URL, DIRECTML_SHA256, DIRECTML_SIZE, Kind.ZIP,
             ) { name -> name.substringAfterLast('/').takeIf { it.endsWith(".dll") } },
+            Piece(
+                "Kokoro for DirectML",
+                KOKORO_DML_URL, KOKORO_DML_SHA256, KOKORO_DML_SIZE, Kind.FILE,
+            ) { KOKORO_DML_FILE },
         )
         null -> emptyList()
     }
@@ -380,6 +412,7 @@ object GpuVoice {
     private fun unpack(piece: Piece, archive: File, into: File) {
         val links = mutableMapOf<String, String>()
         when (piece.kind) {
+            Kind.FILE -> archive.copyTo(File(into, piece.pick("") ?: return), overwrite = true)
             Kind.WHEEL, Kind.ZIP -> ZipInputStream(archive.inputStream().buffered(1 shl 20)).use { zip ->
                 while (true) {
                     if (cancelled) throw InterruptedException()
@@ -459,31 +492,72 @@ object GpuVoice {
      * process rather than throwing: DirectML turning down one of Kokoro's
      * layers does exactly that, halfway through the first sentence. So a new
      * combination of pack and voice is tried once in a throwaway copy of the
-     * app, and only one that came back with audio is used here. The answer is
-     * kept, and forgotten when the pack is switched on again.
+     * app, and only one that came back with audio in good time is used here.
+     *
+     * With DirectML every adapter is tried, and the fastest one that keeps well
+     * ahead of the voice is kept: DirectX lists the integrated chip first on
+     * most laptops, and there Kokoro can be ten times slower than real time.
+     * The answer, adapter included, is kept, and a failure is forgotten when
+     * the pack is switched on again.
      */
     fun probe(spec: TtsModels.Spec, modelDir: String): Boolean {
         val pack = backend ?: return false
         val key = "${pack.packId}/${File(modelDir).name}"
-        if (key in prefs.getStringSet(PROBES_OK).orEmpty()) return true
+        prefs.getStringSet(PROBES_OK).orEmpty().firstOrNull { it.startsWith("$key=") }?.let { found ->
+            useAdapter(found.substringAfter('=').toIntOrNull() ?: 0)
+            return true
+        }
         if (key in prefs.getStringSet(PROBES_FAILED).orEmpty()) { problem = PROBE_FAILED; return false }
         val command = probeCommand() ?: return false
-        Log.i(TAG, "trying ${File(modelDir).name} on the graphics card in a separate process")
-        val log = File(DesktopDirs.cache, "gpu-probe.log")
-        val ok = runCatching {
-            DesktopDirs.cache.mkdirs()
-            val p = ProcessBuilder(command + listOf(PROBE_ARG, spec.kind, spec.onnx, modelDir))
-                .directory(DesktopDirs.cache)
-                .redirectErrorStream(true)
-                .redirectOutput(log)
-                .start()
-            if (!p.waitFor(120, TimeUnit.SECONDS)) { p.destroyForcibly(); false } else p.exitValue() == 0
-        }.getOrDefault(false)
-        val set = if (ok) PROBES_OK else PROBES_FAILED
-        prefs.putStringSet(set, prefs.getStringSet(set).orEmpty() + key)
-        Log.i(TAG, "the graphics card ${if (ok) "spoke" else "couldn't speak"} with ${File(modelDir).name}")
-        if (!ok) problem = PROBE_FAILED
-        return ok
+        val adapters = if (pack == Backend.DIRECTML) 0 until adapterCount else 0 until 1
+        val log = File(DesktopDirs.cache, "gpu-probe.log").apply { parentFile.mkdirs(); delete() }
+        var best: Pair<Int, Double>? = null
+        for (adapter in adapters) {
+            Log.i(TAG, "trying ${File(modelDir).name} on adapter $adapter in a separate process")
+            val rtf = runCatching {
+                val p = ProcessBuilder(command + listOf(PROBE_ARG, spec.kind, spec.onnx, modelDir))
+                    .directory(DesktopDirs.cache)
+                    .redirectErrorStream(true)
+                    .redirectOutput(ProcessBuilder.Redirect.appendTo(log))
+                    .apply { environment()[ADAPTER_VARIABLE] = adapter.toString() }
+                    .start()
+                val finished = p.waitFor(150, TimeUnit.SECONDS)
+                if (!finished) p.destroyForcibly()
+                if (!finished || p.exitValue() != 0) null
+                else log.readLines().lastOrNull { it.startsWith("rtf=") }?.substringAfter('=')?.toDoubleOrNull()
+            }.getOrNull()
+            Log.i(TAG, "adapter $adapter: ${rtf?.let { "RTF %.2f".format(it) } ?: "couldn't narrate"}")
+            if (rtf != null && rtf < MAX_RTF && (best == null || rtf < best.second)) best = adapter to rtf
+        }
+        val chosen = best
+        if (chosen != null) {
+            prefs.putStringSet(PROBES_OK, prefs.getStringSet(PROBES_OK).orEmpty() + "$key=${chosen.first}")
+            useAdapter(chosen.first)
+        } else {
+            prefs.putStringSet(PROBES_FAILED, prefs.getStringSet(PROBES_FAILED).orEmpty() + key)
+            problem = PROBE_FAILED
+        }
+        return chosen != null
+    }
+
+    /** Slower than this and a card isn't worth it: the voice must stay well
+     *  ahead of the listener, and the processor manages about 0.5. */
+    private const val MAX_RTF = 0.8
+
+    /** Read by the DirectML build of sherpa-onnx (see the workflow) when it
+     *  opens a model, from the process's environment as it is at the time. */
+    private const val ADAPTER_VARIABLE = "SHERPA_ONNX_DML_DEVICE"
+
+    private fun useAdapter(adapter: Int) {
+        if (backend == Backend.DIRECTML) runCatching { Kernel32Dll.SetEnvironmentVariable(WString(ADAPTER_VARIABLE), WString(adapter.toString())) }
+    }
+
+    /** The model file to open on the card: DirectML's own Kokoro where the
+     *  pack brings one, the voice's own file otherwise. */
+    fun modelFile(spec: TtsModels.Spec, modelDir: String): String {
+        val own = File(dir, KOKORO_DML_FILE)
+        return if (backend == Backend.DIRECTML && spec.kind == "kokoro" && own.isFile) own.absolutePath
+               else "$modelDir/${spec.onnx}"
     }
 
     /** This app again, as a separate process: its launcher when installed, the
@@ -501,17 +575,24 @@ object GpuVoice {
     private const val PROBE_FAILED =
         "The graphics card couldn't narrate with this voice when it was tried, so narration uses the processor."
 
-    /** The separate process [probe] starts: loads the pack, speaks one short
-     *  sentence and says how it went through its exit code. */
+    /** The separate process [probe] starts: loads the pack, speaks a warm-up
+     *  sentence and a timed one, prints the real-time factor as `rtf=` and says
+     *  how it went through its exit code. */
     fun runProbe(args: List<String>): Int {
         val (kind, onnx, modelDir) = args.takeIf { it.size >= 3 } ?: return 5
         if (!installed || support !is Support.Ready || !loadPack()) return 4
         return try {
             val spec = TtsModels.Spec(dir = File(modelDir).name, url = "", kind = kind, onnx = onnx, required = emptyList())
-            val tts = buildModel(spec, modelDir, threads = 1, provider = provider)
-            val samples = tts.generate("This is a test of the voice.", 0, 1.0f)
+            val tts = buildModel(spec, modelDir, threads = 1, provider = provider, modelPath = modelFile(spec, modelDir))
+            tts.generate("A first sentence to warm up.", 0, 1.0f)
+            val t0 = System.nanoTime()
+            val samples = tts.generate("The lamps were lit early that evening, and the rain had not let up since noon.", 0, 1.0f)
+            val seconds = (System.nanoTime() - t0) / 1e9
+            val rate = tts.sampleRate
             tts.release()
-            if (samples.size > 1000) 0 else 2
+            if (samples.size < 1000) return 2
+            println("rtf=${seconds / (samples.size.toDouble() / rate)}")
+            0
         } catch (t: Throwable) {
             System.err.println("probe failed: ${t.message}")
             3
@@ -567,6 +648,7 @@ object GpuVoice {
     @Suppress("FunctionName")
     private interface Kernel32Api : StdCallLibrary {
         fun SetDllDirectory(path: WString): Boolean
+        fun SetEnvironmentVariable(name: WString, value: WString): Boolean
     }
 
     private val Kernel32Dll: Kernel32Api by lazy {
