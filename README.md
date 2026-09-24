@@ -2,6 +2,15 @@
 
 A novel downloader, reader and listener for all (still working on this one) devices. 
 
+Works on:
+
+Windows
+Linux
+Android
+
+I originally wanted to make an iOS and MacOS version of the app but I don't have any way to test them as I'm not in the possession of any Apple devices. If anyone is even reading this and has a Mac and iPhone and want's to contribute a working and tested verison of the app they are free to do it. 
+
+
 ---
 
 ## What it does
@@ -30,9 +39,8 @@ A novel downloader, reader and listener for all (still working on this one) devi
 ## Installing it
 
 Every version is published on the
-[releases page](https://github.com/mtgims/NovelScraper/releases): the phone
-build as an APK, and the Linux one as a single AppImage that carries its own
-Java runtime (make it executable and run it; it needs FUSE 2, `fuse2` on Arch).
+[releases page](https://github.com/mtgims/NovelScraper/releases).
+You can find there the APK, AppImage and Windows Installer. 
 
 ## Sources
 
@@ -44,17 +52,6 @@ index in the same format, then install what is wanted.
 
 Plugins run in QuickJS inside the app; the JavaScript host they run against
 lives in `app/composeApp/pluginHost/`.
-
-## Where things live
-
-On Linux: settings in `~/.config/novelscraper`, the library and downloaded
-voices in `~/.local/share/novelscraper`, the image cache in
-`~/.cache/novelscraper`, and downloads in the Downloads folder. On Android the
-equivalents are the app's own storage, with downloads in the Downloads
-collection.
-
-Keys in the reader: ←/→ chapters, Space/Page Down and Shift+Space/Page Up to
-turn the page, P to play or pause, Ctrl +/- font size, Esc back.
 
 ## Sync
 
