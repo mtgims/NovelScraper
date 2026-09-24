@@ -13,6 +13,9 @@ since moved to a repository of their own; this one holds the apps.
 
 ## 2026-09-24
 
+- **Unused code removed (0.42.1).** Found in an audit of startup, memory and
+  package size; no behaviour changes.
+
 - **Windows: a real window, an invisible browser, less memory (0.42.0).** The
   window has the system's frame back with the app's own title bar, so it drags,
   snaps, resizes and animates; the browser guarded sites need runs on a hidden

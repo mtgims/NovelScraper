@@ -3,6 +3,11 @@
 Newest first.
 
 
+## 0.42.1, 2026-09-24 · `versionCode 89`
+- **Unused code removed.** Two calls to the server that nothing made any more,
+  with their request bodies, and a handful of members no screen read. Nothing
+  the reader sees or does changes.
+
 ## 0.42.0, 2026-09-24 · `versionCode 88`
 - **The window behaves like a Windows window.** It had no system frame at all,
   so it could not be dragged by its title bar, vanished when minimised, jumped
