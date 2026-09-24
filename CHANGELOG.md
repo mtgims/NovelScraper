@@ -13,6 +13,10 @@ since moved to a repository of their own; this one holds the apps.
 
 ## 2026-09-24
 
+- **GPU narration on Windows through DirectML (0.45.0).** Any DirectX 12
+  card, a 343 MB pack in place of CUDA's 2 GB, the fastest adapter found by
+  trying each in a separate process; Linux keeps CUDA.
+
 - **Narration on an NVIDIA graphics card (0.44.0).** An optional CUDA pack,
   downloaded from Settings and checked file by file; narration falls back to
   the processor whenever the card can't take it.

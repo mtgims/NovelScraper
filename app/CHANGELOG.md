@@ -3,6 +3,26 @@
 Newest first.
 
 
+## 0.45.0, 2026-09-24 · `versionCode 92`
+- **GPU narration on Windows for every graphics card, in a 343 MB download
+  instead of 2 GB.** Windows now uses DirectML, which runs on AMD, Intel and
+  NVIDIA cards alike, in place of CUDA; Linux keeps CUDA for NVIDIA cards. The
+  pack brings a copy of Kokoro made to run on DirectML, with the same voice.
+  On a GTX 1060, 0.12 of real time once warm, with the processor nearly idle.
+- **The fastest card is found by trying.** DirectML takes the first adapter
+  Windows lists, which on most laptops is the integrated chip, and there
+  Kokoro can run twelve times slower than real time. The first time a voice
+  is used, each card is tried in a separate copy of the app and the fastest
+  one that keeps ahead of the voice is kept; if none does, the processor
+  narrates and Settings says so.
+- **A card that fails can't take the app down.** Some graphics failures end
+  the whole process instead of reporting an error, so a voice is only ever
+  narrated on a card after that separate copy has spoken with it.
+- **GPU files from 0.44.0 can be removed** from the same place in Settings.
+- **Settings are written far less often.** Every change rewrote its whole
+  file, fifty times for one drag of a slider; now a save waits for the ones
+  already queued.
+
 ## 0.44.0, 2026-09-24 · `versionCode 91`
 - **Narration on an NVIDIA graphics card.** Settings → Narration → GPU
   acceleration appears where the driver reports a card CUDA 12 can use, and
