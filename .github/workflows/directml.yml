@@ -1,0 +1,107 @@
+name: DirectML narration pack
+
+# sherpa-onnx's Java binding built against ONNX Runtime with DirectML, which runs
+# on any DirectX 12 graphics card (AMD, Intel, NVIDIA). Nobody publishes that
+# build, so it is made here, from sherpa-onnx's own release tag, and the app
+# downloads it from Settings the way it downloads the CUDA pack.
+#
+# Upstream pins a 2023 ONNX Runtime for DirectML (1.14.1); the cmake file is
+# pointed at a current one instead, with its checksum taken on the spot.
+
+on:
+  workflow_dispatch:
+    inputs:
+      release:
+        description: "Attach the pack to this existing release tag (empty: artifact only)"
+        required: false
+        default: ""
+
+permissions:
+  contents: write
+
+env:
+  SHERPA_ONNX: v1.13.8
+  ORT_DIRECTML: 1.24.4
+  DIRECTML: 1.15.4
+
+jobs:
+  build:
+    runs-on: windows-2022
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          repository: k2-fsa/sherpa-onnx
+          ref: ${{ env.SHERPA_ONNX }}
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "21"
+
+      - name: Point the build at current ONNX Runtime and DirectML packages
+        shell: bash
+        run: |
+          set -e
+          curl -sSL -o ort.nupkg "https://www.nuget.org/api/v2/package/Microsoft.ML.OnnxRuntime.DirectML/${ORT_DIRECTML}"
+          curl -sSL -o dml.nupkg "https://www.nuget.org/api/v2/package/Microsoft.AI.DirectML/${DIRECTML}"
+          ort_sha=$(sha256sum ort.nupkg | cut -d' ' -f1)
+          dml_sha=$(sha256sum dml.nupkg | cut -d' ' -f1)
+          f=cmake/onnxruntime-win-x64-directml.cmake
+          sed -i \
+            -e "s|microsoft.ml.onnxruntime.directml.1.14.1.nupkg|microsoft.ml.onnxruntime.directml.${ORT_DIRECTML}.nupkg|g" \
+            -e "s|SHA256=c8ae7623385b19cd5de968d0df5383e13b97d1b3a6771c9177eac15b56013a5a|SHA256=${ort_sha}|" \
+            -e "s|Microsoft.AI.DirectML/1.15.0|Microsoft.AI.DirectML/${DIRECTML}|" \
+            -e "s|Microsoft.AI.DirectML.1.15.0.nupkg|Microsoft.AI.DirectML.${DIRECTML}.nupkg|g" \
+            -e "s|SHA256=10d175f8e97447712b3680e3ac020bbb8eafdf651332b48f09ffee2eec801c23|SHA256=${dml_sha}|" \
+            $f
+          # The build looks for these names beside the sources before downloading.
+          mv ort.nupkg microsoft.ml.onnxruntime.directml.${ORT_DIRECTML}.nupkg
+          mv dml.nupkg Microsoft.AI.DirectML.${DIRECTML}.nupkg
+          grep -n "nupkg\|SHA256" $f
+
+      - name: Configure
+        shell: bash
+        run: |
+          mkdir build && cd build
+          cmake -A x64 \
+            -DBUILD_SHARED_LIBS=ON \
+            -DSHERPA_ONNX_ENABLE_JNI=ON \
+            -DSHERPA_ONNX_ENABLE_DIRECTML=ON \
+            -DSHERPA_ONNX_ENABLE_TTS=ON \
+            -DCMAKE_INSTALL_PREFIX=./install \
+            -DCMAKE_BUILD_TYPE=Release \
+            -DSHERPA_ONNX_ENABLE_WEBSOCKET=OFF \
+            -DBUILD_ESPEAK_NG_EXE=OFF \
+            -DSHERPA_ONNX_BUILD_C_API_EXAMPLES=OFF \
+            -DSHERPA_ONNX_ENABLE_BINARY=OFF \
+            -DSHERPA_ONNX_ENABLE_C_API=OFF \
+            ..
+
+      - name: Build
+        shell: bash
+        run: |
+          cd build
+          cmake --build . --config Release -- -m:2
+          cmake --build . --config Release --target install -- -m:2
+
+      - name: Pack the libraries
+        shell: bash
+        run: |
+          mkdir pack
+          cp build/install/lib/*.dll pack/ 2>/dev/null || true
+          cp build/install/bin/*.dll pack/ 2>/dev/null || true
+          ls -la pack
+          cd pack && 7z a -tzip ../sherpa-onnx-${SHERPA_ONNX}-directml-ort${ORT_DIRECTML}-win-x64.zip *.dll
+          cd .. && sha256sum sherpa-onnx-*-directml-*.zip
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: directml-pack
+          path: sherpa-onnx-*-directml-*.zip
+
+      - name: Attach to the release
+        if: inputs.release != ''
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh release upload "${{ inputs.release }}" sherpa-onnx-*-directml-*.zip --clobber -R "${{ github.repository }}"
