@@ -13,6 +13,13 @@ since moved to a repository of their own; this one holds the apps.
 
 ## 2026-09-24
 
+- **Windows: a real window, an invisible browser, less memory (0.42.0).** The
+  window has the system's frame back with the app's own title bar, so it drags,
+  snaps, resizes and animates; the browser guarded sites need runs on a hidden
+  desktop and never shows, taskbar included; the desktop app uses a good third
+  less memory. Desktop tests pass on Windows and no longer touch the reader's
+  own library there.
+
 - **The browser sources like Scribble Hub need runs on a screen of its own
   (0.41.4).** It is invisible, the check passes unattended, and nothing lands on
   the desktop.

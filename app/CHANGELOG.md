@@ -3,6 +3,26 @@
 Newest first.
 
 
+## 0.42.0, 2026-09-24 · `versionCode 88`
+- **The window behaves like a Windows window.** It had no system frame at all,
+  so it could not be dragged by its title bar, vanished when minimised, jumped
+  when maximised and restored, and its edges could not be taken hold of. It now
+  has the system's frame with only the title bar drawn by the app: it drags and
+  snaps, minimises, maximises and restores with the usual animations, resizes
+  from every edge and corner, and has the rounded corners and shadow of the rest
+  of the desktop.
+- **No browser window for sites like Scribble Hub on Windows, not even in the
+  taskbar.** The browser those sites need runs on a desktop of the app's own:
+  a real, painted window, which is what the site's check wants, that appears
+  nowhere. A check that does want a person still comes to the reader's screen,
+  and that browser is closed as soon as it has been answered. Closing it now
+  lets it save what it earned, so the same check is not met again straight away.
+- **Much less memory on the desktop.** Java's defaults let the heap grow toward
+  a quarter of the machine's memory and kept a fifth of that for decoded covers.
+  The heap now has a ceiling and gives back what it stops using, and the image
+  cache is capped at 48 MB: about 240 MB at startup instead of 360, and well
+  under 400 MB after browsing a source's covers where it used to pass 590.
+
 ## 0.41.4, 2026-09-24 · `versionCode 87`
 - **No browser on screen for sites like Scribble Hub.** Such a site refuses this
   app's own client whatever cookies it carries, so its pages are fetched through
