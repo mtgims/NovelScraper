@@ -29,6 +29,8 @@ import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.layout.onSizeChanged
+import com.novelscraper.app.platform.WindowsFrame
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.window.WindowPlacement
@@ -44,23 +46,30 @@ import androidx.compose.ui.window.WindowState
  * whichever theme is chosen, with the buttons where Windows puts them.
  *
  * It is what the window is dragged by, and a double-click on it maximises and
- * restores, as a title bar should.
+ * restores, as a title bar should. On Windows the system does both (see
+ * [WindowsFrame]); the bar only tells it where it is.
  */
 @OptIn(ExperimentalFoundationApi::class)
 @Composable
 fun WindowScope.TitleBar(state: WindowState, onClose: () -> Unit) {
     val maximized = state.placement == WindowPlacement.Maximized
+    // With the Windows frame given back (WindowsFrame), the system itself drags,
+    // snaps and double-clicks this bar, and its buttons ask the system to act, so
+    // the window animates as any other does. Without it, the app does all that.
+    val native = WindowsFrame.installed
     fun toggleMaximised() {
+        if (native && WindowsFrame.toggleMaximized()) return
         state.placement = if (maximized) WindowPlacement.Floating else WindowPlacement.Maximized
     }
 
-    WindowDraggableArea {
+    val bar: @Composable () -> Unit = {
         Row(
             Modifier
                 .fillMaxWidth()
                 .height(TITLE_BAR_HEIGHT)
                 .background(MaterialTheme.colorScheme.surfaceContainerLow)
-                .onClick(onDoubleClick = { toggleMaximised() }, onClick = {}),
+                .onSizeChanged { WindowsFrame.captionHeight = it.height }
+                .then(if (native) Modifier else Modifier.onClick(onDoubleClick = { toggleMaximised() }, onClick = {})),
             verticalAlignment = Alignment.CenterVertically,
         ) {
             Text(
@@ -70,14 +79,19 @@ fun WindowScope.TitleBar(state: WindowState, onClose: () -> Unit) {
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                 modifier = Modifier.padding(start = 14.dp).weight(1f),
             )
-            WindowButton(Icons.Filled.Minimize, "Minimise") { state.isMinimized = true }
-            WindowButton(
-                if (maximized) Icons.Filled.FilterNone else Icons.Filled.CropSquare,
-                if (maximized) "Restore" else "Maximise",
-            ) { toggleMaximised() }
-            WindowButton(Icons.Filled.Close, "Close", danger = true, onClick = onClose)
+            Row(Modifier.onSizeChanged { WindowsFrame.buttonsWidth = it.width }) {
+                WindowButton(Icons.Filled.Minimize, "Minimise") {
+                    if (!(native && WindowsFrame.minimize())) state.isMinimized = true
+                }
+                WindowButton(
+                    if (maximized) Icons.Filled.FilterNone else Icons.Filled.CropSquare,
+                    if (maximized) "Restore" else "Maximise",
+                ) { toggleMaximised() }
+                WindowButton(Icons.Filled.Close, "Close", danger = true, onClick = onClose)
+            }
         }
     }
+    if (native) bar() else WindowDraggableArea { bar() }
 }
 
 /** One of the three, sized and lit the way Windows lights its own. */

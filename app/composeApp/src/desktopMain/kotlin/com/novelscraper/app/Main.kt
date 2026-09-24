@@ -15,12 +15,14 @@ import androidx.compose.ui.window.Window
 import androidx.compose.ui.window.WindowPlacement
 import androidx.compose.ui.window.WindowPosition
 import com.novelscraper.app.platform.Os
+import com.novelscraper.app.platform.WindowsFrame
 import com.novelscraper.app.ui.components.TitleBar
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.window.WindowState
 import androidx.compose.ui.window.application
 import coil3.SingletonImageLoader
 import coil3.disk.DiskCache
+import coil3.memory.MemoryCache
 import com.novelscraper.app.data.LibraryPrefs
 import com.novelscraper.app.data.ReaderPrefs
 import com.novelscraper.app.update.AppUpdates
@@ -62,6 +64,15 @@ fun initApp() {
     TtsController.player = DesktopTtsPlayer
     SingletonImageLoader.setSafe { ctx ->
         buildImageLoader(ctx) {
+            // Left to itself Coil keeps a fifth of the heap's ceiling in decoded
+            // images, which on a 16 GB machine is 800 MB of covers held in
+            // memory. A screen of covers is a few megabytes; what scrolls away
+            // comes back from the disk cache in a moment.
+            memoryCache {
+                MemoryCache.Builder()
+                    .maxSizeBytes(48L * 1024 * 1024)
+                    .build()
+            }
             diskCache {
                 DiskCache.Builder()
                     .directory(File(DesktopDirs.cache, "images").toOkioPath())
@@ -122,12 +133,18 @@ fun main() {
             resizable = true,
         ) {
             window.minimumSize = java.awt.Dimension(420, 560)
+            // On Windows the window gets its system frame back, minus the title
+            // bar, which the app draws (see WindowsFrame).
+            if (Os.isWindows) {
+                androidx.compose.runtime.LaunchedEffect(Unit) { WindowsFrame.install(window) }
+            }
             // An undecorated window maximises over everything, taskbar included,
             // because nothing is left to tell it where the usable screen ends.
             // These are those bounds, and they are asked for again whenever the
-            // screen arrangement changes.
+            // screen arrangement changes. A window with a frame knows them already.
             if (drawsOwnTitleBar) {
-                androidx.compose.runtime.LaunchedEffect(state.placement) {
+                androidx.compose.runtime.LaunchedEffect(state.placement, WindowsFrame.installed) {
+                    if (WindowsFrame.installed) return@LaunchedEffect
                     runCatching {
                         val screen = window.graphicsConfiguration
                         val insets = java.awt.Toolkit.getDefaultToolkit().getScreenInsets(screen)

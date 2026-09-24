@@ -136,7 +136,7 @@ object SystemBrowser {
     var userAgent: String? = null
         private set
 
-    private var process: Process? = null
+    private var process: ProcessHandle? = null
     private var socket: WebSocket? = null
     private var browserSession: String? = null
     private var pageSession: String? = null
@@ -243,6 +243,11 @@ object SystemBrowser {
             // Out of sight whatever happened: a window put on screen for a check
             // should not be left sitting there afterwards.
             runCatching { hide() }
+            // Where the browser has a desktop of its own to go back to, the one
+            // the reader answered in is closed now, cookies saved, and the next
+            // page starts it again out of sight. Parked off-screen it would still
+            // sit in the taskbar until it had been idle a while.
+            if (shown && HiddenDesktop.possible) withContext(Dispatchers.IO) { stop() }
         }
     }
 
@@ -645,7 +650,9 @@ object SystemBrowser {
         // check insists on without the reader ever seeing it. Only for the app's
         // own errands: a check the reader has to answer needs their screen.
         val ownScreen = if (keepVisible || headless || needsTheirScreen) null else VirtualDisplay.ensure()
-        onOwnScreen = ownScreen != null
+        // Windows' equivalent: a desktop of the app's own (see HiddenDesktop).
+        val ownDesktop = ownScreen == null && !keepVisible && !headless && !needsTheirScreen && HiddenDesktop.possible
+        onOwnScreen = ownScreen != null || ownDesktop
         val command = listOfNotNull(
             bin.path,
             if (headless) "--headless=new" else null,
@@ -669,7 +676,7 @@ object SystemBrowser {
             when {
                 // Its own screen has nothing else on it: the window sits in the
                 // corner of it, whole and drawn, which is what a check wants.
-                ownScreen != null -> "--window-position=0,0"
+                ownScreen != null || ownDesktop -> "--window-position=0,0"
                 keepVisible -> "--window-position=120,90"
                 else -> "--window-position=$OFFSCREEN,$OFFSCREEN"
             },
@@ -700,11 +707,14 @@ object SystemBrowser {
             "--disable-blink-features=AutomationControlled",
             "about:blank",
         )
-        process = ProcessBuilder(command)
-            .apply { ownScreen?.let { environment()["DISPLAY"] = it } }
-            .redirectOutput(ProcessBuilder.Redirect.DISCARD)
-            .redirectError(ProcessBuilder.Redirect.DISCARD)
-            .start()
+        process = (if (ownDesktop) HiddenDesktop.launch(command) else null)
+            ?: ProcessBuilder(command)
+                .apply { ownScreen?.let { environment()["DISPLAY"] = it } }
+                .redirectOutput(ProcessBuilder.Redirect.DISCARD)
+                .redirectError(ProcessBuilder.Redirect.DISCARD)
+                .start()
+                .toHandle()
+                .also { if (ownDesktop) onOwnScreen = false }
         return bin
     }
 
@@ -930,6 +940,23 @@ object SystemBrowser {
                     }.toString(),
                 )
             }
+        }
+        // A browser of our own is asked to close rather than ended. It writes its
+        // cookies to the profile only now and then, and on Windows ending a
+        // process is pulling the plug: a clearance earned a few seconds ago would
+        // go with it, and the next browser would meet the same check again.
+        val own = process
+        if (!adopted && own?.isAlive == true && connected) {
+            runCatching {
+                socket?.send(
+                    buildJsonObject {
+                        put("id", nextId.getAndIncrement())
+                        put("method", "Browser.close")
+                        put("params", buildJsonObject {})
+                    }.toString(),
+                )
+            }
+            runCatching { own.onExit().get(5, TimeUnit.SECONDS) }
         }
         runCatching { socket?.close(1000, null) }
         runCatching { process?.destroy() }

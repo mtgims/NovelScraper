@@ -205,6 +205,10 @@ kotlin {
                 implementation("com.github.hypfvieh:dbus-java-core:5.1.1")
                 implementation("com.github.hypfvieh:dbus-java-transport-native-unixsocket:5.1.1")
 
+                // Win32 calls from Kotlin: the window's own frame (WindowsFrame.kt)
+                // and the browser's hidden desktop (HiddenDesktop.kt).
+                implementation("net.java.dev.jna:jna-platform:5.19.1")
+
                 // sherpa-onnx for the Kokoro/Piper voices: the JVM binding plus
                 // the native library for whichever platform is being built.
                 implementation(files(sherpaJvm.flatMap { it.dest }, sherpaNative.flatMap { it.dest }))
@@ -253,6 +257,10 @@ tasks.withType<Test>().configureEach {
     environment("XDG_DATA_HOME", File(home, "data").path)
     environment("XDG_CACHE_HOME", File(home, "cache").path)
     environment("XDG_DOWNLOAD_DIR", File(home, "downloads").path)
+    // Windows' own two: without these the tests used the reader's real library
+    // and browser profile under %LOCALAPPDATA%\NovelScraper.
+    environment("APPDATA", File(home, "config").path)
+    environment("LOCALAPPDATA", File(home, "data").path)
     systemProperty("htmlParity.dir", layout.projectDirectory.dir("src/htmlParity").asFile.absolutePath)
     systemProperty("htmlParity.record", providers.gradleProperty("htmlParityRecord").getOrElse("false"))
     systemProperty("htmlParity.extra", providers.gradleProperty("htmlParityExtra").getOrElse(""))
@@ -284,6 +292,19 @@ tasks.withType<Test>().configureEach {
 compose.desktop {
     application {
         mainClass = "com.novelscraper.app.MainKt"
+        // Java's defaults are a server's: a heap allowed to grow to a quarter of
+        // the machine's memory and a collector that seldom hands any of it back,
+        // plus tens of megabytes of its own bookkeeping. A reader's heap lives
+        // well under a few hundred megabytes, so it gets the small collector,
+        // a ceiling, and is made to return what it has stopped using.
+        jvmArgs(
+            "-XX:+UseSerialGC",
+            "-Xms32m",
+            "-Xmx1g",
+            "-XX:MinHeapFreeRatio=10",
+            "-XX:MaxHeapFreeRatio=30",
+            "-XX:ReservedCodeCacheSize=96m",
+        )
         nativeDistributions {
             // The JDK modules beyond Compose's defaults (from suggestRuntimeModules);
             // java.sql is the JDBC API the library database's SQLite driver needs.
