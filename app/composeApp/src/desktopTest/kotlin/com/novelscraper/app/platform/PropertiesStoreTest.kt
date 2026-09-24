@@ -35,8 +35,11 @@ class PropertiesStoreTest {
         b.remove("cookies")
         PropertiesStore.flush()
         assertNull(PropertiesStore(f).getStringSet("cookies"))
-        assertEquals(setOf(PosixFilePermission.OWNER_READ, PosixFilePermission.OWNER_WRITE),
-            Files.getPosixFilePermissions(f.toPath()))
+        // Windows files have no POSIX permissions to ask about.
+        if ("posix" in f.toPath().fileSystem.supportedFileAttributeViews()) {
+            assertEquals(setOf(PosixFilePermission.OWNER_READ, PosixFilePermission.OWNER_WRITE),
+                Files.getPosixFilePermissions(f.toPath()))
+        }
     }
 
     @Test fun concurrentWritesAllLand() {
