@@ -122,6 +122,25 @@ fun main() {
             resizable = true,
         ) {
             window.minimumSize = java.awt.Dimension(420, 560)
+            // An undecorated window maximises over everything, taskbar included,
+            // because nothing is left to tell it where the usable screen ends.
+            // These are those bounds, and they are asked for again whenever the
+            // screen arrangement changes.
+            if (drawsOwnTitleBar) {
+                androidx.compose.runtime.LaunchedEffect(state.placement) {
+                    runCatching {
+                        val screen = window.graphicsConfiguration
+                        val insets = java.awt.Toolkit.getDefaultToolkit().getScreenInsets(screen)
+                        val b = screen.bounds
+                        window.maximizedBounds = java.awt.Rectangle(
+                            b.x + insets.left,
+                            b.y + insets.top,
+                            b.width - insets.left - insets.right,
+                            b.height - insets.top - insets.bottom,
+                        )
+                    }
+                }
+            }
             CompositionLocalProvider(LocalAppWindow provides window) {
                 AppContent(
                     titleBar = if (drawsOwnTitleBar) {
