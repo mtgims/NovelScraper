@@ -91,6 +91,18 @@ object SystemBrowser {
     /** Whether the browser runs without a window at all. */
     @Volatile private var headless = System.getenv("NOVELSCRAPER_BROWSER_HEADLESS") == "1"
 
+    /** True while the browser is on a screen of the app's own, where nobody can
+     *  see it (see [VirtualDisplay]). */
+    @Volatile private var onOwnScreen = false
+
+    /** Set while a check is being answered by the reader: that one needs a window
+     *  on the screen they are actually looking at. Cleared once it is done. */
+    @Volatile private var needsTheirScreen = false
+
+    /** Set for a browser the reader has just seen: it goes shortly after, rather
+     *  than standing about for the usual minute. */
+    @Volatile private var closeSoon = false
+
     /** `NOVELSCRAPER_BROWSER_VISIBLE=1` keeps the window on screen the whole
      *  time, for a desktop where a check won't finish out of sight. */
     private val keepVisible: Boolean =
@@ -220,10 +232,16 @@ object SystemBrowser {
             stop()
             return null
         } finally {
-            // Away again whatever happened. Minimising it once when the tab opens
-            // is not enough on every desktop: Windows will bring a window back on
-            // screen for a check that asks for focus, and it should not be left
-            // sitting there afterwards.
+            if (shown) {
+                // The reader has answered it. The next page goes back to the
+                // browser's own screen, and this one, which they have been
+                // looking at, is closed as soon as what it earned has been taken
+                // from it rather than left standing on their desktop.
+                needsTheirScreen = false
+                closeSoon = true
+            }
+            // Out of sight whatever happened: a window put on screen for a check
+            // should not be left sitting there afterwards.
             runCatching { hide() }
         }
     }
@@ -427,6 +445,17 @@ object SystemBrowser {
 
     /** Bring the window on screen, for a check that wants a person. */
     suspend fun show() {
+        // A browser on the app's own screen cannot be shown to anybody: that
+        // screen has no monitor behind it. It is started again on the reader's,
+        // where the profile it comes back with is the same one, so whatever the
+        // check has already granted comes with it.
+        if (onOwnScreen) {
+            Log.i(TAG, "this check wants the reader: moving the browser to their screen")
+            needsTheirScreen = true
+            stop()
+            VirtualDisplay.stop()
+            if (!start()) return
+        }
         // Where the compositor holds the window, it is also what brings it back.
         if (Compositor.reveal()) {
             call("Page.bringToFront", buildJsonObject {}, pageSession)
@@ -455,17 +484,45 @@ object SystemBrowser {
     }
 
     /**
-     * Put the window away again. It is minimised rather than moved out of sight:
-     * where a window is placed is a request a desktop may refuse, and on a
-     * Wayland one it always does, which left the browser sitting on screen for
-     * the rest of the session. Minimising is honoured everywhere, and the page
-     * inside keeps running, because the browser was started with the settings
-     * that stop it being throttled when nobody is looking.
+     * Put the window away again.
+     *
+     * Out of sight, not minimised, wherever the desktop allows it. A minimised
+     * window is one the browser stops painting, and a page that isn't painted is
+     * one a check never finishes in: it waits, gives up and starts again, which
+     * is what a check that loops for ever looks like from outside. Moved off the
+     * side of the screen it is still a window, still drawn, still passing checks
+     * by itself, and nobody can see it.
+     *
+     * Where a window is placed is a request a desktop may refuse, and on a
+     * Wayland one it always does. So the placement is read back, and only if it
+     * didn't take does the window fall back to being minimised.
      */
     suspend fun hide() {
         if (keepVisible) return
+        // On its own screen there is nothing to hide from.
+        if (onOwnScreen) return
         if (Compositor.conceal()) return
         val id = windowId ?: return
+        call(
+            "Browser.setWindowBounds",
+            buildJsonObject {
+                put("windowId", id)
+                putJsonObject("bounds") {
+                    put("windowState", "normal")
+                    put("left", PARKED); put("top", PARKED)
+                    put("width", 1100); put("height", 860)
+                }
+            },
+            browserSession,
+        )
+        val where = call(
+            "Browser.getWindowBounds",
+            buildJsonObject { put("windowId", id) },
+            browserSession,
+        )?.get("bounds")?.jsonObject
+        val left = where?.get("left")?.jsonPrimitive?.int
+        if (left != null && left <= PARKED / 2) return
+        Log.i(TAG, "this desktop won't park a window off-screen; minimising instead")
         call(
             "Browser.setWindowBounds",
             buildJsonObject {
@@ -497,9 +554,10 @@ object SystemBrowser {
         if (idleWatch?.isAlive == true) return
         idleWatch = Thread {
             while (true) {
-                Thread.sleep(20_000)
+                Thread.sleep(5_000)
                 if (socket == null && process == null) break
-                if (System.currentTimeMillis() - lastUsed < IDLE_MS) continue
+                val idle = if (closeSoon) SEEN_IDLE_MS else IDLE_MS
+                if (System.currentTimeMillis() - lastUsed < idle) continue
                 Log.i(TAG, "nothing has needed the browser for a while; closing it")
                 stop()
                 break
@@ -507,8 +565,11 @@ object SystemBrowser {
         }.apply { isDaemon = true; name = "browser-idle"; start() }
     }
 
-    /** Close the browser when the app closes. */
-    fun dispose() = stop()
+    /** Close the browser when the app closes, and the screen it was using. */
+    fun dispose() {
+        stop()
+        VirtualDisplay.stop()
+    }
 
     init {
         // Whatever takes the app down, the browser goes with it: a window closed,
@@ -580,13 +641,19 @@ object SystemBrowser {
         // belongs, and the graphics card is still behind it either way.
         val wayland = !System.getenv("WAYLAND_DISPLAY").isNullOrBlank() ||
             System.getenv("XDG_SESSION_TYPE").equals("wayland", ignoreCase = true)
+        // A screen of the app's own, where the browser can have the window a
+        // check insists on without the reader ever seeing it. Only for the app's
+        // own errands: a check the reader has to answer needs their screen.
+        val ownScreen = if (keepVisible || headless || needsTheirScreen) null else VirtualDisplay.ensure()
+        onOwnScreen = ownScreen != null
         val command = listOfNotNull(
             bin.path,
             if (headless) "--headless=new" else null,
             // A name of its own, so a desktop can be told where to put this
             // window without that rule catching the reader's own browsing.
             "--class=$WINDOW_CLASS",
-            if (wayland) "--ozone-platform=x11" else null,
+            // On its own screen it is X, whatever the reader's desktop is.
+            if (wayland || ownScreen != null) "--ozone-platform=x11" else null,
             "--user-data-dir=${profile.absolutePath}",
             "--remote-debugging-port=0",
             "--no-first-run",
@@ -599,7 +666,13 @@ object SystemBrowser {
             "--hide-crash-restore-bubble",
             // The window is parked off-screen, and a parked window must keep
             // running at full speed: a check that is throttled never finishes.
-            if (keepVisible) "--window-position=120,90" else "--window-position=$OFFSCREEN,$OFFSCREEN",
+            when {
+                // Its own screen has nothing else on it: the window sits in the
+                // corner of it, whole and drawn, which is what a check wants.
+                ownScreen != null -> "--window-position=0,0"
+                keepVisible -> "--window-position=120,90"
+                else -> "--window-position=$OFFSCREEN,$OFFSCREEN"
+            },
             "--window-size=1100,860",
             "--disable-background-timer-throttling",
             "--disable-backgrounding-occluded-windows",
@@ -628,6 +701,7 @@ object SystemBrowser {
             "about:blank",
         )
         process = ProcessBuilder(command)
+            .apply { ownScreen?.let { environment()["DISPLAY"] = it } }
             .redirectOutput(ProcessBuilder.Redirect.DISCARD)
             .redirectError(ProcessBuilder.Redirect.DISCARD)
             .start()
@@ -683,7 +757,9 @@ object SystemBrowser {
         val opened = openTab()
         // Only a browser the app started is moved aside: an adopted one has the
         // reader's own windows in it, and those are theirs to place.
-        process?.pid()?.let { Compositor.keepAside(it) }
+        // Nor one on a screen of its own: that window is already where nobody
+        // can see it, and the reader's compositor knows nothing about it.
+        if (!onOwnScreen) process?.pid()?.let { Compositor.keepAside(it) }
         opened
     }
 
@@ -865,6 +941,8 @@ object SystemBrowser {
         targetId = null
         windowId = null
         adopted = false
+        onOwnScreen = false
+        closeSoon = false
         pending.clear()
     }
 
@@ -935,6 +1013,11 @@ object SystemBrowser {
 
     private const val OFFSCREEN = -2400
 
+    /** Where a window goes to be out of sight while it keeps working. Far enough
+     *  out that no arrangement of monitors reaches it, including one placed left
+     *  of the main screen, which is ordinary and lives at negative coordinates. */
+    private const val PARKED = -32000
+
     /** What the browser's window calls itself, for a desktop's own rules. */
     private const val WINDOW_CLASS = "NovelScraperCheck"
 
@@ -955,6 +1038,9 @@ object SystemBrowser {
      * seconds against a page that was going to take that anyway.
      */
     private const val IDLE_MS = 60_000L
+
+    /** The same, for a browser the reader has just had on their screen. */
+    private const val SEEN_IDLE_MS = 10_000L
 
     /** How long a check gets before it is asked again, and how many times. */
     private const val RETRY_MS = 8_000L
