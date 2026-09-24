@@ -36,7 +36,12 @@ actual suspend fun installUpdate(file: File): Boolean = withContext(Dispatchers.
             // being made to click through it every time is not an update, it is
             // an errand. So a detached command waits for this process to be gone,
             // installs without asking anything, and starts the new app.
-            val installed = File(System.getenv("LOCALAPPDATA") ?: ".", "NovelScraper\\NovelScraper.exe")
+            // The launcher this app was started from, which the installer puts
+            // back in the same place, wherever the reader chose to install it.
+            val installed = File(
+                System.getProperty("jpackage.app-path")?.takeIf { it.isNotBlank() }
+                    ?: File(System.getenv("LOCALAPPDATA") ?: ".", "NovelScraper\\NovelScraper.exe").path,
+            )
             val script = buildString {
                 append("timeout /t 3 /nobreak >nul & ")
                 append("\"").append(file.absolutePath).append("\" /quiet /norestart")

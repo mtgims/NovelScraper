@@ -97,6 +97,14 @@ fun main() {
     // scrapes go through this computer's connection, check for due updates and
     // bring in the server's library (when signed in).
     Account.onForeground()
+    if (DesktopDirs.installedInsideData) {
+        com.novelscraper.app.platform.Log.w("Main", "installed inside the data folder ${DesktopDirs.data}")
+        com.novelscraper.app.platform.showToast(
+            "NovelScraper is installed inside its own data folder, so updating or uninstalling it " +
+                "deletes your library. Reinstall it somewhere else.",
+            long = true,
+        )
+    }
     // Media keys and the desktop's media widget drive narration (MPRIS).
     MprisPlayer.start(onQuit = { shutdown(); kotlin.system.exitProcess(0) })
 
