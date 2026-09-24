@@ -182,6 +182,9 @@ private fun NarrationEngine() {
         EngineChip("Kokoro", engine == ReaderPrefs.ENGINE_KOKORO) {
             ReaderPrefs.setTtsEngine(ReaderPrefs.ENGINE_KOKORO)
         }
+        EngineChip("Supertonic", engine == ReaderPrefs.ENGINE_SUPERTONIC) {
+            ReaderPrefs.setTtsEngine(ReaderPrefs.ENGINE_SUPERTONIC)
+        }
         EngineChip("Piper", engine == ReaderPrefs.ENGINE_PIPER) {
             ReaderPrefs.setTtsEngine(ReaderPrefs.ENGINE_PIPER)
         }
@@ -189,6 +192,7 @@ private fun NarrationEngine() {
 
     when (engine) {
         ReaderPrefs.ENGINE_KOKORO -> NeuralModel(ReaderPrefs.ENGINE_KOKORO)
+        ReaderPrefs.ENGINE_SUPERTONIC -> NeuralModel(ReaderPrefs.ENGINE_SUPERTONIC)
         ReaderPrefs.ENGINE_PIPER -> PiperVoiceList()
     }
 }
@@ -283,18 +287,24 @@ private fun PiperVoiceList() {
 private fun NeuralModel(engine: String) {
     val scope = rememberCoroutineScope()
     val speaker by ReaderPrefs.kokoroSpeaker.collectAsState()
+    val supertonicSpeaker by ReaderPrefs.supertonicSpeaker.collectAsState()
 
     var installed by remember(engine) { mutableStateOf(TtsModels.isModelReady(engine)) }
     var progress by remember(engine) { mutableStateOf<KokoroDownloader.Progress?>(null) }
     val downloading = progress is KokoroDownloader.Progress.Downloading ||
         progress is KokoroDownloader.Progress.Extracting
 
-    val blurb = if (engine == ReaderPrefs.ENGINE_KOKORO)
-        (if (isDesktop) "~335 MB · multilingual, most natural (English, Spanish, French, Chinese, Japanese…), " +
-            "at full precision. About real time."
-        else "~125 MB · multilingual, most natural (English, Spanish, French, Chinese, Japanese…). ~1× real time.")
-    else
-        "~65 MB · fast English voice (Amy) — several times real time, no buffering; less expressive than Kokoro."
+    val blurb = when (engine) {
+        ReaderPrefs.ENGINE_KOKORO ->
+            if (isDesktop) "~335 MB · multilingual, most natural (English, Spanish, French, Chinese, Japanese…), " +
+                "at full precision. About real time."
+            else "~125 MB · multilingual, most natural (English, Spanish, French, Chinese, Japanese…). ~1× real time."
+        ReaderPrefs.ENGINE_SUPERTONIC ->
+            "~122 MB · ten voices, nearly as natural as Kokoro and several times faster, light on the " +
+                "processor: made for phones. Reads English for now."
+        else ->
+            "~65 MB · fast English voice (Amy) — several times real time, no buffering; less expressive than Kokoro."
+    }
 
     when {
         downloading -> {
@@ -321,6 +331,10 @@ private fun NeuralModel(engine: String) {
                 modifier = Modifier.padding(top = 12.dp))
             if (engine == ReaderPrefs.ENGINE_KOKORO) {
                 KokoroVoicePicker(currentId = speaker) { ReaderPrefs.setKokoroSpeaker(it) }
+            } else if (engine == ReaderPrefs.ENGINE_SUPERTONIC) {
+                com.novelscraper.app.ui.components.SupertonicVoicePicker(currentId = supertonicSpeaker) {
+                    ReaderPrefs.setSupertonicSpeaker(it)
+                }
             } else {
                 Text("Voice · Amy (US English)", style = MaterialTheme.typography.bodyMedium,
                     modifier = Modifier.padding(top = 8.dp))

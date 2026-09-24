@@ -24,6 +24,21 @@ object ReaderPrefs {
     const val ENGINE_DEVICE = "device"
     const val ENGINE_KOKORO = "kokoro"
     const val ENGINE_PIPER = "piper"
+    const val ENGINE_SUPERTONIC = "supertonic"
+
+    /** The on-device model [engine] narrates with. */
+    fun modelFor(engine: String): String = when (engine) {
+        ENGINE_KOKORO -> com.novelscraper.app.tts.TtsModels.KOKORO
+        ENGINE_SUPERTONIC -> com.novelscraper.app.tts.TtsModels.SUPERTONIC
+        else -> piperVoice.value
+    }
+
+    /** The speaker [engine] narrates with: Piper voices have one each. */
+    fun speakerFor(engine: String): Int = when (engine) {
+        ENGINE_KOKORO -> kokoroSpeaker.value
+        ENGINE_SUPERTONIC -> supertonicSpeaker.value
+        else -> 0
+    }
 
     private lateinit var prefs: KeyValueStore
     private val json = Json { ignoreUnknownKeys = true; encodeDefaults = true }
@@ -46,6 +61,10 @@ object ReaderPrefs {
     // Kokoro speaker id (index into the model's voice table).
     private val _kokoroSpeaker = MutableStateFlow(0)
     val kokoroSpeaker: StateFlow<Int> = _kokoroSpeaker.asStateFlow()
+
+    // Supertonic speaker id (0-4 the female voices, 5-9 the male ones).
+    private val _supertonicSpeaker = MutableStateFlow(0)
+    val supertonicSpeaker: StateFlow<Int> = _supertonicSpeaker.asStateFlow()
 
     // Selected Piper voice model id (e.g. "en_US-amy-medium").
     private val _piperVoice = MutableStateFlow("en_US-amy-medium")
@@ -74,6 +93,7 @@ object ReaderPrefs {
         _ttsVoice.value = prefs.getString("tts_voice", "") ?: ""
         _ttsEngine.value = normalizeEngine(prefs.getString("tts_engine", ENGINE_DEVICE) ?: ENGINE_DEVICE)
         _kokoroSpeaker.value = prefs.getInt("kokoro_speaker", 0)
+        _supertonicSpeaker.value = prefs.getInt("supertonic_speaker", 0)
         _piperVoice.value = prefs.getString("piper_voice", "en_US-amy-medium") ?: "en_US-amy-medium"
         _ttsAutoNext.value = prefs.getBoolean("tts_auto_next", true)
         _ttsSkipJunk.value = prefs.getBoolean("tts_skip_junk", true)
@@ -124,6 +144,7 @@ object ReaderPrefs {
     private fun normalizeEngine(engine: String): String = when (engine) {
         ENGINE_KOKORO -> ENGINE_KOKORO
         ENGINE_PIPER -> ENGINE_PIPER
+        ENGINE_SUPERTONIC -> ENGINE_SUPERTONIC
         else -> if (hasSystemTts) ENGINE_DEVICE else ENGINE_PIPER
     }
 
@@ -131,6 +152,12 @@ object ReaderPrefs {
         val v = id.coerceAtLeast(0)
         _kokoroSpeaker.value = v
         prefs.putInt("kokoro_speaker", v)
+    }
+
+    fun setSupertonicSpeaker(id: Int) {
+        val v = id.coerceAtLeast(0)
+        _supertonicSpeaker.value = v
+        prefs.putInt("supertonic_speaker", v)
     }
 
     fun setTtsRate(v: Float) {

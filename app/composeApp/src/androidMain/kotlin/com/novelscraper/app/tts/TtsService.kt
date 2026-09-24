@@ -153,7 +153,7 @@ class TtsService : LifecycleService() {
                 // The neural voices, unless one isn't downloaded: then the device's
                 // own engine takes over.
                 val sel = ReaderPrefs.ttsEngine.value
-                val modelId = if (sel == ReaderPrefs.ENGINE_PIPER) ReaderPrefs.piperVoice.value else TtsModels.KOKORO
+                val modelId = ReaderPrefs.modelFor(sel)
                 neural = sel != ReaderPrefs.ENGINE_DEVICE && TtsModels.isModelReady(modelId)
                 if (neural) {
                     requestFocus()

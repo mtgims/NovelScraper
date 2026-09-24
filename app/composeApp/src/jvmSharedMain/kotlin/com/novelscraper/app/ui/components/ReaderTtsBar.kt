@@ -184,6 +184,7 @@ private fun SettingsPanel() {
     val engine by ReaderPrefs.ttsEngine.collectAsState()
     val autoNext by ReaderPrefs.ttsAutoNext.collectAsState()
     val kokoroSpeaker by ReaderPrefs.kokoroSpeaker.collectAsState()
+    val supertonicSpeaker by ReaderPrefs.supertonicSpeaker.collectAsState()
     val piperVoice by ReaderPrefs.piperVoice.collectAsState()
 
     Column(Modifier.fillMaxWidth().padding(horizontal = 6.dp, vertical = 4.dp)) {
@@ -201,6 +202,11 @@ private fun SettingsPanel() {
             ReaderPrefs.ENGINE_KOKORO ->
                 KokoroVoicePicker(currentId = kokoroSpeaker) { id ->
                     ReaderPrefs.setKokoroSpeaker(id)
+                    TtsController.applySettings()
+                }
+            ReaderPrefs.ENGINE_SUPERTONIC ->
+                SupertonicVoicePicker(currentId = supertonicSpeaker) { id ->
+                    ReaderPrefs.setSupertonicSpeaker(id)
                     TtsController.applySettings()
                 }
             ReaderPrefs.ENGINE_PIPER ->

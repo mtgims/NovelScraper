@@ -74,3 +74,43 @@ fun KokoroVoicePicker(currentId: Int, onPick: (Int) -> Unit) {
         }
     }
 }
+
+/** Supertonic's ten voices, the same dropdown as Kokoro's. */
+@Composable
+fun SupertonicVoicePicker(currentId: Int, onPick: (Int) -> Unit) {
+    var open by remember { mutableStateOf(false) }
+    val voices = com.novelscraper.app.tts.TtsModels.SUPERTONIC_VOICES
+
+    Box {
+        Row(
+            Modifier.fillMaxWidth().clickable { open = true }.padding(vertical = 8.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Text("Voice", style = MaterialTheme.typography.labelMedium,
+                color = MaterialTheme.colorScheme.onSurfaceVariant)
+            Text(
+                voices.getOrElse(currentId) { voices.first() },
+                style = MaterialTheme.typography.bodyMedium,
+                modifier = Modifier.weight(1f).padding(start = 10.dp),
+            )
+            Icon(Icons.Filled.ArrowDropDown, contentDescription = null,
+                tint = MaterialTheme.colorScheme.onSurfaceVariant)
+        }
+        DropdownMenu(
+            expanded = open,
+            onDismissRequest = { open = false },
+            modifier = Modifier.heightIn(max = 420.dp),
+        ) {
+            voices.forEachIndexed { id, name ->
+                DropdownMenuItem(
+                    text = { Text(name) },
+                    onClick = { onPick(id); open = false },
+                    trailingIcon = if (id == currentId) {
+                        { Icon(Icons.Filled.Check, contentDescription = null,
+                            tint = MaterialTheme.colorScheme.primary) }
+                    } else null,
+                )
+            }
+        }
+    }
+}

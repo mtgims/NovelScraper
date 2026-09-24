@@ -34,7 +34,7 @@ import kotlinx.coroutines.withContext
 @Composable
 fun GpuAccelerationSetting() {
     val engine by ReaderPrefs.ttsEngine.collectAsState()
-    if (engine != ReaderPrefs.ENGINE_KOKORO && engine != ReaderPrefs.ENGINE_PIPER) return
+    if (engine == ReaderPrefs.ENGINE_DEVICE) return
 
     // Asking the driver runs a program, so not on the UI's thread.
     val support by produceState<GpuVoice.Support?>(null) {

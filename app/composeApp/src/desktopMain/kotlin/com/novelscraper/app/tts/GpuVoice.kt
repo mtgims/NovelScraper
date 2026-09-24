@@ -239,8 +239,9 @@ object GpuVoice {
      *  answer is there before Listen is pressed. */
     fun testCurrentVoice() {
         if (!installed) return
-        val id = if (com.novelscraper.app.data.ReaderPrefs.ttsEngine.value == com.novelscraper.app.data.ReaderPrefs.ENGINE_PIPER)
-            com.novelscraper.app.data.ReaderPrefs.piperVoice.value else TtsModels.KOKORO
+        val engine = com.novelscraper.app.data.ReaderPrefs.ttsEngine.value
+        if (engine == com.novelscraper.app.data.ReaderPrefs.ENGINE_DEVICE) return
+        val id = com.novelscraper.app.data.ReaderPrefs.modelFor(engine)
         if (!TtsModels.isModelReady(id)) return
         probeInBackground(TtsModels.spec(id), TtsModels.modelDir(id).absolutePath)
     }

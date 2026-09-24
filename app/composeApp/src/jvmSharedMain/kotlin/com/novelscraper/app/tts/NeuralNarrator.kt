@@ -283,13 +283,12 @@ class NeuralNarrator(
         return loaded
     }
 
-    private fun modelId() =
-        if (ReaderPrefs.ttsEngine.value == ReaderPrefs.ENGINE_KOKORO) TtsModels.KOKORO else ReaderPrefs.piperVoice.value
+    private fun modelId() = ReaderPrefs.modelFor(ReaderPrefs.ttsEngine.value)
 
     private fun speaker(): Int {
         engine = ReaderPrefs.ttsEngine.value
-        // Piper voices are single-speaker; Kokoro uses the picked speaker id.
-        return if (engine == ReaderPrefs.ENGINE_KOKORO) ReaderPrefs.kokoroSpeaker.value else 0
+        // Piper voices are single-speaker; Kokoro and Supertonic use the picked id.
+        return ReaderPrefs.speakerFor(engine)
     }
 
     private fun speed() = ReaderPrefs.ttsRate.value.coerceIn(0.5f, 2.5f)

@@ -5,6 +5,8 @@ import com.k2fsa.sherpa.onnx.OfflineTtsConfig
 import com.k2fsa.sherpa.onnx.OfflineTtsKokoroModelConfig
 import com.k2fsa.sherpa.onnx.OfflineTtsModelConfig
 import com.k2fsa.sherpa.onnx.OfflineTtsVitsModelConfig
+import com.k2fsa.sherpa.onnx.OfflineTtsSupertonicModelConfig
+import com.k2fsa.sherpa.onnx.GenerationConfig
 
 /**
  * Cap synthesis threads at 4. On big.LITTLE phones an ONNX op finishes only
@@ -15,12 +17,23 @@ actual fun defaultTtsThreads(): Int = Runtime.getRuntime().availableProcessors()
 
 // sherpa-onnx's Android binding (the bundled .aar): mutable config classes.
 actual fun buildOfflineTts(spec: TtsModels.Spec, dir: String, threads: Int): TtsModel {
+    val supertonic = spec.kind == "supertonic"
     val modelConfig = OfflineTtsModelConfig().apply {
         if (spec.kind == "vits") {
             this.vits = OfflineTtsVitsModelConfig().apply {
                 model = "$dir/${spec.onnx}"
                 tokens = "$dir/tokens.txt"
                 dataDir = "$dir/espeak-ng-data"
+            }
+        } else if (supertonic) {
+            this.supertonic = OfflineTtsSupertonicModelConfig().apply {
+                durationPredictor = "$dir/duration_predictor.int8.onnx"
+                textEncoder = "$dir/text_encoder.int8.onnx"
+                vectorEstimator = "$dir/vector_estimator.int8.onnx"
+                vocoder = "$dir/vocoder.int8.onnx"
+                ttsJson = "$dir/tts.json"
+                unicodeIndexer = "$dir/unicode_indexer.bin"
+                voiceStyle = "$dir/voice.bin"
             }
         } else {
             this.kokoro = OfflineTtsKokoroModelConfig().apply {
@@ -32,7 +45,9 @@ actual fun buildOfflineTts(spec: TtsModels.Spec, dir: String, threads: Int): Tts
                 lang = "en"
             }
         }
-        this.numThreads = threads
+        // Supertonic gains nothing past two threads (measured on a desktop:
+        // the same speed for twice the processor at four).
+        this.numThreads = if (supertonic) threads.coerceAtMost(2) else threads
         provider = "cpu"
         debug = false
     }
@@ -40,7 +55,15 @@ actual fun buildOfflineTts(spec: TtsModels.Spec, dir: String, threads: Int): Tts
     return object : TtsModel {
         override val sampleRate = tts.sampleRate()
         override val numSpeakers = tts.numSpeakers()
-        override fun generate(text: String, speaker: Int, speed: Float) = tts.generate(text, speaker, speed).samples
+        override fun generate(text: String, speaker: Int, speed: Float): FloatArray =
+            if (supertonic) {
+                // Five denoising steps (two sound robotic), and English until
+                // the reader can pick a language.
+                val config = GenerationConfig(sid = speaker, speed = speed, numSteps = 5, extra = mapOf("lang" to "en"))
+                tts.generateWithConfig(text, config).samples
+            } else {
+                tts.generate(text, speaker, speed).samples
+            }
         override fun release() = tts.release()
     }
 }

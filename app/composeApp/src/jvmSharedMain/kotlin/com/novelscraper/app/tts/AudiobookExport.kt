@@ -104,11 +104,9 @@ object AudiobookExport {
 
     fun clearError() { _state.value = _state.value.copy(error = null) }
 
-    private fun modelId() =
-        if (ReaderPrefs.ttsEngine.value == ReaderPrefs.ENGINE_KOKORO) TtsModels.KOKORO else ReaderPrefs.piperVoice.value
+    private fun modelId() = ReaderPrefs.modelFor(ReaderPrefs.ttsEngine.value)
 
-    private fun speaker() =
-        if (ReaderPrefs.ttsEngine.value == ReaderPrefs.ENGINE_KOKORO) ReaderPrefs.kokoroSpeaker.value else 0
+    private fun speaker() = ReaderPrefs.speakerFor(ReaderPrefs.ttsEngine.value)
 
     /** "The Novel - 012 Chapter title.wav", safe on every file system. */
     internal fun fileName(bookTitle: String, position: Int, chapterTitle: String): String {
