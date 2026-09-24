@@ -13,6 +13,10 @@ since moved to a repository of their own; this one holds the apps.
 
 ## 2026-09-24
 
+- **A Windows app (0.41.0).** The same codebase, as a per-user installer, with
+  the platform-specific parts (browser discovery, the speech library, media keys,
+  how an update installs) told apart properly. Built on a Windows runner, since
+  the packaging tool cannot cross-compile.
 - **The apps update themselves (0.40.0).** They read the releases page, offer
   the new version, and install it: the system installer on Android, an AppImage
   swap and restart on Linux.

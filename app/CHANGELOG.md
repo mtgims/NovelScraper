@@ -3,6 +3,18 @@
 Newest first.
 
 
+## 0.41.0, 2026-09-24 · `versionCode 83`
+- **A Windows app.** The same code, packaged as a per-user installer that needs
+  no administrator and puts NovelScraper in the start menu. What differed by
+  platform is now told apart properly: browsers are looked for under Program
+  Files rather than on a PATH that never has them, the Chrome the app fetches
+  for machines without one comes in its Windows build, narration uses the
+  Windows speech library, the media keys stay a Linux affair, and updating runs
+  the downloaded installer instead of swapping an AppImage.
+- Both desktop packages are now built by a workflow, each on the system it
+  needs, because the tool that makes them wraps the running platform's own
+  runtime and cannot cross-compile.
+
 ## 0.40.0, 2026-09-24 · `versionCode 82`
 - **The app updates itself.** It asks the releases page what the newest version
   is, quietly at startup and on demand under Settings, and offers to fetch it.
