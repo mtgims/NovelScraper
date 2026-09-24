@@ -3,6 +3,21 @@
 Newest first.
 
 
+## 0.43.0, 2026-09-24 · `versionCode 90`
+- **Updates on Windows no longer delete the app's data.** The installer puts
+  the program in `%LOCALAPPDATA%\NovelScraper` and removes that folder whole
+  before installing a new version, and the library, the installed sources, the
+  downloaded voices and the browser's profile were kept in the same folder.
+  They now live in `%LOCALAPPDATA%\NovelScraper Data`, which no installer
+  touches; settings stay in `%APPDATA%\NovelScraper`. The update to this
+  version still runs the old version's installer, so it clears the old folder
+  one last time: a library kept on the server comes back by itself, and
+  sources and voices have to be installed again.
+- **Narration on the desktop takes half the processor.** Kokoro is no faster
+  past about four threads, and it had been given up to eight, each extra one
+  burning processor while it waited: on an i7-8750H, the same speed for 1.9
+  CPU-seconds per second of audio instead of 4.2.
+
 ## 0.42.1, 2026-09-24 · `versionCode 89`
 - **Unused code removed.** Two calls to the server that nothing made any more,
   with their request bodies, and a handful of members no screen read. Nothing

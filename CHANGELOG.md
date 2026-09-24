@@ -13,6 +13,10 @@ since moved to a repository of their own; this one holds the apps.
 
 ## 2026-09-24
 
+- **Windows: updates stop deleting the library, and narration costs half
+  the processor (0.43.0).** The app's data moves out of the folder the
+  installer replaces on every update; Kokoro runs on four threads at most.
+
 - **Unused code removed (0.42.1).** Found in an audit of startup, memory and
   package size; no behaviour changes.
 
