@@ -15,13 +15,17 @@ on:
         description: "Attach the pack to this existing release tag (empty: artifact only)"
         required: false
         default: ""
+      ort_directml:
+        description: "ONNX Runtime DirectML version"
+        required: false
+        default: "1.24.4"
 
 permissions:
   contents: write
 
 env:
   SHERPA_ONNX: v1.13.8
-  ORT_DIRECTML: 1.24.4
+  ORT_DIRECTML: ${{ inputs.ort_directml || '1.24.4' }}
   DIRECTML: 1.15.4
 
 jobs:
@@ -90,13 +94,14 @@ jobs:
           mkdir pack
           cp build/install/lib/*.dll pack/ 2>/dev/null || true
           cp build/install/bin/*.dll pack/ 2>/dev/null || true
+          rm -f pack/DirectML.Debug.dll
           ls -la pack
           cd pack && 7z a -tzip ../sherpa-onnx-${SHERPA_ONNX}-directml-ort${ORT_DIRECTML}-win-x64.zip *.dll
           cd .. && sha256sum sherpa-onnx-*-directml-*.zip
 
       - uses: actions/upload-artifact@v4
         with:
-          name: directml-pack
+          name: directml-pack-${{ env.ORT_DIRECTML }}
           path: sherpa-onnx-*-directml-*.zip
 
       - name: Attach to the release
