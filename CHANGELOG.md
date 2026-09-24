@@ -13,6 +13,9 @@ since moved to a repository of their own; this one holds the apps.
 
 ## 2026-09-24
 
+- **Windows: the app's own title bar, and its own name (0.41.2).** The window is
+  undecorated and the bar is drawn in the app's theme; the program calls itself
+  NovelScraper rather than its own description.
 - **A Windows app (0.41.0).** The same codebase, as a per-user installer, with
   the platform-specific parts (browser discovery, the speech library, media keys,
   how an update installs) told apart properly. Built on a Windows runner, since

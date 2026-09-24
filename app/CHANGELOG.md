@@ -3,6 +3,16 @@
 Newest first.
 
 
+## 0.41.2, 2026-09-24 · `versionCode 85`
+- **The window wears the app's own title bar on Windows**, in whichever theme is
+  chosen, with the minimise, maximise and close buttons where Windows puts them,
+  dragging where a title bar drags and a double-click to maximise. The system's
+  own white bar above a dark app is gone. `NOVELSCRAPER_TITLEBAR=1` turns the
+  same bar on elsewhere.
+- **It is called NovelScraper.** A task manager listed it as "read and listen to
+  web novels", which was the description sitting where a program's name belongs,
+  and it installed itself into a folder named in lower case.
+
 ## 0.41.1, 2026-09-24 · `versionCode 84`
 - **The Windows installer no longer carries Linux libraries.** It shipped JOGL's
   Linux native libraries, which Windows cannot load and never needs, since the

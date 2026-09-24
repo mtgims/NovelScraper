@@ -14,6 +14,9 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.window.Window
 import androidx.compose.ui.window.WindowPlacement
 import androidx.compose.ui.window.WindowPosition
+import com.novelscraper.app.platform.Os
+import com.novelscraper.app.ui.components.TitleBar
+import androidx.compose.runtime.Composable
 import androidx.compose.ui.window.WindowState
 import androidx.compose.ui.window.application
 import coil3.SingletonImageLoader
@@ -112,23 +115,49 @@ fun main() {
             state = state,
             title = "NovelScraper",
             icon = icon,
+            // Windows draws its own bar, in its own colours, above an app that has
+            // chosen its own: the app draws that bar itself instead. Elsewhere the
+            // desktop decides, which on a tiling one means no bar at all.
+            undecorated = drawsOwnTitleBar,
+            resizable = true,
         ) {
             window.minimumSize = java.awt.Dimension(420, 560)
             CompositionLocalProvider(LocalAppWindow provides window) {
-                AppContent()
+                AppContent(
+                    titleBar = if (drawsOwnTitleBar) {
+                        { TitleBar(state) { window.dispatchEvent(
+                            java.awt.event.WindowEvent(window, java.awt.event.WindowEvent.WINDOW_CLOSING),
+                        ) } }
+                    } else null,
+                )
             }
         }
     }
 }
 
+/**
+ * Whether the app draws its own title bar rather than letting the desktop draw
+ * one. Windows always does: its bar comes in its own colours and sits above an
+ * app in whichever colours the reader chose. A Linux desktop decides for itself,
+ * and a tiling one draws nothing at all, so there it is off unless asked for
+ * with NOVELSCRAPER_TITLEBAR=1.
+ */
+private val drawsOwnTitleBar: Boolean =
+    Os.isWindows || System.getenv("NOVELSCRAPER_TITLEBAR") == "1"
+
 /** The app inside the window (also what the UI tests render). */
 @androidx.compose.runtime.Composable
-fun AppContent() {
+fun AppContent(titleBar: (@Composable () -> Unit)? = null) {
     NovelScraperTheme {
         Surface(modifier = Modifier.fillMaxSize()) {
+            // The title bar, where the app draws its own, is inside the theme, so
+            // it is the same surface and the same colours as the sidebar under it.
+            androidx.compose.foundation.layout.Column(Modifier.fillMaxSize()) {
+            titleBar?.invoke()
             Box(Modifier.fillMaxSize()) {
                 AppRoot()
                 ToastHost(Modifier.padding(bottom = 96.dp))
+            }
             }
         }
     }

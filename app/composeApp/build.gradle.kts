@@ -289,9 +289,15 @@ compose.desktop {
             // java.sql is the JDBC API the library database's SQLite driver needs.
             modules("java.instrument", "java.management", "java.sql", "jdk.security.auth", "jdk.unsupported")
             targetFormats(org.jetbrains.compose.desktop.application.dsl.TargetFormat.Exe)
-            packageName = "novelscraper"
+            // The name Windows shows: the install folder, the start-menu entry and
+            // the shortcut all take it. Linux keeps the lowercase one, because the
+            // AppImage's launcher is bin/novelscraper and its AppRun names it.
+            packageName = if (buildingOnWindows) "NovelScraper" else "novelscraper"
             packageVersion = appVersionName
-            description = "Read and listen to web novels"
+            // This becomes the program's file description, which is the name a
+            // task manager lists it under, so it is the app's name and not a
+            // sentence about what the app does.
+            description = "NovelScraper"
             vendor = "mtgims"
             linux {
                 iconFile.set(project.file("src/desktopMain/resources/icon.png"))
