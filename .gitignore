@@ -7,3 +7,4 @@ node_modules/
 /CHAT-HANDOFF-WINDOWS.md
 /hs_err_pid*.log
 /core.*
+/backend/
