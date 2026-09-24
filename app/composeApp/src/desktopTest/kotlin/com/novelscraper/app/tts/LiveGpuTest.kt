@@ -40,8 +40,28 @@ class LiveGpuTest {
             if (!TtsModels.isModelReady(TtsModels.KOKORO)) java.io.File(from).copyRecursively(to, overwrite = true)
         }
         assertTrue(TtsModels.isModelReady(TtsModels.KOKORO), "no Kokoro model (pass -PliveGpuModel)")
+        val spec = TtsModels.spec(TtsModels.KOKORO)
+        val dir = TtsModels.modelDir(TtsModels.KOKORO).absolutePath
+
+        // While the cards are being tried, narration must neither wait for it
+        // nor keep anything else waiting: 0.45.0 tried them inside the engine's
+        // lock, and closing the window then froze the app.
+        GpuVoice.setEnabled(true)   // as the Settings switch does, which starts the test
+        GpuVoice.probeInBackground(spec, dir)
+        var since = System.nanoTime()
         assertTrue(KokoroEngine.ensureLoaded(TtsModels.KOKORO), "the model wouldn't load")
-        println("on the card: ${GpuVoice.active}, problem: ${GpuVoice.problem}")
+        val loadMs = (System.nanoTime() - since) / 1_000_000
+        since = System.nanoTime()
+        KokoroEngine.release()
+        val releaseMs = (System.nanoTime() - since) / 1_000_000
+        println("while testing: load ${loadMs}ms on the card=${GpuVoice.onCard}, release ${releaseMs}ms")
+        assertTrue(releaseMs < 5_000, "releasing narration waited on the test")
+
+        val deadline = System.currentTimeMillis() + 400_000
+        while (GpuVoice.probeResult(spec, dir) == null && System.currentTimeMillis() < deadline) Thread.sleep(1_000)
+        println("tested: ${GpuVoice.probeResult(spec, dir)}")
+        assertTrue(KokoroEngine.ensureLoaded(TtsModels.KOKORO), "the model wouldn't load")
+        println("on the card: ${GpuVoice.onCard}, problem: ${GpuVoice.problem}")
 
         val text = "The lamps were lit early that evening, and the rain had not let up since noon."
         KokoroEngine.generate(text, 0, 1.0f)   // the first one warms the card up
@@ -51,7 +71,7 @@ class LiveGpuTest {
         val ms = (System.nanoTime() - t0) / 1_000_000
         println("audio ${"%.2f".format(seconds)}s in ${ms}ms (RTF ${"%.2f".format(ms / 1000.0 / seconds)})")
         KokoroEngine.release()
-        assertTrue(GpuVoice.active, "narration didn't run on the card")
+        assertTrue(GpuVoice.onCard, "narration didn't run on the card")
         assertTrue(seconds > 1.0, "nothing came out")
     }
 }

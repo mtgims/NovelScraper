@@ -21,15 +21,24 @@ actual fun defaultTtsThreads(): Int = (Runtime.getRuntime().availableProcessors(
 // OS, which it loads its JNI library from): builder-style config classes.
 actual fun buildOfflineTts(spec: TtsModels.Spec, dir: String, threads: Int): TtsModel {
     // On the graphics card when the reader has the pack, it loads, and this
-    // voice has been heard to work through it (GpuVoice.probe); the processor
-    // otherwise. One thread is all the card needs: the rest would only wait.
-    if (GpuVoice.prepare() && GpuVoice.probe(spec, dir)) {
+    // voice has been heard to work through it; the processor otherwise. A
+    // voice not tried yet is tried in the background while the processor
+    // reads, and moves to the card the next time narration starts. One thread
+    // is all the card needs: the rest would only wait for it.
+    val onCard = GpuVoice.prepare() && when (GpuVoice.probeResult(spec, dir)) {
+        true -> true
+        false -> false
+        null -> { GpuVoice.probeInBackground(spec, dir); false }
+    }
+    if (onCard) {
         try {
             return buildModel(spec, dir, threads = 1, provider = GpuVoice.provider, modelPath = GpuVoice.modelFile(spec, dir))
+                .also { GpuVoice.onCard = true }
         } catch (t: Throwable) {
             GpuVoice.failed(t)
         }
     }
+    GpuVoice.onCard = false
     return buildModel(spec, dir, threads, provider = "cpu")
 }
 

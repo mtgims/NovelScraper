@@ -25,9 +25,17 @@ object KokoroEngine {
      * is active. False if the model isn't present or native init throws (caller
      * falls back to device TTS). Plain CPU EP (XNNPACK measured slower here).
      */
+    /** Set when the way the model should be built has changed (the desktop's
+     *  GPU pack finished testing): the next [ensureLoaded] builds it afresh. A
+     *  plain flag, so it can be set without waiting on a generation. */
+    @Volatile private var reload = false
+
+    fun reloadOnNextUse() { reload = true }
+
     @Synchronized
     fun ensureLoaded(modelId: String, numThreads: Int = defaultThreads()): Boolean {
-        if (tts != null && loadedId == modelId) return true
+        if (tts != null && loadedId == modelId && !reload) return true
+        reload = false
         if (tts != null) { runCatching { tts?.release() }; tts = null; loadedId = null }
         if (!TtsModels.isModelReady(modelId)) return false
         val threads = numThreads.coerceIn(1, 8)

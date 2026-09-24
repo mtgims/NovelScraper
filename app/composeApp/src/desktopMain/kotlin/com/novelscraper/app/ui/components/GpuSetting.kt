@@ -96,10 +96,17 @@ fun GpuAccelerationSetting() {
                 }
                 val problem = GpuVoice.problem
                 when {
+                    st is GpuVoice.State.Testing -> {
+                        note(
+                            "Trying the graphics cards (${st.adapter} of ${st.of}). It takes a minute or two; " +
+                                "until then narration uses the processor.",
+                        )
+                        LinearProgressIndicator(Modifier.fillMaxWidth().padding(top = 6.dp))
+                    }
                     problem != null -> note(problem, error = true)
-                    enabled && GpuVoice.active -> note("Narration is running on the graphics card.")
+                    enabled && GpuVoice.onCard -> note("Narration is running on the graphics card.")
                     enabled && !GpuVoice.takesEffectNow -> note("Takes effect the next time NovelScraper starts.")
-                    !enabled && GpuVoice.active -> note("Narration stays on the graphics card until NovelScraper restarts.")
+                    !enabled && GpuVoice.onCard -> note("Narration stays on the graphics card until NovelScraper restarts.")
                 }
                 if (removalPending) {
                     note("The GPU files are removed the next time NovelScraper starts.")

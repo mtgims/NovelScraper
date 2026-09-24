@@ -220,6 +220,10 @@ private fun shutdown() {
     MprisPlayer.stop()
     disposeSiteCheckBrowser()
     ScrapeRelay.stop()
-    DesktopTtsPlayer.release()
+    com.novelscraper.app.tts.GpuVoice.stopProbe()
+    // Releasing the voice waits for a sentence being synthesized to finish.
+    // The process is ending and the system takes the memory back anyway, so
+    // closing the window never waits on it for more than a moment.
+    Thread { DesktopTtsPlayer.release() }.apply { isDaemon = true; start() }.join(2_000)
     PropertiesStore.flush()
 }

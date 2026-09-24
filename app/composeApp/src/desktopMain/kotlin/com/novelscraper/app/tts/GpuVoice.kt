@@ -86,6 +86,8 @@ object GpuVoice {
         data object Idle : State
         data class Downloading(val bytes: Long, val total: Long, val what: String) : State
         data class Unpacking(val what: String) : State
+        /** Trying the graphics cards one by one (see [probe]). */
+        data class Testing(val adapter: Int, val of: Int) : State
         data class Failed(val message: String) : State
     }
 
@@ -107,9 +109,13 @@ object GpuVoice {
     @Volatile var nativeLoaded = false
         private set
 
-    /** True when narration is running on the graphics card this run. */
+    /** True when the pack's libraries are loaded this run (so its files are in
+     *  use); narration may still be on the processor, see [onCard]. */
     @Volatile var active = false
         private set
+
+    /** True when the voice narration last built is running on the card. */
+    @Volatile var onCard = false
 
     @Volatile private var cancelled = false
 
@@ -225,7 +231,18 @@ object GpuVoice {
         if (on) {
             problem = null
             prefs.remove(PROBES_FAILED)
+            testCurrentVoice()
         }
+    }
+
+    /** Tries the voice narration is set to use, in the background, so the
+     *  answer is there before Listen is pressed. */
+    fun testCurrentVoice() {
+        if (!installed) return
+        val id = if (com.novelscraper.app.data.ReaderPrefs.ttsEngine.value == com.novelscraper.app.data.ReaderPrefs.ENGINE_PIPER)
+            com.novelscraper.app.data.ReaderPrefs.piperVoice.value else TtsModels.KOKORO
+        if (!TtsModels.isModelReady(id)) return
+        probeInBackground(TtsModels.spec(id), TtsModels.modelDir(id).absolutePath)
     }
 
     /** Takes effect for this run only if narration hasn't started yet. */
@@ -396,8 +413,8 @@ object GpuVoice {
             dir.deleteRecursively()
             if (!tmpDir.renameTo(dir)) throw IllegalStateException("Couldn't put the files in place.")
             problem = null
-            setEnabled(true)
             _state.value = State.Idle
+            setEnabled(true)  // which also starts trying the cards
             Log.i(TAG, "pack ${pack.packId} installed (${installedBytes / 1_000_000} MB)")
         } catch (e: InterruptedException) {
             tmpDir.deleteRecursively(); archive.delete()
@@ -485,22 +502,13 @@ object GpuVoice {
     }
 
     /**
-     * Whether [spec] has been heard to speak through the pack, finding out the
-     * first time in a separate process.
-     *
-     * A graphics driver or ONNX Runtime can fail in ways that end the whole
-     * process rather than throwing: DirectML turning down one of Kokoro's
-     * layers does exactly that, halfway through the first sentence. So a new
-     * combination of pack and voice is tried once in a throwaway copy of the
-     * app, and only one that came back with audio in good time is used here.
-     *
-     * With DirectML every adapter is tried, and the fastest one that keeps well
-     * ahead of the voice is kept: DirectX lists the integrated chip first on
-     * most laptops, and there Kokoro can be ten times slower than real time.
-     * The answer, adapter included, is kept, and a failure is forgotten when
-     * the pack is switched on again.
+     * What trying [spec] on the card found, without trying it: true (and the
+     * adapter it chose is set), false, or null when it hasn't been tried yet.
+     * This is all narration itself asks: the trying takes a minute or two and
+     * happens in the background ([probeInBackground]), never while narration
+     * waits on it.
      */
-    fun probe(spec: TtsModels.Spec, modelDir: String): Boolean {
+    fun probeResult(spec: TtsModels.Spec, modelDir: String): Boolean? {
         val pack = backend ?: return false
         val key = "${pack.packId}/${File(modelDir).name}"
         prefs.getStringSet(PROBES_OK).orEmpty().firstOrNull { it.startsWith("$key=") }?.let { found ->
@@ -508,11 +516,61 @@ object GpuVoice {
             return true
         }
         if (key in prefs.getStringSet(PROBES_FAILED).orEmpty()) { problem = PROBE_FAILED; return false }
+        return null
+    }
+
+    private val probing = java.util.concurrent.atomic.AtomicBoolean(false)
+    @Volatile private var probeProcess: Process? = null
+
+    /** Runs [probe] on a thread of its own, one at a time. Once it has an
+     *  answer, narration is rebuilt the next time it starts. */
+    fun probeInBackground(spec: TtsModels.Spec, modelDir: String) {
+        if (probeResult(spec, modelDir) != null || !probing.compareAndSet(false, true)) return
+        Thread {
+            try {
+                if (probe(spec, modelDir)) KokoroEngine.reloadOnNextUse()
+            } finally {
+                probing.set(false)
+                if (_state.value is State.Testing) _state.value = State.Idle
+            }
+        }.apply { isDaemon = true; name = "gpu-probe"; start() }
+    }
+
+    /** Ends a test that is still running (the app is closing). */
+    fun stopProbe() {
+        runCatching { probeProcess?.destroyForcibly() }
+    }
+
+    /**
+     * Whether [spec] speaks through the pack, found out in a separate process.
+     *
+     * A graphics driver or ONNX Runtime can fail in ways that end the whole
+     * process rather than throwing: DirectML turning down one of Kokoro's
+     * layers does exactly that, halfway through the first sentence. So a new
+     * combination of pack and voice is tried once in a throwaway copy of the
+     * app, and only one that came back with audio in good time is used.
+     *
+     * With DirectML every adapter is tried, and the fastest one that keeps well
+     * ahead of the voice is kept: DirectX lists the integrated chip first on
+     * most laptops, and there Kokoro can be ten times slower than real time.
+     * The answer, adapter included, is kept, and a failure is forgotten when
+     * the pack is switched on again.
+     *
+     * It takes a minute or two, so it runs on its own thread
+     * ([probeInBackground]) and never while narration holds the engine: in
+     * 0.45.0 it ran inside the engine's lock, and closing the window while it
+     * ran froze the app until it was done.
+     */
+    private fun probe(spec: TtsModels.Spec, modelDir: String): Boolean {
+        val pack = backend ?: return false
+        val key = "${pack.packId}/${File(modelDir).name}"
+        probeResult(spec, modelDir)?.let { return it }
         val command = probeCommand() ?: return false
         val adapters = if (pack == Backend.DIRECTML) 0 until adapterCount else 0 until 1
         val log = File(DesktopDirs.cache, "gpu-probe.log").apply { parentFile.mkdirs(); delete() }
         var best: Pair<Int, Double>? = null
         for (adapter in adapters) {
+            _state.value = State.Testing(adapter + 1, adapters.last + 1)
             Log.i(TAG, "trying ${File(modelDir).name} on adapter $adapter in a separate process")
             val rtf = runCatching {
                 val p = ProcessBuilder(command + listOf(PROBE_ARG, spec.kind, spec.onnx, modelDir))
@@ -521,7 +579,10 @@ object GpuVoice {
                     .redirectOutput(ProcessBuilder.Redirect.appendTo(log))
                     .apply { environment()[ADAPTER_VARIABLE] = adapter.toString() }
                     .start()
-                val finished = p.waitFor(150, TimeUnit.SECONDS)
+                probeProcess = p
+                // A card that needs longer than this for two sentences is far
+                // too slow for narration anyway.
+                val finished = p.waitFor(90, TimeUnit.SECONDS)
                 if (!finished) p.destroyForcibly()
                 if (!finished || p.exitValue() != 0) null
                 else log.readLines().lastOrNull { it.startsWith("rtf=") }?.substringAfter('=')?.toDoubleOrNull()
