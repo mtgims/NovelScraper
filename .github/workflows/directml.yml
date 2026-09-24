@@ -42,22 +42,22 @@ jobs:
         shell: bash
         run: |
           set -e
-          curl -sSL -o ort.nupkg "https://www.nuget.org/api/v2/package/Microsoft.ML.OnnxRuntime.DirectML/${ORT_DIRECTML}"
-          curl -sSL -o dml.nupkg "https://www.nuget.org/api/v2/package/Microsoft.AI.DirectML/${DIRECTML}"
-          ort_sha=$(sha256sum ort.nupkg | cut -d' ' -f1)
-          dml_sha=$(sha256sum dml.nupkg | cut -d' ' -f1)
+          # A NuGet package is a zip file, and CMake unpacks a local file by
+          # its extension, so the packages are fetched here and named .zip.
+          curl -sSL -o ort.zip "https://www.nuget.org/api/v2/package/Microsoft.ML.OnnxRuntime.DirectML/${ORT_DIRECTML}"
+          curl -sSL -o dml.zip "https://www.nuget.org/api/v2/package/Microsoft.AI.DirectML/${DIRECTML}"
+          ort_sha=$(sha256sum ort.zip | cut -d' ' -f1)
+          dml_sha=$(sha256sum dml.zip | cut -d' ' -f1)
+          here=$(pwd -W)
           f=cmake/onnxruntime-win-x64-directml.cmake
           sed -i \
-            -e "s|microsoft.ml.onnxruntime.directml.1.14.1.nupkg|microsoft.ml.onnxruntime.directml.${ORT_DIRECTML}.nupkg|g" \
+            -e "s|set(onnxruntime_URL  \"https://globalcdn.nuget.org/packages/microsoft.ml.onnxruntime.directml.1.14.1.nupkg\")|set(onnxruntime_URL \"${here}/ort.zip\")|" \
             -e "s|SHA256=c8ae7623385b19cd5de968d0df5383e13b97d1b3a6771c9177eac15b56013a5a|SHA256=${ort_sha}|" \
-            -e "s|Microsoft.AI.DirectML/1.15.0|Microsoft.AI.DirectML/${DIRECTML}|" \
-            -e "s|Microsoft.AI.DirectML.1.15.0.nupkg|Microsoft.AI.DirectML.${DIRECTML}.nupkg|g" \
+            -e "s|set(directml_URL \"https://www.nuget.org/api/v2/package/Microsoft.AI.DirectML/1.15.0\")|set(directml_URL \"${here}/dml.zip\")|" \
             -e "s|SHA256=10d175f8e97447712b3680e3ac020bbb8eafdf651332b48f09ffee2eec801c23|SHA256=${dml_sha}|" \
             $f
-          # The build looks for these names beside the sources before downloading.
-          mv ort.nupkg microsoft.ml.onnxruntime.directml.${ORT_DIRECTML}.nupkg
-          mv dml.nupkg Microsoft.AI.DirectML.${DIRECTML}.nupkg
-          grep -n "nupkg\|SHA256" $f
+          grep -n "_URL \|SHA256" $f
+          grep -q "ort.zip" $f && grep -q "dml.zip" $f
 
       - name: Configure
         shell: bash
