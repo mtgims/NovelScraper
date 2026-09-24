@@ -1,0 +1,88 @@
+name: Kokoro for DirectML
+
+# DirectML refuses Kokoro's upsampling layers: ConvTranspose with symmetric
+# pads and output_padding (e.g. /N.1/pool/ConvTranspose, pads 1,1 with
+# output_padding 1). The same layer written with pads 1,0 and no
+# output_padding gives the same output, element for element. This rewrites
+# every such layer, checks the result against the original on ONNX Runtime's
+# CPU provider, and keeps the model as an artifact.
+
+on:
+  workflow_dispatch:
+
+jobs:
+  rewrite:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Fetch the model
+        run: |
+          curl -sSL -o kokoro.tar.bz2 https://github.com/k2-fsa/sherpa-onnx/releases/download/tts-models/kokoro-multi-lang-v1_0.tar.bz2
+          tar xjf kokoro.tar.bz2 kokoro-multi-lang-v1_0/model.onnx
+          ls -la kokoro-multi-lang-v1_0
+
+      - name: Rewrite and compare
+        run: |
+          pip install --quiet onnx onnxruntime numpy
+          cat > rewrite.py <<'EOF'
+          import numpy as np, onnx, onnxruntime as ort
+          from onnx import helper
+
+          src = "kokoro-multi-lang-v1_0/model.onnx"
+          m = onnx.load(src)
+          changed = 0
+          for node in m.graph.node:
+              if node.op_type != "ConvTranspose":
+                  continue
+              attrs = {a.name: a for a in node.attribute}
+              op = list(attrs["output_padding"].ints) if "output_padding" in attrs else []
+              if not any(op):
+                  continue
+              pads = list(attrs["pads"].ints)
+              rank = len(pads) // 2
+              new = pads[:rank] + [pads[rank + i] - op[i] for i in range(rank)]
+              if any(p < 0 for p in new):
+                  print("left alone (pads too small):", node.name, pads, op)
+                  continue
+              print(f"{node.name}: pads {pads} output_padding {op} -> pads {new}")
+              for a in list(node.attribute):
+                  if a.name in ("pads", "output_padding"):
+                      node.attribute.remove(a)
+              node.attribute.append(helper.make_attribute("pads", new))
+              changed += 1
+          print("rewritten:", changed)
+          onnx.save(m, "model.dml.onnx")
+
+          a = ort.InferenceSession(src, providers=["CPUExecutionProvider"])
+          b = ort.InferenceSession("model.dml.onnx", providers=["CPUExecutionProvider"])
+          rng = np.random.default_rng(0)
+          for trial in range(3):
+              feeds = {}
+              for i in a.get_inputs():
+                  if "int" in i.type:
+                      n = 12 + 17 * trial
+                      feeds[i.name] = rng.integers(1, 170, size=(1, n)).astype(np.int64)
+                  elif i.name.lower().startswith("speed") or (i.shape and len(i.shape) == 1):
+                      feeds[i.name] = np.array([1.0], dtype=np.float32)
+                  else:
+                      shape = [d if isinstance(d, int) else 1 for d in i.shape]
+                      feeds[i.name] = rng.standard_normal(shape).astype(np.float32) * 0.1
+              ya = a.run(None, feeds)[0]
+              yb = b.run(None, feeds)[0]
+              diff = float(np.max(np.abs(ya - yb))) if ya.shape == yb.shape else float("inf")
+              print(f"trial {trial}: inputs {[ (k, v.shape) for k, v in feeds.items()]} "
+                    f"out {ya.shape} vs {yb.shape}, max |diff| {diff:.2e}")
+              assert diff < 1e-4, "the rewritten model doesn't match"
+          print("identical within 1e-4")
+          EOF
+          python rewrite.py
+          sha256sum model.dml.onnx
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: kokoro-model-dml
+          path: model.dml.onnx
+          compression-level: 0
