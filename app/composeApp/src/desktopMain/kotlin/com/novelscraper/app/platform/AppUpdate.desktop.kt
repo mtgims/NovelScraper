@@ -32,8 +32,23 @@ actual suspend fun installUpdate(file: File): Boolean = withContext(Dispatchers.
     // files it is replacing are not in use.
     if (Os.isWindows) {
         return@withContext try {
-            ProcessBuilder(file.absolutePath).start()
-            Thread.sleep(1_200)
+            // The installer cannot replace files this app still has open, and
+            // being made to click through it every time is not an update, it is
+            // an errand. So a detached command waits for this process to be gone,
+            // installs without asking anything, and starts the new app.
+            val installed = File(System.getenv("LOCALAPPDATA") ?: ".", "NovelScraper\\NovelScraper.exe")
+            val script = buildString {
+                append("timeout /t 3 /nobreak >nul & ")
+                append("\"").append(file.absolutePath).append("\" /quiet /norestart")
+                if (installed.parentFile?.isDirectory == true) {
+                    append(" & start \"\" \"").append(installed.absolutePath).append("\"")
+                }
+            }
+            ProcessBuilder("cmd", "/c", "start", "\"\"", "/b", "cmd", "/c", script)
+                .redirectOutput(ProcessBuilder.Redirect.DISCARD)
+                .redirectError(ProcessBuilder.Redirect.DISCARD)
+                .start()
+            Thread.sleep(600)
             kotlin.system.exitProcess(0)
         } catch (e: Exception) {
             Log.w("Updates", "couldn't start the installer: ${e.message}")
