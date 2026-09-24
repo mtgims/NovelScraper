@@ -88,7 +88,12 @@ private val icon by lazy {
     BitmapPainter(Image.makeFromEncoded(bytes).toComposeImageBitmap())
 }
 
-fun main() {
+fun main(args: Array<String>) {
+    // A throwaway copy of the app trying a voice on the graphics card (see
+    // GpuVoice.probe): nothing else of the app starts.
+    if (args.firstOrNull() == com.novelscraper.app.tts.GpuVoice.PROBE_ARG) {
+        kotlin.system.exitProcess(com.novelscraper.app.tts.GpuVoice.runProbe(args.drop(1)))
+    }
     initApp()
     com.novelscraper.app.ui.screen.SettingsHooks.narration = {
         com.novelscraper.app.ui.components.GpuAccelerationSetting()

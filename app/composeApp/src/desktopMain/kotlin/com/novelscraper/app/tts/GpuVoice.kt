@@ -21,8 +21,10 @@ import java.util.concurrent.TimeUnit
 import java.util.zip.ZipInputStream
 
 /**
- * Narration on an NVIDIA graphics card, through CUDA.
+ * Narration on the graphics card: through CUDA on an NVIDIA card, and through
+ * DirectML on any other DirectX 12 card on Windows (see [Backend]).
  *
+ * The CUDA pack:
  * sherpa-onnx's Java binding loads ONNX Runtime as a library of its own and
  * asks it at run time whether CUDA is there, so the build the app ships only
  * needs a CUDA-enabled ONNX Runtime beside it, plus NVIDIA's own libraries:
@@ -38,6 +40,10 @@ import java.util.zip.ZipInputStream
  * cuDNN is pinned to 9.10.2: 9.26 fails on that card (compute capability 6.1)
  * inside Kokoro's LSTM with CUDNN_STATUS_EXECUTION_FAILED_CUDART.
  *
+ * The DirectML pack is sherpa-onnx's binding built against ONNX Runtime
+ * DirectML by this repository's own workflow (.github/workflows/directml.yml),
+ * since nobody publishes one; it is small, because DirectX comes with Windows.
+ *
  * Whatever goes wrong, narration falls back to the processor: a pack that
  * won't load, a driver too old, a card CUDA doesn't know.
  */
@@ -45,16 +51,25 @@ object GpuVoice {
 
     private const val TAG = "GpuVoice"
 
-    /** Everything the pack is made of; a change here is a new pack. */
-    private const val PACK_ID = "cuda12-sherpa1.13.8-ort1.28.2-cudnn9.10.2"
+    /**
+     * The two ways onto a graphics card. [packId] names everything a pack is
+     * made of: a change there is a new pack, and the old one is cleared away.
+     */
+    enum class Backend(val packId: String, val provider: String) {
+        /** NVIDIA cards, through CUDA 12 and cuDNN. */
+        CUDA("cuda12-sherpa1.13.8-ort1.28.2-cudnn9.10.2", "cuda"),
+        /** Any DirectX 12 card on Windows (AMD, Intel, NVIDIA), through DirectML. */
+        DIRECTML("directml-sherpa1.13.8-ort1.24.4-dml1.15.4", "directml"),
+    }
 
     private val prefs by lazy { settingsStore("tts-gpu") }
 
-    /** An NVIDIA card, as the driver describes it. */
+    /** A graphics card as its driver describes it. [computeCapability] is
+     *  CUDA's measure of a card's generation, and 0 where CUDA isn't involved. */
     data class Card(val name: String, val computeCapability: Double, val driver: String)
 
     sealed interface Support {
-        data class Ready(val card: Card) : Support
+        data class Ready(val card: Card, val backend: Backend) : Support
         /** There is a card, but not one this pack can use. */
         data class Unsuitable(val card: Card, val why: String) : Support
         data object None : Support
@@ -85,17 +100,23 @@ object GpuVoice {
     @Volatile var nativeLoaded = false
         private set
 
-    /** True when narration is running through CUDA this run. */
+    /** True when narration is running on the graphics card this run. */
     @Volatile var active = false
         private set
 
     @Volatile private var cancelled = false
 
+    /** The backend this machine gets, once [support] has been worked out. */
+    val backend: Backend? get() = (support as? Support.Ready)?.backend
+
+    /** What the engine asks ONNX Runtime for when the pack is in use. */
+    val provider: String get() = backend?.provider ?: "cpu"
+
     private val root: File get() = File(DesktopDirs.data, "gpu")
-    private val dir: File get() = File(root, PACK_ID)
+    private val dir: File get() = File(root, backend?.packId ?: "none")
     private val complete: File get() = File(dir, "complete")
 
-    val installed: Boolean get() = complete.isFile
+    val installed: Boolean get() = backend != null && complete.isFile
 
     /** What the pack takes on disk, for the remove button. */
     val installedBytes: Long
@@ -105,9 +126,45 @@ object GpuVoice {
 
     // --- what this machine has ------------------------------------------------------
 
-    val support: Support by lazy { detect() }
+    /**
+     * DirectML can't run Kokoro as it is published: its decoder's upsampling
+     * layers (ConvTranspose with output_padding, e.g. /N.1/pool/ConvTranspose)
+     * are refused with E_INVALIDARG by every ONNX Runtime DirectML from 1.17
+     * to 1.24, and the refusal ends the process. Off until that is solved.
+     */
+    private const val DIRECTML_OFFERED = false
 
-    private fun detect(): Support {
+    val support: Support by lazy {
+        val cuda = detectCuda()
+        if (cuda is Support.Ready || !Os.isWindows || !DIRECTML_OFFERED) cuda
+        // An NVIDIA card too old for CUDA 12 still has DirectX 12, and so has
+        // every AMD and Intel card of the last decade.
+        else detectDirectMl() ?: cuda
+    }
+
+    /**
+     * The first real display adapter Windows lists. DirectML runs on the one
+     * DirectX puts first, which on a laptop is usually the integrated one, so
+     * the name is only for the reader's information.
+     */
+    private fun detectDirectMl(): Support? {
+        val names = runCatching {
+            val p = ProcessBuilder(
+                "powershell", "-NoProfile", "-NonInteractive", "-Command",
+                "(Get-CimInstance Win32_VideoController).Name",
+            ).redirectErrorStream(true).start()
+            val out = p.inputStream.bufferedReader().readText()
+            if (!p.waitFor(15, TimeUnit.SECONDS)) { p.destroyForcibly(); return null }
+            out.lines().map { it.trim() }.filter { it.isNotEmpty() }
+        }.getOrNull() ?: return null
+        val real = names.filterNot { n ->
+            listOf("Microsoft Basic", "Remote", "Virtual", "Parsec", "Meta").any { n.contains(it, ignoreCase = true) }
+        }
+        val name = real.firstOrNull() ?: return null
+        return Support.Ready(Card(name, 0.0, ""), Backend.DIRECTML)
+    }
+
+    private fun detectCuda(): Support {
         if (!Os.isWindows && !Os.isLinux) return Support.None
         // The driver's own library is the sign an NVIDIA driver is installed at
         // all; nvidia-smi, which comes with it, says which card and how new.
@@ -132,7 +189,7 @@ object GpuVoice {
                 Support.Unsuitable(card, "This card is older than CUDA 12 supports.")
             driverMajor < minDriver ->
                 Support.Unsuitable(card, "The graphics driver (${card.driver}) is too old; version $minDriver or newer is needed.")
-            else -> Support.Ready(card)
+            else -> Support.Ready(card, Backend.CUDA)
         }
     }
 
@@ -142,6 +199,12 @@ object GpuVoice {
         enabled // make sure the stored value has been read first
         prefs.putBoolean("enabled", on)
         _enabled.value = on
+        // Switched on again: voices that failed before get another try, in
+        // case the driver has changed since.
+        if (on) {
+            problem = null
+            prefs.remove(PROBES_FAILED)
+        }
     }
 
     /** Takes effect for this run only if narration hasn't started yet. */
@@ -149,7 +212,13 @@ object GpuVoice {
 
     // --- getting it -------------------------------------------------------------------
 
-    private enum class Kind { TAR_BZ2, WHEEL }
+    private enum class Kind { TAR_BZ2, WHEEL, ZIP }
+
+    private const val DIRECTML_URL =
+        "https://github.com/mtgims/NovelScraper/releases/download/gpu-directml-1/" +
+            "sherpa-onnx-v1.13.8-directml-ort1.24.4-win-x64.zip"
+    private const val DIRECTML_SHA256 = "PENDING"
+    private const val DIRECTML_SIZE = 0L
 
     private class Piece(
         val label: String,
@@ -161,7 +230,21 @@ object GpuVoice {
         val pick: (String) -> String?,
     )
 
-    private fun pieces(): List<Piece> = when {
+    private fun pieces(): List<Piece> = when (backend) {
+        Backend.CUDA -> cudaPieces()
+        Backend.DIRECTML -> listOf(
+            // Built by this repository's DirectML workflow (sherpa-onnx's Java
+            // binding against ONNX Runtime DirectML) and kept on a release of
+            // its own; it carries its own binding, built with it.
+            Piece(
+                "DirectML narration libraries",
+                DIRECTML_URL, DIRECTML_SHA256, DIRECTML_SIZE, Kind.ZIP,
+            ) { name -> name.substringAfterLast('/').takeIf { it.endsWith(".dll") } },
+        )
+        null -> emptyList()
+    }
+
+    private fun cudaPieces(): List<Piece> = when {
         Os.isWindows -> listOf(
             Piece(
                 "ONNX Runtime with CUDA",
@@ -226,18 +309,19 @@ object GpuVoice {
         val parts = pieces()
         if (parts.isEmpty()) { _state.value = State.Failed("Not available on this system."); return }
         val total = parts.sumOf { it.size }
-        val tmpDir = File(root, "$PACK_ID.tmp")
+        val pack = backend ?: run { _state.value = State.Failed("No graphics card to use."); return }
+        val tmpDir = File(root, "${pack.packId}.tmp")
         val archive = File(DesktopDirs.cache, "gpu-download.part")
         try {
             root.mkdirs(); DesktopDirs.cache.mkdirs()
             // Room for the unpacked pack plus the largest archive while it unpacks.
-            val needed = 2_700_000_000L + parts.maxOf { it.size }
+            val needed = (if (pack == Backend.CUDA) 2_700_000_000L else 300_000_000L) + parts.maxOf { it.size }
             if (root.usableSpace in 1 until needed) {
                 _state.value = State.Failed("Not enough free space: about ${needed / 1_000_000_000 + 1} GB is needed.")
                 return
             }
             // Anything left from an earlier pack, or from a download cut short.
-            root.listFiles().orEmpty().filter { it.name != PACK_ID }.forEach { it.deleteRecursively() }
+            root.listFiles().orEmpty().filter { it.name != pack.packId }.forEach { it.deleteRecursively() }
             tmpDir.deleteRecursively(); tmpDir.mkdirs()
 
             val http = Net.client.newBuilder().readTimeout(60, TimeUnit.SECONDS).build()
@@ -273,14 +357,16 @@ object GpuVoice {
                 unpack(piece, archive, tmpDir)
                 archive.delete()
             }
-            copyBinding(tmpDir)
-            File(tmpDir, "complete").writeText(PACK_ID)
+            // The CUDA runtime goes with the app's own binding; DirectML brings one
+            // built against it.
+            if (pack == Backend.CUDA) copyBinding(tmpDir)
+            File(tmpDir, "complete").writeText(pack.packId)
             dir.deleteRecursively()
             if (!tmpDir.renameTo(dir)) throw IllegalStateException("Couldn't put the files in place.")
             problem = null
             setEnabled(true)
             _state.value = State.Idle
-            Log.i(TAG, "pack $PACK_ID installed (${installedBytes / 1_000_000} MB)")
+            Log.i(TAG, "pack ${pack.packId} installed (${installedBytes / 1_000_000} MB)")
         } catch (e: InterruptedException) {
             tmpDir.deleteRecursively(); archive.delete()
             _state.value = State.Idle
@@ -294,7 +380,7 @@ object GpuVoice {
     private fun unpack(piece: Piece, archive: File, into: File) {
         val links = mutableMapOf<String, String>()
         when (piece.kind) {
-            Kind.WHEEL -> ZipInputStream(archive.inputStream().buffered(1 shl 20)).use { zip ->
+            Kind.WHEEL, Kind.ZIP -> ZipInputStream(archive.inputStream().buffered(1 shl 20)).use { zip ->
                 while (true) {
                     if (cancelled) throw InterruptedException()
                     val entry = zip.nextEntry ?: break
@@ -361,6 +447,79 @@ object GpuVoice {
             prefs.putBoolean("remove-pending", false)
         }
         if (!enabled.value || !installed || support !is Support.Ready) return false
+        active = loadPack()
+        return active
+    }
+
+    /**
+     * Whether [spec] has been heard to speak through the pack, finding out the
+     * first time in a separate process.
+     *
+     * A graphics driver or ONNX Runtime can fail in ways that end the whole
+     * process rather than throwing: DirectML turning down one of Kokoro's
+     * layers does exactly that, halfway through the first sentence. So a new
+     * combination of pack and voice is tried once in a throwaway copy of the
+     * app, and only one that came back with audio is used here. The answer is
+     * kept, and forgotten when the pack is switched on again.
+     */
+    fun probe(spec: TtsModels.Spec, modelDir: String): Boolean {
+        val pack = backend ?: return false
+        val key = "${pack.packId}/${File(modelDir).name}"
+        if (key in prefs.getStringSet(PROBES_OK).orEmpty()) return true
+        if (key in prefs.getStringSet(PROBES_FAILED).orEmpty()) { problem = PROBE_FAILED; return false }
+        val command = probeCommand() ?: return false
+        Log.i(TAG, "trying ${File(modelDir).name} on the graphics card in a separate process")
+        val log = File(DesktopDirs.cache, "gpu-probe.log")
+        val ok = runCatching {
+            DesktopDirs.cache.mkdirs()
+            val p = ProcessBuilder(command + listOf(PROBE_ARG, spec.kind, spec.onnx, modelDir))
+                .directory(DesktopDirs.cache)
+                .redirectErrorStream(true)
+                .redirectOutput(log)
+                .start()
+            if (!p.waitFor(120, TimeUnit.SECONDS)) { p.destroyForcibly(); false } else p.exitValue() == 0
+        }.getOrDefault(false)
+        val set = if (ok) PROBES_OK else PROBES_FAILED
+        prefs.putStringSet(set, prefs.getStringSet(set).orEmpty() + key)
+        Log.i(TAG, "the graphics card ${if (ok) "spoke" else "couldn't speak"} with ${File(modelDir).name}")
+        if (!ok) problem = PROBE_FAILED
+        return ok
+    }
+
+    /** This app again, as a separate process: its launcher when installed, the
+     *  Java running it otherwise. */
+    private fun probeCommand(): List<String>? {
+        System.getProperty("jpackage.app-path")?.takeIf { File(it).isFile }?.let { return listOf(it) }
+        val java = File(System.getProperty("java.home"), if (Os.isWindows) "bin/java.exe" else "bin/java")
+        if (!java.isFile) return null
+        return listOf(java.path, "-cp", System.getProperty("java.class.path"), "com.novelscraper.app.MainKt")
+    }
+
+    const val PROBE_ARG = "--gpu-probe"
+    private const val PROBES_OK = "probes-ok"
+    private const val PROBES_FAILED = "probes-failed"
+    private const val PROBE_FAILED =
+        "The graphics card couldn't narrate with this voice when it was tried, so narration uses the processor."
+
+    /** The separate process [probe] starts: loads the pack, speaks one short
+     *  sentence and says how it went through its exit code. */
+    fun runProbe(args: List<String>): Int {
+        val (kind, onnx, modelDir) = args.takeIf { it.size >= 3 } ?: return 5
+        if (!installed || support !is Support.Ready || !loadPack()) return 4
+        return try {
+            val spec = TtsModels.Spec(dir = File(modelDir).name, url = "", kind = kind, onnx = onnx, required = emptyList())
+            val tts = buildModel(spec, modelDir, threads = 1, provider = provider)
+            val samples = tts.generate("This is a test of the voice.", 0, 1.0f)
+            tts.release()
+            if (samples.size > 1000) 0 else 2
+        } catch (t: Throwable) {
+            System.err.println("probe failed: ${t.message}")
+            3
+        }
+    }
+
+    /** Puts the pack's libraries where sherpa-onnx will load them from. */
+    private fun loadPack(): Boolean {
         return try {
             if (Os.isWindows) {
                 // cuDNN is asked for by name, from inside ONNX Runtime, and loads
@@ -373,8 +532,7 @@ object GpuVoice {
             System.load(File(dir, System.mapLibraryName("onnxruntime")).absolutePath)
             System.load(File(dir, System.mapLibraryName("sherpa-onnx-jni")).absolutePath)
             System.setProperty("sherpa_onnx.native.path", dir.absolutePath)
-            active = true
-            Log.i(TAG, "narration will use the graphics card ($PACK_ID)")
+            Log.i(TAG, "the graphics card's libraries are loaded (${backend?.packId})")
             true
         } catch (t: Throwable) {
             problem = "The GPU files wouldn't load (${t.message}); narration uses the processor."

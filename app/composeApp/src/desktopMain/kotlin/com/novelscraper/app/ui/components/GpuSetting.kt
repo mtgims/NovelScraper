@@ -58,10 +58,7 @@ fun GpuAccelerationSetting() {
 
     when (val s = support) {
         null -> note("Looking for a graphics card…")
-        GpuVoice.Support.None -> note(
-            "No NVIDIA graphics card was found, so narration runs on the processor. " +
-                "Other graphics cards aren't supported yet.",
-        )
+        GpuVoice.Support.None -> note("No graphics card narration can use was found, so it runs on the processor.")
         is GpuVoice.Support.Unsuitable -> note("${s.card.name}: ${s.why} Narration runs on the processor.")
         is GpuVoice.Support.Ready -> when (val st = state) {
             is GpuVoice.State.Downloading -> {
@@ -78,8 +75,11 @@ fun GpuAccelerationSetting() {
             }
             else -> if (installed) {
                 Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth()) {
-                    Text("Narrate on the ${s.card.name}", style = MaterialTheme.typography.bodySmall,
-                        modifier = Modifier.weight(1f))
+                    // DirectML picks the card itself, so it is only named where
+                    // the choice is certain.
+                    val label = if (s.backend == GpuVoice.Backend.CUDA) "Narrate on the ${s.card.name}"
+                                else "Narrate on the graphics card (DirectML)"
+                    Text(label, style = MaterialTheme.typography.bodySmall, modifier = Modifier.weight(1f))
                     Switch(checked = enabled, onCheckedChange = { GpuVoice.setEnabled(it) })
                 }
                 val problem = GpuVoice.problem
@@ -102,9 +102,14 @@ fun GpuAccelerationSetting() {
                 }
             } else {
                 note(
-                    "The ${s.card.name} can narrate several times faster than the processor, " +
-                        "leaving the processor nearly idle. This downloads NVIDIA's CUDA libraries: " +
-                        "about ${"%.1f".format(GpuVoice.downloadBytes / 1e9)} GB, 2.6 GB once unpacked.",
+                    if (s.backend == GpuVoice.Backend.CUDA)
+                        "The ${s.card.name} can narrate several times faster than the processor, " +
+                            "leaving the processor nearly idle. This downloads NVIDIA's CUDA libraries: " +
+                            "about ${"%.1f".format(GpuVoice.downloadBytes / 1e9)} GB, 2.6 GB once unpacked."
+                    else
+                        "Narration can run on the graphics card through DirectML, which takes most of " +
+                            "the work off the processor. This downloads about " +
+                            "${GpuVoice.downloadBytes / 1_000_000} MB.",
                 )
                 (st as? GpuVoice.State.Failed)?.let { note("Download failed: ${it.message}", error = true) }
                 Row(horizontalArrangement = Arrangement.spacedBy(10.dp), modifier = Modifier.padding(top = 8.dp)) {
