@@ -30,6 +30,8 @@ private const val LOAD_MS = 90_000L
 private const val SETTLE_MS = 2_000L
 /** How long a check gets to pass by itself before the window is shown. */
 private const val PATIENCE_MS = 6_000L
+/** The same, for a site whose check has wanted a person before. */
+private const val IMPATIENCE_MS = 2_500L
 /** How long the reader then has to answer a check that wants a tap. */
 private const val INTERACTIVE_MS = 5 * 60_000L
 private const val TAG = "BrowserFetch"
@@ -54,16 +56,23 @@ actual suspend fun fetchThroughBrowser(url: String): String? = lock.withLock {
     // The reader's own browser first: it is current, it has the graphics card
     // behind it, and checks that turn the bundled one away pass in it.
     if (SystemBrowser.available) {
-        // A site that has needed a person before gets its window straight away,
-        // rather than a silent minute spent on a check that won't pass alone.
-        val patience = if (SiteChecks.wantsPerson(url)) 0L else PATIENCE_MS
+        // A site that has needed a person before is given a few seconds rather
+        // than the usual wait: long enough for a check it has already been
+        // passed to go through unseen, short enough not to be a silent minute
+        // spent on one that was never going to pass alone.
+        val patience = if (SiteChecks.wantsPerson(url)) IMPATIENCE_MS else PATIENCE_MS
         val host = runCatching { java.net.URI(url).host }.getOrNull() ?: url
+        var askedPerson = false
         val page = SystemBrowser.load(url, patience, INTERACTIVE_MS, LOAD_MS) {
+            askedPerson = true
             SiteChecks.neededPerson(url)
             // The window appearing by itself explains nothing on its own.
             showToast("$host is asking for a browser check: answer it in the window that just opened.", long = true)
         }
         if (page != null) {
+            // It let the app through without anyone lifting a finger: the site
+            // stops being one whose window comes up on sight.
+            if (!askedPerson) SiteChecks.passedAlone(url)
             keepSystemCookies(url)
             Log.i(TAG, "$url -> ${page.length} chars (${SystemBrowser.binary?.name})")
             return page

@@ -80,6 +80,14 @@ object SiteChecks {
     /** True if this site has asked for a person before. */
     fun wantsPerson(url: String): Boolean = host(url)?.let { it in interactiveHosts } == true
 
+    /** This site's check passed on its own this time: it has stopped wanting a
+     *  person, so its window stays out of sight from here on. A check asks for
+     *  one under its own conditions, not for ever, and a site written down as
+     *  wanting one would otherwise put a window on screen at every request. */
+    fun passedAlone(url: String) {
+        host(url)?.let { if (interactiveHosts.remove(it)) save() }
+    }
+
     private fun save() {
         store.putStringSet("browser-hosts", synchronized(browserHosts) { HashSet(browserHosts) })
         store.putStringSet("interactive-hosts", synchronized(interactiveHosts) { HashSet(interactiveHosts) })

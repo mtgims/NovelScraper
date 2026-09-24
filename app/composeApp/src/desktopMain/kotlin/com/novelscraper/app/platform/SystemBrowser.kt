@@ -220,7 +220,11 @@ object SystemBrowser {
             stop()
             return null
         } finally {
-            if (shown) runCatching { hide() }
+            // Away again whatever happened. Minimising it once when the tab opens
+            // is not enough on every desktop: Windows will bring a window back on
+            // screen for a check that asks for focus, and it should not be left
+            // sitting there afterwards.
+            runCatching { hide() }
         }
     }
 
@@ -942,8 +946,15 @@ object SystemBrowser {
     private const val HELD_STILL_MS = 1_000L
     private const val SETTLE_MAX_MS = 5_000L
 
-    /** How long a browser stands unused before it is closed. */
-    private const val IDLE_MS = 3 * 60_000L
+    /**
+     * How long a browser stands unused before it is closed.
+     *
+     * A minute, not the three it used to be. A reader who has finished browsing
+     * and settled into a chapter shouldn't have a browser standing behind the
+     * app for the rest of the evening, and starting one again costs a couple of
+     * seconds against a page that was going to take that anyway.
+     */
+    private const val IDLE_MS = 60_000L
 
     /** How long a check gets before it is asked again, and how many times. */
     private const val RETRY_MS = 8_000L
