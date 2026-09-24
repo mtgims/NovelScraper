@@ -3,6 +3,17 @@
 Newest first.
 
 
+## 0.46.1, 2026-09-24 · `versionCode 95`
+- **Stats count every novel.** They came from the server, which knows only the
+  novels scraped or imported there, so a novel added from a source never
+  counted. Books and chapters are now counted in the library itself, words
+  from the server for its novels and from the chapter text on the device for
+  the rest, and Stats no longer needs an account; only Export, the server's
+  file, still does.
+- **All four narration engines fit on a phone.** Kokoro, Supertonic, Piper and
+  the phone's own voice wrap onto a second line instead of pushing Piper off
+  the screen and folding Supertonic's name in two.
+
 ## 0.46.0, 2026-09-24 · `versionCode 94`
 - **Supertonic, a third narration voice.** Settings → Narration → Engine now
   offers Supertonic 3 beside Kokoro and Piper: a 122 MB download, ten voices,

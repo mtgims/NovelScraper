@@ -13,6 +13,10 @@ since moved to a repository of their own; this one holds the apps.
 
 ## 2026-09-24
 
+- **Stats from the whole library, and engine choices that fit a phone
+  (0.46.1).** Source novels count in the statistics; the phone's engine row
+  wraps instead of losing Piper.
+
 - **Supertonic as a third narration engine (0.46.0).** Ten voices, close to
   Kokoro's naturalness for a fraction of its processor, on desktop and phone.
 
