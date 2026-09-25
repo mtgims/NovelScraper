@@ -35,6 +35,19 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.novelscraper.app.library.LibChapter
 import com.novelscraper.app.platform.isDesktop
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.offset
+import androidx.compose.material3.DropdownMenu
+import androidx.compose.material3.DropdownMenuItem
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.setValue
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.input.pointer.PointerEventPass
+import androidx.compose.ui.input.pointer.PointerEventType
+import androidx.compose.ui.input.pointer.isSecondaryPressed
+import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.unit.IntOffset
+import kotlin.math.roundToInt
 import com.novelscraper.app.ui.theme.Kicker
 
 /** A volume with its chapters, in reading order. [label] names it when the
@@ -117,7 +130,12 @@ fun VolumeHeaderRow(
 /**
  * One chapter row. Tap opens it (or toggles selection in [selectionMode]); the
  * trailing control toggles read state, or shows a checkbox in selection mode.
- * Long-press starts selection via [onLongClick].
+ *
+ * Asking the row for a menu offers [actions]: a right-click on a computer, a
+ * long press on a phone. Unlike the library grid, where holding a novel down is
+ * how it is picked up and moved, a chapter has nothing to drag, so the hold is
+ * free to mean this. With no actions to offer, a long press falls back to
+ * [onLongClick], which is how selection starts.
  */
 @OptIn(ExperimentalFoundationApi::class)
 @Composable
@@ -131,7 +149,12 @@ fun ChapterRow(
     onLongClick: () -> Unit,
     onToggleRead: () -> Unit,
     modifier: Modifier = Modifier,
+    actions: List<MenuAction> = emptyList(),
 ) {
+    var menuOpen by remember { mutableStateOf(false) }
+    // Where the press landed, so the menu opens under the pointer or finger
+    // rather than at the corner of a row that spans the window.
+    var pressedAt by remember { mutableStateOf(Offset.Zero) }
     val interaction = remember { MutableInteractionSource() }
     val hovered by interaction.collectIsHoveredAsState()
     val rowPad = if (isDesktop) 7.dp else 12.dp
@@ -141,13 +164,29 @@ fun ChapterRow(
         hovered -> MaterialTheme.colorScheme.surfaceContainerHigh
         else -> MaterialTheme.colorScheme.surface
     }
+    Box(modifier.fillMaxWidth().padding(horizontal = 10.dp, vertical = 2.dp)) {
     Row(
-        modifier.fillMaxWidth()
-            .padding(horizontal = 10.dp, vertical = 2.dp)
+        Modifier.fillMaxWidth()
             .clip(RoundedCornerShape(10.dp))
             .background(bg)
             .hoverable(interaction)
-            .combinedClickable(onClick = onClick, onLongClick = onLongClick)
+            .combinedClickable(
+                onClick = onClick,
+                onLongClick = if (actions.isEmpty()) onLongClick else ({ menuOpen = true }),
+            )
+            .pointerInput(actions) {
+                awaitPointerEventScope {
+                    while (true) {
+                        val event = awaitPointerEvent(PointerEventPass.Initial)
+                        if (event.type != PointerEventType.Press) continue
+                        event.changes.firstOrNull()?.let { pressedAt = it.position }
+                        if (actions.isNotEmpty() && event.buttons.isSecondaryPressed) {
+                            menuOpen = true
+                            event.changes.forEach { it.consume() }
+                        }
+                    }
+                }
+            }
             // A row sized for a thumb wastes a desktop window: the same list shows
             // noticeably fewer chapters per screen than it has room for. A mouse
             // needs less, so desktop rows are tighter.
@@ -191,5 +230,19 @@ fun ChapterRow(
                 }
             }
         }
+    }
+    // Hung off a point of no size where the press landed. A dropdown measures
+    // from the bottom of what it is attached to, and a chapter row is the width
+    // of the window, so attaching it to the row put the menu in the wrong place.
+    Box(Modifier.offset { IntOffset(pressedAt.x.roundToInt(), pressedAt.y.roundToInt()) }) {
+        DropdownMenu(expanded = menuOpen, onDismissRequest = { menuOpen = false }) {
+            for (action in actions) {
+                DropdownMenuItem(
+                    text = { Text(action.label) },
+                    onClick = { menuOpen = false; action.onSelect() },
+                )
+            }
+        }
+    }
     }
 }

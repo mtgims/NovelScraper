@@ -86,6 +86,7 @@ import androidx.compose.material.icons.filled.OpenInBrowser
 import com.novelscraper.app.platform.showToast
 import com.novelscraper.app.ui.BookViewModel
 import com.novelscraper.app.ui.components.ChapterRow
+import com.novelscraper.app.ui.components.MenuAction
 import com.novelscraper.app.ui.components.StarRating
 import com.novelscraper.app.ui.components.VolumeHeaderRow
 import com.novelscraper.app.ui.components.groupVolumes
@@ -304,6 +305,30 @@ private fun BookContent(
             onReset = { showReset = true },
         )
     }
+    // What a chapter offers when asked (right-click, or a hold on a phone).
+    // "Previous" and "all others" mean the whole novel, not the open volume.
+    fun chapterActions(ch: LibChapter): List<MenuAction> {
+        val before = chapters.filter { it.position < ch.position }.map { it.position }
+        val others = chapters.filter { it.position != ch.position }.map { it.position }
+        val isRead = ch.position in readSet
+        return buildList {
+            if (before.isNotEmpty()) {
+                add(MenuAction("Mark previous as read") { vm.setPositionsRead(before, true) })
+                add(MenuAction("Mark previous as unread") { vm.setPositionsRead(before, false) })
+            }
+            add(MenuAction(if (isRead) "Mark as unread" else "Mark as read") {
+                vm.setChapterRead(ch.position, !isRead)
+            })
+            if (others.isNotEmpty()) {
+                add(MenuAction("Mark all others as read") { vm.setPositionsRead(others, true) })
+                add(MenuAction("Mark all others as unread") { vm.setPositionsRead(others, false) })
+            }
+            // A hold used to start picking chapters out, and now opens this, so
+            // the way in has to be here or it is gone.
+            add(MenuAction("Select chapters") { selection = selection + ch.position })
+        }
+    }
+
     val chapters: LazyListScope.() -> Unit = {
         volumes.forEach { vol ->
             val isOpen = flat || vol.number in expanded
@@ -335,6 +360,9 @@ private fun BookContent(
                         onToggleRead = {
                             vm.setChapterRead(ch.position, ch.position !in readSet)
                         },
+                        // While picking chapters out, a hold goes on extending the
+                        // selection; the menu would get in the way of that.
+                        actions = if (selecting) emptyList() else chapterActions(ch),
                     )
                 }
             }
