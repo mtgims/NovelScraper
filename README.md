@@ -55,8 +55,22 @@ lives in `app/composeApp/pluginHost/`.
 
 ## Sync
 
-The app doesn't need an account. Tough if you create one you can sync between devices.
+The app doesn't need an account. Though if you create one you can sync between devices.
 
 ## Cloudflare
 
 Several sources are protected by Cloudflare and can block you more than needed if you are using a VPN. You can always pass the captcha in the webview browser.
+
+## Licence
+
+NovelScraper is free software under the **GNU General Public License, version 3
+or later**. The full text is in [LICENSE](LICENSE).
+
+In short: it may be used, studied, changed and shared by anyone. Anything built
+on it and passed on has to stay free software under the same licence, source
+included. That is deliberate. A reader people install and trust should not be
+able to come back to them as a closed build with advertising or tracking bolted
+on, and copyleft is what makes that a licence violation rather than someone
+else's business model.
+
+Contributions are accepted on the same terms.
