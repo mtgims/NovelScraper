@@ -60,7 +60,9 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.collectAsState
+import androidx.compose.runtime.MutableState
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.snapshotFlow
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
@@ -107,6 +109,9 @@ fun BookScreen(
 
     var menuOpen by remember { mutableStateOf(false) }
     var showDelete by remember { mutableStateOf(false) }
+    // True once the page's own heading has scrolled out of sight, at which point
+    // the bar takes the title over.
+    val titleInBar = remember { mutableStateOf(false) }
     var showDownload by remember { mutableStateOf(false) }
     var showAudio by remember { mutableStateOf(false) }
 
@@ -125,7 +130,13 @@ fun BookScreen(
                 colors = TopAppBarDefaults.topAppBarColors(
                     containerColor = MaterialTheme.colorScheme.background,
                 ),
-                title = { Text(book?.title ?: "", maxLines = 1, overflow = TextOverflow.Ellipsis) },
+                // The heading in the page says the title; repeating it in the bar
+                // said everything twice. It appears once the heading scrolls off.
+                title = {
+                    if (titleInBar.value) {
+                        Text(book?.title ?: "", maxLines = 1, overflow = TextOverflow.Ellipsis)
+                    }
+                },
                 navigationIcon = {
                     IconButton(onClick = onBack) {
                         Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back")
@@ -182,7 +193,8 @@ fun BookScreen(
                     TextButton(onClick = vm::refresh) { Text("Try again") }
                 }
                 else -> BookContent(b, list, progress, collections, vm, onOpenReader,
-                    onDownload = { showDownload = true }, onRemove = { showDelete = true })
+                    onDownload = { showDownload = true }, onRemove = { showDelete = true },
+                    titleInBar = titleInBar)
             }
         }
     }
@@ -229,7 +241,15 @@ private fun LibBook.downloadedCountOf(chapters: List<LibChapter>?) = chapters?.c
 
 // Above this width the book screen shows details and chapters side by side.
 private val TWO_PANE_MIN_WIDTH = 900.dp
-private val DETAILS_PANE_WIDTH = 420.dp
+// The details column takes a share of the window rather than a fixed 420dp,
+// which left a wide desktop window with a cramped column beside acres of list.
+// Clamped so it neither squeezes the summary nor swallows the chapters.
+/** Roughly how far the heading has to scroll before the bar takes the title. */
+private const val TITLE_SCROLLED_AWAY_PX = 160
+
+private val DETAILS_PANE_MIN = 380.dp
+private val DETAILS_PANE_MAX = 560.dp
+private const val DETAILS_PANE_SHARE = 0.32f
 
 @Composable
 private fun BookContent(
@@ -241,6 +261,7 @@ private fun BookContent(
     onOpenReader: (Int) -> Unit,
     onDownload: () -> Unit,
     onRemove: () -> Unit,
+    titleInBar: MutableState<Boolean>,
 ) {
     val readSet = progress?.readPositions ?: emptySet()
     val resumePos = progress?.lastPosition?.takeIf { p -> chapters.any { it.position == p } } ?: 1
@@ -334,9 +355,16 @@ private fun BookContent(
     BoxWithConstraints(Modifier.fillMaxSize()) {
         if (maxWidth >= TWO_PANE_MIN_WIDTH) {
             // Wide window: details on the left, the chapter list beside them.
+            // Read here: inside the Row, RowScope hides BoxWithConstraints' maxWidth.
+            val detailsWidth = (maxWidth * DETAILS_PANE_SHARE)
+                .coerceIn(DETAILS_PANE_MIN, DETAILS_PANE_MAX)
             Row(Modifier.fillMaxSize()) {
                 val detailScroll = rememberScrollState()
-                Box(Modifier.width(DETAILS_PANE_WIDTH).fillMaxHeight()) {
+                LaunchedEffect(detailScroll) {
+                    snapshotFlow { detailScroll.value > TITLE_SCROLLED_AWAY_PX }
+                        .collect { titleInBar.value = it }
+                }
+                Box(Modifier.width(detailsWidth).fillMaxHeight()) {
                     Column(Modifier.fillMaxSize().verticalScroll(detailScroll)) { header() }
                     ColumnScrollbar(detailScroll, Modifier.align(Alignment.CenterEnd).fillMaxHeight())
                 }
@@ -353,7 +381,14 @@ private fun BookContent(
         } else {
             Column(Modifier.fillMaxSize()) {
                 selectionBar()
-                LazyColumn(Modifier.fillMaxSize()) {
+                val listState = rememberLazyListState()
+                LaunchedEffect(listState) {
+                    snapshotFlow {
+                        listState.firstVisibleItemIndex > 0 ||
+                            listState.firstVisibleItemScrollOffset > TITLE_SCROLLED_AWAY_PX
+                    }.collect { titleInBar.value = it }
+                }
+                LazyColumn(Modifier.fillMaxSize(), state = listState) {
                     item { header() }
                     chapters()
                 }

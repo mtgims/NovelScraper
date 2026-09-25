@@ -34,6 +34,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.novelscraper.app.library.LibChapter
+import com.novelscraper.app.platform.isDesktop
 import com.novelscraper.app.ui.theme.Kicker
 
 /** A volume with its chapters, in reading order. [label] names it when the
@@ -133,6 +134,7 @@ fun ChapterRow(
 ) {
     val interaction = remember { MutableInteractionSource() }
     val hovered by interaction.collectIsHoveredAsState()
+    val rowPad = if (isDesktop) 7.dp else 12.dp
     val bg = when {
         current -> MaterialTheme.colorScheme.primary.copy(alpha = 0.16f)
         selected -> MaterialTheme.colorScheme.primary.copy(alpha = 0.22f)
@@ -146,7 +148,10 @@ fun ChapterRow(
             .background(bg)
             .hoverable(interaction)
             .combinedClickable(onClick = onClick, onLongClick = onLongClick)
-            .padding(start = 14.dp, end = 8.dp, top = 12.dp, bottom = 12.dp),
+            // A row sized for a thumb wastes a desktop window: the same list shows
+            // noticeably fewer chapters per screen than it has room for. A mouse
+            // needs less, so desktop rows are tighter.
+            .padding(start = 14.dp, end = 8.dp, top = rowPad, bottom = rowPad),
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(4.dp),
     ) {
