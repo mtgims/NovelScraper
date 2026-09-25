@@ -1,15 +1,46 @@
+<div align="center">
+
+<img src=".github/assets/icon.png" width="112" alt="">
+
 # NovelScraper
 
-A novel downloader, reader and listener for all (still working on this one) devices. 
+**A web novel reader for Android, Linux and Windows.**
 
-Works on:
+The library stays on the device, reads offline, and narrates itself
+with voices that never leave the machine.
 
-Windows
-Linux
-Android
+<a href="https://github.com/mtgims/NovelScraper/releases/latest/download/novelscraper.apk"><img alt="Download for Android" src="https://img.shields.io/badge/Android-APK-818cf8?style=for-the-badge&logo=android&logoColor=white"></a>
+<a href="https://github.com/mtgims/NovelScraper/releases/latest/download/novelscraper-x86_64.AppImage"><img alt="Download for Linux" src="https://img.shields.io/badge/Linux-AppImage-818cf8?style=for-the-badge&logo=linux&logoColor=white"></a>
+<a href="https://github.com/mtgims/NovelScraper/releases/latest/download/novelscraper-setup.exe"><img alt="Download for Windows" src="https://img.shields.io/badge/Windows-Installer-818cf8?style=for-the-badge&logo=windows&logoColor=white"></a>
 
-I originally wanted to make an iOS and MacOS version of the app but I don't have any way to test them as I'm not in the possession of any Apple devices. If anyone is even reading this and has a Mac and iPhone and want's to contribute a working and tested verison of the app they are free to do it. 
+<a href="https://github.com/mtgims/NovelScraper/releases"><img alt="Latest release" src="https://img.shields.io/github/v/release/mtgims/NovelScraper?style=flat&color=818cf8&label=latest"></a>
+<a href="LICENSE"><img alt="Licence" src="https://img.shields.io/badge/licence-GPL--3.0--or--later-818cf8?style=flat"></a>
 
+</div>
+
+![The library, holding five books imported from EPUB files](.github/assets/library.png)
+
+<table>
+<tr>
+<td width="33%"><img alt="Narration reading a chapter aloud, the current sentence highlighted" src=".github/assets/narration.png"></td>
+<td width="33%"><img alt="A chapter open in the reader" src=".github/assets/reader.png"></td>
+<td width="33%"><img alt="Narration settings: engine, voice and GPU acceleration" src=".github/assets/voices.png"></td>
+</tr>
+<tr>
+<td align="center"><sub><b>Narration, following the sentence</b></sub></td>
+<td align="center"><sub><b>The reader</b></sub></td>
+<td align="center"><sub><b>Voices, all on device</b></sub></td>
+</tr>
+</table>
+
+<sub>Shown with public-domain books from Project Gutenberg. The app ships with no
+sources and no content of its own.</sub>
+
+A Windows build with a terminal attached is on the
+[releases page](https://github.com/mtgims/NovelScraper/releases) as well, worth having only to see why a crash happened.
+There is no iOS or macOS build: they cannot be tested without the hardware, and
+an untested build is worse than none. Anyone able to test one is welcome to
+contribute it.
 
 ---
 
@@ -24,7 +55,7 @@ I originally wanted to make an iOS and MacOS version of the app but I don't have
 - **Typeset reader.** A choice of font, size and line spacing. It remembers the
   position in each chapter, restores it after images and fonts settle, and marks
   chapters read as they are finished.
-- **Narrates.** Kokoro and Piper, both running locally through sherpa-onnx, with
+- **Narrates.** Kokoro, Supertonic and Piper, all running locally through sherpa-onnx, with
   gapless playback across chapters, a sleep timer, a pronunciation dictionary,
   and audio export to WAV. Android plays in the background and on the lock
   screen; Linux answers the keyboard's media keys through MPRIS.
