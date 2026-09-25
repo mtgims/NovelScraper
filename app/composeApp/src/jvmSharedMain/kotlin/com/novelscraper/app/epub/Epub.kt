@@ -1,5 +1,6 @@
 package com.novelscraper.app.epub
 
+import com.novelscraper.app.platform.Log
 import org.w3c.dom.Element
 import org.w3c.dom.Node
 import java.io.ByteArrayInputStream
@@ -222,11 +223,18 @@ object Epub {
             runCatching { setFeature("http://apache.org/xml/features/disallow-doctype-decl", true) }
             runCatching { setFeature("http://xml.org/sax/features/external-general-entities", false) }
             runCatching { setFeature("http://xml.org/sax/features/external-parameter-entities", false) }
-            isXIncludeAware = false
-            isExpandEntityReferences = false
+            // Android's parser does not implement these two and the abstract base
+            // class throws UnsupportedOperationException for them, which is why
+            // this has to tolerate failure the same way the features above do.
+            // Desktop JVM implements them, so only a device catches it.
+            runCatching { isXIncludeAware = false }
+            runCatching { isExpandEntityReferences = false }
         }.newDocumentBuilder().parse(ByteArrayInputStream(bytes))
     } catch (e: Exception) {
-        throw Invalid("the package file is not readable")
+        // The reason matters: every EPUB that fails to import fails here, and
+        // "not readable" alone says nothing about which part gave up.
+        Log.w("Epub", "xml parse: ${e::class.simpleName}: ${e.message}")
+        throw Invalid("the package file is not readable (${e.message})")
     }
 
     /** Child elements by local name, ignoring any namespace prefix. */
