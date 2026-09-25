@@ -13,8 +13,15 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withTimeoutOrNull
+
+/** How long a finished drag keeps showing its own order while waiting for the
+ *  database flow to catch up. Long enough for a slow write, short enough that a
+ *  drag whose order can never arrive does not look stuck. */
+private const val REORDER_SETTLE_MS = 2_000L
 
 /** The library grid, straight from the local library; [refresh] imports what is
  *  new on the server (when signed in). */
@@ -71,7 +78,22 @@ class LibraryViewModel : ViewModel() {
         val ids = _dragOrder.value ?: return
         viewModelScope.launch {
             lib.reorder(ids)
-            _dragOrder.value = null
+            // The library flow re-queries on another dispatcher, so it has not
+            // caught up by the time reorder() returns. Clearing the drag order
+            // here would leave the grid rendering the previous emission, which
+            // is the order from before the drag: the novel appears back in the
+            // slot it was dragged out of for a frame or two. Wait for the flow
+            // to agree before letting go.
+            //
+            // Bounded, because a novel removed while the drag was in flight
+            // means the flow never matches and this would wait forever. On
+            // timeout the drag order is dropped anyway and the database wins.
+            withTimeoutOrNull(REORDER_SETTLE_MS) {
+                books.first { it != null && it.map(LibBook::id) == ids }
+            }
+            // Only clear what this drag set: another drag may have started
+            // while the write was in flight, and its order must survive.
+            _dragOrder.compareAndSet(ids, null)
         }
     }
 
