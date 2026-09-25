@@ -58,6 +58,11 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import com.novelscraper.app.ui.components.ColumnScrollbar
+import androidx.compose.ui.text.input.PasswordVisualTransformation
+import androidx.compose.material3.ButtonDefaults
+import retrofit2.HttpException
+import com.novelscraper.app.net.detail
+import com.novelscraper.app.platform.showToast
 import com.novelscraper.app.net.Account
 import com.novelscraper.app.net.Net
 import com.novelscraper.app.platform.hasSystemTts
@@ -73,6 +78,7 @@ import kotlinx.coroutines.launch
 @Composable
 fun SettingsScreen(onSignIn: () -> Unit, onLogout: () -> Unit) {
     val account by Account.state.collectAsState()
+    var deleting by remember { mutableStateOf(false) }
     val theme by ThemeController.theme.collectAsState()
     val rate by ReaderPrefs.ttsRate.collectAsState()
     val fontScale by ReaderPrefs.fontScale.collectAsState()
@@ -139,7 +145,18 @@ fun SettingsScreen(onSignIn: () -> Unit, onLogout: () -> Unit) {
                 Text(Net.baseUrl + if (a.online) "" else " · not reached yet", style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant)
                 SyncStatus()
-                Button(onClick = onLogout, modifier = Modifier.padding(top = 16.dp)) { Text("Sign out") }
+                Row(
+                    Modifier.padding(top = 16.dp),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    Button(onClick = onLogout) { Text("Sign out") }
+                    TextButton(
+                        onClick = { deleting = true },
+                        colors = ButtonDefaults.textButtonColors(
+                            contentColor = MaterialTheme.colorScheme.error),
+                    ) { Text("Delete account") }
+                }
             }
             Account.State.SignedOut -> {
                 Text(
@@ -151,6 +168,7 @@ fun SettingsScreen(onSignIn: () -> Unit, onLogout: () -> Unit) {
                 Button(onClick = onSignIn, modifier = Modifier.padding(top = 16.dp)) { Text("Sign in") }
             }
         }
+        if (deleting) DeleteAccountDialog(onDismiss = { deleting = false })
     }
       }
       ColumnScrollbar(scroll, Modifier.align(Alignment.CenterEnd).fillMaxHeight())
@@ -168,6 +186,87 @@ object SettingsHooks {
  * engine's model download. Downloading runs off the main thread; progress is
  * mirrored back to Compose state.
  */
+/**
+ * Deleting the account for good. The password is asked for again because a
+ * session left open is not enough for something irreversible, and the server
+ * requires it too.
+ */
+@Composable
+private fun DeleteAccountDialog(onDismiss: () -> Unit) {
+    val scope = rememberCoroutineScope()
+    var password by remember { mutableStateOf("") }
+    var busy by remember { mutableStateOf(false) }
+    var error by remember { mutableStateOf<String?>(null) }
+
+    AlertDialog(
+        onDismissRequest = { if (!busy) onDismiss() },
+        title = { Text("Delete this account?") },
+        text = {
+            Column {
+                Text(
+                    "The account and everything it syncs are deleted from the server, " +
+                        "for good. This cannot be undone.",
+                    style = MaterialTheme.typography.bodyMedium,
+                )
+                Text(
+                    "Your library stays on this device and goes on working without an " +
+                        "account. Your other devices keep what they already have, but " +
+                        "will stop syncing.",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.padding(top = 10.dp),
+                )
+                OutlinedTextField(
+                    value = password,
+                    onValueChange = { password = it; error = null },
+                    label = { Text("Your password") },
+                    singleLine = true,
+                    enabled = !busy,
+                    isError = error != null,
+                    visualTransformation = PasswordVisualTransformation(),
+                    modifier = Modifier.fillMaxWidth().padding(top = 16.dp),
+                )
+                error?.let {
+                    Text(it, color = MaterialTheme.colorScheme.error,
+                        style = MaterialTheme.typography.bodySmall,
+                        modifier = Modifier.padding(top = 8.dp))
+                }
+            }
+        },
+        confirmButton = {
+            TextButton(
+                enabled = !busy && password.isNotBlank(),
+                colors = ButtonDefaults.textButtonColors(
+                    contentColor = MaterialTheme.colorScheme.error),
+                onClick = {
+                    busy = true
+                    error = null
+                    scope.launch {
+                        try {
+                            Account.deleteAccount(password)
+                            showToast("Account deleted.")
+                            onDismiss()
+                        } catch (e: HttpException) {
+                            error = e.detail() ?: when (e.code()) {
+                                401 -> "That password is not right."
+                                400 -> "This is the last administrator account."
+                                else -> "Couldn't delete the account (${e.code()})."
+                            }
+                        } catch (e: Exception) {
+                            error = "Can't reach the server."
+                        } finally {
+                            busy = false
+                        }
+                    }
+                },
+            ) { Text(if (busy) "Deleting…" else "Delete for good") }
+        },
+        dismissButton = {
+            TextButton(onClick = onDismiss, enabled = !busy) { Text("Cancel") }
+        },
+    )
+}
+
 @Composable
 private fun NarrationEngine() {
     val engine by ReaderPrefs.ttsEngine.collectAsState()

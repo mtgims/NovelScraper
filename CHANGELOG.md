@@ -13,6 +13,10 @@ since moved to a repository of their own; this one holds the apps.
 
 ## 2026-09-25
 
+- **Accounts can be deleted by the people who own them (0.48.0).** A button in
+  Settings, a password to confirm, and the account and everything it synced are
+  gone. Previously there was no way to do it at all.
+
 - **A chapter's own menu, and sources that follow the account (0.47.1).** Right-
   click or hold a chapter to mark runs of them read or unread; installing a
   source now tells the other devices, and they can install it back. The book

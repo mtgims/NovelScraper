@@ -27,6 +27,10 @@ data class UserRead(
 @Serializable
 data class AuthConfig(val allow_open_signup: Boolean)
 
+/** Re-entering the password for something irreversible. */
+@Serializable
+data class PasswordConfirm(val password: String)
+
 @Serializable
 data class BookStat(
     val book_id: Int,

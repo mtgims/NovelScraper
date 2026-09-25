@@ -3,6 +3,16 @@
 Newest first.
 
 
+## 0.48.0, 2026-09-25 · `versionCode 98`
+- **Delete your account, yourself.** Settings, under Server account, has a
+  *Delete account* button. It asks for your password again, because a session
+  left open somewhere should not be enough to destroy an account, and then
+  removes the account and every record synced under it, at once and for good.
+  There was no way to do this before: the only route was an administrator, and
+  the server refused even that for your own account. The last administrator of a
+  server still cannot leave, since nobody would be left to run it.
+  Your library is untouched. It stays on the device and works without an account.
+
 ## 0.47.1, 2026-09-25 · `versionCode 97`
 - **A chapter can be asked what it can do.** Right-click one on a computer, hold
   it on a phone: mark the chapters before it read or unread, mark it either way,

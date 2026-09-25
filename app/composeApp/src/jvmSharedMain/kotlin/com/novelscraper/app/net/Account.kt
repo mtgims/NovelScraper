@@ -12,6 +12,7 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import com.novelscraper.app.data.PasswordConfirm
 import okhttp3.HttpUrl.Companion.toHttpUrlOrNull
 import retrofit2.HttpException
 
@@ -86,6 +87,19 @@ object Account {
 
     suspend fun logout() {
         try { Net.api.logout() } catch (_: Exception) {}
+        forget()
+    }
+
+    /**
+     * Delete the account on the server, with everything synced under it, and
+     * sign out here. Throws if the server refuses, so the caller can say why:
+     * a wrong password is 401, and the last administrator is 400.
+     *
+     * The library on this device is untouched. Only the copy the account kept
+     * goes, which is the point of it.
+     */
+    suspend fun deleteAccount(password: String) {
+        Net.api.deleteAccount(PasswordConfirm(password))
         forget()
     }
 
