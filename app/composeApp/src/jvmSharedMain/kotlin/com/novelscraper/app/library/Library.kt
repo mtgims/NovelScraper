@@ -32,6 +32,13 @@ object Library {
     )) {
         this.store = store
         store.onLocalChange = { LibrarySyncRunner.soon() }
+        // Installing or removing a source is a change the other devices want.
+        Extensions.onInstalledChange = { list ->
+            store.scope.launch {
+                runCatching { store.noteInstalledSources(list.map { it.id to it.repo }) }
+                    .onFailure { Log.w("Library", "note sources: ${it.message}") }
+            }
+        }
         store.prune()
         ChapterDownloads.start()
     }

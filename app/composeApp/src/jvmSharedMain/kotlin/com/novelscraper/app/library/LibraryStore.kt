@@ -337,6 +337,28 @@ class LibraryStore(
         books.delete(id.toLong())
     }
 
+    // --- installed sources -------------------------------------------------------
+
+    /**
+     * Record which sources this device has, so the same ones can be installed on
+     * the others. Called whenever a source is installed or removed.
+     *
+     * A source that is no longer here is recorded as disabled rather than
+     * dropped, because a deleted record would simply be re-sent by whichever
+     * device still has it.
+     */
+    suspend fun noteInstalledSources(sources: List<Pair<String, String>>) = change {
+        val here = sources.toMap()
+        for ((id, repo) in sources) sync.emitSource(id, repo, true)
+        sync.syncedSources().forEach { (id, repo) ->
+            if (id !in here) sync.emitSource(id, repo, false)
+        }
+    }
+
+    /** Sources the account's devices have, as (plugin id, repository). Includes
+     *  this device's own; the caller filters out what is already installed. */
+    suspend fun syncedSources(): List<Pair<String, String>> = io { sync.syncedSources() }
+
     // --- imported novels -------------------------------------------------------
 
     /**

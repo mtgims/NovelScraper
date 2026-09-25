@@ -60,7 +60,12 @@ class ExtensionsViewModel : ViewModel() {
     val installed: StateFlow<List<InstalledPlugin>> = Extensions.installed
     val repos: StateFlow<List<String>> = Extensions.repos
 
-    init { refresh() }
+    /** Sources the account's other devices have that this one does not, as
+     *  (plugin id, repository). Empty without an account, or once they match. */
+    private val _synced = MutableStateFlow<List<Pair<String, String>>>(emptyList())
+    val synced: StateFlow<List<Pair<String, String>>> = _synced.asStateFlow()
+
+    init { refresh(); loadSynced() }
 
     fun refresh() {
         _ui.update { it.copy(loading = true) }
@@ -70,8 +75,33 @@ class ExtensionsViewModel : ViewModel() {
         }
     }
 
-    fun install(p: RepoPlugin) = act(p.id, "Installed ${p.name}.") { Extensions.install(p) }
-    fun uninstall(p: InstalledPlugin) = act(p.id, "Removed ${p.name}.") { Extensions.uninstall(p.id) }
+    private fun loadSynced() {
+        if (!Library.ready) return
+        viewModelScope.launch {
+            val here = Extensions.installed.value.mapTo(HashSet()) { it.id }
+            _synced.value = runCatching { Library.store.syncedSources() }.getOrDefault(emptyList())
+                .filter { (id, _) -> id !in here }
+                .distinctBy { it.first }
+        }
+    }
+
+    /**
+     * Install a source another device has. Its repository may not be one this
+     * device lists, so it is added first; the plugin is then found in the
+     * refreshed catalogue by id and installed like any other.
+     */
+    fun installSynced(id: String, repo: String) = act(id, "Installed $id.") {
+        if (repo !in Extensions.repos.value) Extensions.addRepo(repo)
+        val offered = Extensions.available()
+        val plugin = offered.plugins.firstOrNull { it.id == id }
+            ?: error("that repository no longer offers it")
+        Extensions.install(plugin)
+        _ui.update { it.copy(available = offered.plugins, failedRepos = offered.failed) }
+        loadSynced()
+    }
+
+    fun install(p: RepoPlugin) = act(p.id, "Installed ${p.name}.") { Extensions.install(p); loadSynced() }
+    fun uninstall(p: InstalledPlugin) = act(p.id, "Removed ${p.name}.") { Extensions.uninstall(p.id); loadSynced() }
 
     fun addRepo(url: String) { Extensions.addRepo(url); refresh() }
     fun removeRepo(url: String) { Extensions.removeRepo(url); refresh() }

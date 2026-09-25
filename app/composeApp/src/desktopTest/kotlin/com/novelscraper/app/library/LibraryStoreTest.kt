@@ -174,6 +174,29 @@ class LibraryStoreTest {
     }
 
     @Test
+    fun installedSourcesTravelToTheOtherDevices() = runBlocking {
+        // Installing two sources here, then removing one.
+        lib.noteInstalledSources(listOf(
+            "novelscraper.royalroad" to "https://example.invalid/index.json",
+            "novelscraper.scribblehub" to "https://example.invalid/index.json",
+        ))
+        assertTrue(lib.syncNow())
+        lib.noteInstalledSources(listOf("novelscraper.royalroad" to "https://example.invalid/index.json"))
+        assertTrue(lib.syncNow())
+
+        // What the account now holds: the one still installed, and the other
+        // marked disabled rather than deleted (a deleted record would just be
+        // re-sent by whichever device still has it).
+        val kept = server.syncStore.value("source", "novelscraper.royalroad")
+        val gone = server.syncStore.value("source", "novelscraper.scribblehub")
+        assertTrue(kept != null && "\"enabled\":true" in kept, kept.orEmpty())
+        assertTrue(gone != null && "\"enabled\":false" in gone, gone.orEmpty())
+
+        // And what this device offers a screen: only the ones still enabled.
+        assertEquals(listOf("novelscraper.royalroad"), lib.syncedSources().map { it.first })
+    }
+
+    @Test
     fun recordsFromAnotherDeviceArriveAndApply() = runBlocking {
         // What another device has already synced about a novel this one has never seen.
         val key = "src:fake\tn"

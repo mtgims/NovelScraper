@@ -176,10 +176,15 @@ object Extensions {
     fun hasUpdate(installed: InstalledPlugin, offered: RepoPlugin?): Boolean =
         offered != null && compareVersions(offered.version, installed.version) > 0
 
+    /** Called after a source is installed or removed, so the library can sync
+     *  which sources this device has. Set by Library.init. */
+    var onInstalledChange: ((List<InstalledPlugin>) -> Unit)? = null
+
     private fun saveInstalled(list: List<InstalledPlugin>) {
         _installed.value = list.sortedBy { it.name.lowercase() }
         dir.mkdirs()
         File(dir, "installed.json").writeText(json.encodeToString(ListSerializer(InstalledPlugin.serializer()), _installed.value))
+        onInstalledChange?.invoke(_installed.value)
     }
 
     private fun codeFile(id: String) = File(dir, id.replace(Regex("[^A-Za-z0-9._-]"), "_") + ".js")

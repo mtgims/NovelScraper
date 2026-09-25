@@ -228,6 +228,7 @@ fun ExtensionsScreen(onBack: () -> Unit) {
     val ui by vm.ui.collectAsState()
     val installed by vm.installed.collectAsState()
     val repos by vm.repos.collectAsState()
+    val synced by vm.synced.collectAsState()
     var tab by rememberSaveable { mutableStateOf(if (Extensions.installed.value.isEmpty()) 1 else 0) }
     var query by rememberSaveable { mutableStateOf("") }
     var lang by rememberSaveable { mutableStateOf<String?>(null) }
@@ -307,7 +308,28 @@ fun ExtensionsScreen(onBack: () -> Unit) {
             else -> {
                 val list = ui.available.filter { it.id !in installedIds && matches(it.name, it.site, it.lang) }
                     .sortedWith(compareBy({ languageRank(it.lang) }, { it.name.lowercase() }))
+                // Sources another device has whose repository this one does not
+                // list, so they appear nowhere else. Installing one adds the
+                // repository first.
+                val elsewhere = synced.filter { (id, _) -> offered[id] == null && matches(id, id, "") }
                 LazyColumn(contentPadding = PaddingValues(bottom = 104.dp)) {
+                    if (elsewhere.isNotEmpty()) {
+                        item {
+                            Text(
+                                "On your other devices",
+                                style = MaterialTheme.typography.labelLarge,
+                                color = MaterialTheme.colorScheme.primary,
+                                modifier = Modifier.padding(start = 20.dp, top = 12.dp, bottom = 2.dp),
+                            )
+                        }
+                        items(elsewhere, key = { "synced-" + it.first }) { (id, repo) ->
+                            SourceRow(id, "", "", repo, null) {
+                                if (id in ui.busy) CircularProgressIndicator(Modifier.size(22.dp), strokeWidth = 2.dp)
+                                else TextButton(onClick = { vm.installSynced(id, repo) }) { Text("Install") }
+                            }
+                        }
+                        item { HorizontalDivider(Modifier.padding(vertical = 8.dp)) }
+                    }
                     items(list, key = { it.id }) { p ->
                         SourceRow(p.name, p.lang, p.iconUrl, "v${p.version}", null) {
                             if (p.id in ui.busy) CircularProgressIndicator(Modifier.size(22.dp), strokeWidth = 2.dp)
