@@ -13,6 +13,11 @@ since moved to a repository of their own; this one holds the apps.
 
 ## 2026-09-25
 
+- **A chapter's own menu, and sources that follow the account (0.47.1).** Right-
+  click or hold a chapter to mark runs of them read or unread; installing a
+  source now tells the other devices, and they can install it back. The book
+  page stops wasting a desktop window.
+
 - **The server holds accounts and sync, and nothing else (0.47.0).** Scraping,
   novel storage, EPUB building, covers, server-side narration and the web
   reader are gone from it; the apps did all of it already. EPUB import and

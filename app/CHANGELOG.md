@@ -3,6 +3,24 @@
 Newest first.
 
 
+## 0.47.1, 2026-09-25 · `versionCode 97`
+- **A chapter can be asked what it can do.** Right-click one on a computer, hold
+  it on a phone: mark the chapters before it read or unread, mark it either way,
+  or mark every other chapter in the novel read or unread. Holding a chapter used
+  to start picking chapters out, so the menu offers that too.
+- **The sources a device has now follow the account properly.** They were sent
+  once and never again, and nothing on the receiving side did anything with
+  them. Installing or removing a source now tells the other devices, and the
+  Extensions screen lists, above Available, the sources an account has that this
+  device cannot otherwise see because it does not list their repository.
+  Installing one adds the repository and fetches the source. Nothing installs by
+  itself.
+- **The book page has room to breathe on a computer.** The details column grew
+  with the window instead of staying 420dp wide beside an ocean of chapter list,
+  chapter rows are no longer padded for a thumb, and the title is no longer
+  printed twice: the bar leaves it to the heading and takes it over only once
+  the heading has scrolled away.
+
 ## 0.47.0, 2026-09-25 · `versionCode 96`
 - **An account now does one thing: sync.** The server used to scrape novels,
   store their text, build EPUBs, serve covers and run a web reader. All of that
