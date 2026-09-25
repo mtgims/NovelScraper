@@ -42,14 +42,13 @@ class LibraryViewModel : ViewModel() {
     /** What a check for new chapters is doing. */
     val updates = LibraryUpdates.state
 
-    /** Pull to refresh: the server's library, sync, and a look for new chapters. */
+    /** Pull to refresh: sync, and a look for new chapters. */
     fun refresh(force: Boolean = true) {
         LibraryUpdates.checkAll(force = force, announce = force)
         if (_refreshing.value || !Account.signedIn) return
         _refreshing.value = true
         viewModelScope.launch {
             try {
-                lib.pullServer()
                 LibrarySyncRunner.now()
             } catch (_: Exception) {
             } finally {

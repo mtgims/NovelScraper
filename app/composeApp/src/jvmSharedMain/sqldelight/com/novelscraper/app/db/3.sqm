@@ -1,0 +1,30 @@
+-- The server stopped storing novels: it holds accounts and sync records now.
+--
+-- Novels that lived there cannot be fetched any more, so their rows go. Their
+-- text was rescued as EPUB files before the server was stripped, and importing
+-- one puts it back, on this device.
+--
+-- Chapters, content and shelf membership follow through ON DELETE CASCADE, but
+-- foreign keys are not necessarily enforced during a migration, so they are
+-- cleared explicitly first.
+DELETE FROM chapter_content WHERE chapter_id IN (
+    SELECT c.id FROM chapter c JOIN book b ON b.id = c.book_id WHERE b.server_id IS NOT NULL);
+DELETE FROM download_queue WHERE chapter_id IN (
+    SELECT c.id FROM chapter c JOIN book b ON b.id = c.book_id WHERE b.server_id IS NOT NULL);
+DELETE FROM chapter WHERE book_id IN (SELECT id FROM book WHERE server_id IS NOT NULL);
+DELETE FROM book_collection WHERE book_id IN (SELECT id FROM book WHERE server_id IS NOT NULL);
+DELETE FROM book WHERE server_id IS NOT NULL;
+
+-- A shelf that was named after the server's copy keeps the shelf, but not the
+-- name: enrollment would otherwise re-create on the server the very record the
+-- server's own migration deleted. A fresh local id makes it this device's.
+UPDATE collection SET sync_key = 'c-' || lower(hex(randomblob(6)))
+WHERE sync_key IS NOT NULL AND substr(sync_key, 1, 4) = 'srv:';
+
+-- Their sync records go too, so enrollment does not put them back. The server
+-- deleted its own copies in the same move.
+DELETE FROM sync_meta WHERE substr(key, 1, 4) = 'srv:' OR instr(key, char(9) || 'srv:') > 0;
+DELETE FROM sync_pending WHERE substr(key, 1, 4) = 'srv:' OR instr(key, char(9) || 'srv:') > 0;
+
+-- Changes queued for the server's REST endpoints, which no longer exist.
+DROP TABLE IF EXISTS server_outbox;

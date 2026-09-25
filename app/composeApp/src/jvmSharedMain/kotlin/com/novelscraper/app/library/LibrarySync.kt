@@ -15,11 +15,9 @@ import java.util.UUID
 internal data class NovelRec(
     val plugin: String? = null,
     val path: String? = null,
-    val server_id: Int? = null,
     val title: String = "",
     val author: String = "",
     val cover: String? = null,
-    val site: String = "",
     val in_library: Boolean = true,
 )
 
@@ -30,6 +28,8 @@ internal data class NovelRec(
 @Serializable internal data class ReadRec(val read: Boolean = false)
 @Serializable internal data class CollectionRec(val name: String = "", val sort: Long = 0, val deleted: Boolean = false)
 @Serializable internal data class ShelfRec(val member: Boolean = false)
+/** An installed source extension, so the same sources follow the account. */
+@Serializable internal data class SourceRec(val repo: String = "", val enabled: Boolean = true)
 
 internal object Kind {
     const val NOVEL = "novel"
@@ -39,6 +39,7 @@ internal object Kind {
     const val READ = "read"
     const val COLLECTION = "collection"
     const val SHELF = "shelf"
+    const val SOURCE = "source"
 }
 
 private const val TAB = "\t"
@@ -59,6 +60,8 @@ internal class SyncRecords(
     private val db: LibraryDb,
     private val json: Json,
     private val now: () -> Long,
+    /** This device's installed sources, as (plugin id, repository). */
+    private val installedSources: () -> List<Pair<String, String>> = { emptyList() },
 ) {
     private val q get() = db.syncQueries
     private val books get() = db.bookQueries
@@ -97,11 +100,11 @@ internal class SyncRecords(
 
     // --- what to emit for a novel -----------------------------------------------
 
-    fun isSyncable(b: Book) = b.sync_key != null && (b.in_library != 0L || b.server_id != null)
+    fun isSyncable(b: Book) = b.sync_key != null && b.in_library != 0L
 
     fun novelRec(b: Book) = NovelRec(
-        plugin = b.plugin_id, path = b.path, server_id = b.server_id?.toInt(), title = b.title,
-        author = b.author, cover = b.cover, site = b.site, in_library = b.in_library != 0L,
+        plugin = b.plugin_id, path = b.path, title = b.title,
+        author = b.author, cover = b.cover, in_library = b.in_library != 0L,
     )
 
     fun emitNovel(b: Book, ts: Long? = null) =
@@ -115,6 +118,17 @@ internal class SyncRecords(
 
     fun emitRead(b: Book, chapterPath: String, read: Boolean, ts: Long? = null) =
         emit(Kind.READ, b.sync_key!! + TAB + chapterPath, ReadRec.serializer(), ReadRec(read), ts)
+
+    /** An installed source, named by its plugin id. */
+    fun emitSource(pluginId: String, repo: String, enabled: Boolean, ts: Long? = null) =
+        emit(Kind.SOURCE, pluginId, SourceRec.serializer(), SourceRec(repo, enabled), ts)
+
+    /** The sources other devices have, as (plugin id, repository). */
+    fun syncedSources(): List<Pair<String, String>> =
+        q.ofKind(Kind.SOURCE).executeAsList().mapNotNull { m ->
+            runCatching { json.decodeFromString(SourceRec.serializer(), m.value_) }.getOrNull()
+                ?.takeIf { it.enabled && it.repo.isNotBlank() }?.let { m.key to it.repo }
+        }
 
     fun emitShelf(collectionKey: String, novelKey: String, member: Boolean, ts: Long? = null) =
         emit(Kind.SHELF, collectionKey + TAB + novelKey, ShelfRec.serializer(), ShelfRec(member), ts)
@@ -149,6 +163,7 @@ internal class SyncRecords(
         books.selectSyncable().executeAsList().forEach { id ->
             books.selectById(id).executeAsOneOrNull()?.let { emitSnapshot(it, ENROLL_TS) }
         }
+        installedSources().forEach { (id, repo) -> emitSource(id, repo, true, ENROLL_TS) }
         q.setEnrolled(1)
     }
 
@@ -184,6 +199,9 @@ internal class SyncRecords(
             }
             Kind.COLLECTION -> applyCollection(key, json.decodeFromString(CollectionRec.serializer(), value))
             Kind.SHELF -> applyShelf(key, json.decodeFromString(ShelfRec.serializer(), value))
+            // Stored only: acting on it means installing code, which is the
+            // Extensions screen's job (and needs the network). See syncedSources.
+            Kind.SOURCE -> {}
         }
     }
 
@@ -192,30 +210,20 @@ internal class SyncRecords(
         if (b == null) {
             if (!r.in_library) return
             val order = books.maxSortOrder().executeAsOne() + 1
-            when {
-                r.server_id != null ->
-                    // Its details and chapters come from the server's library.
-                    books.insertServer(r.server_id.toLong(), null, r.title, r.author, r.site, null, order, now())
-                r.plugin != null && r.path != null -> {
-                    books.insertSource(r.plugin, r.path, r.title, r.author, r.cover, r.site, null, now())
-                    val id = books.lastInsertId().executeAsOne()
-                    books.setInLibrary(1, now(), order, id)
-                }
-                else -> return
-            }
+            if (r.plugin == null || r.path == null) return   // nothing to read it from
+            books.insertSource(r.plugin, r.path, r.title, r.author, r.cover, "", null, now())
+            val id = books.lastInsertId().executeAsOne()
+            books.setInLibrary(1, now(), order, id)
             books.selectBySyncKey(key).executeAsOneOrNull()?.let { reapplyNovel(it) }
             return
         }
         if (r.in_library == (b.in_library != 0L)) return
-        when {
-            // Deleted from the server (by another device, or there).
-            b.server_id != null && !r.in_library -> books.delete(b.id)
-            r.in_library -> books.setInLibrary(1, now(), books.maxSortOrder().executeAsOne() + 1, b.id)
-            else -> {
-                books.setInLibrary(0, 0, 0, b.id)
-                chapters.clearQueueForBook(b.id)
-                chapters.removeDownloads(b.id)
-            }
+        if (r.in_library) {
+            books.setInLibrary(1, now(), books.maxSortOrder().executeAsOne() + 1, b.id)
+        } else {
+            books.setInLibrary(0, 0, 0, b.id)
+            chapters.clearQueueForBook(b.id)
+            chapters.removeDownloads(b.id)
         }
     }
 

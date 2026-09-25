@@ -5,10 +5,10 @@ import kotlin.test.Test
 import kotlin.test.assertEquals
 
 class DownloadsTest {
-    @Test fun serverFileNameRule() {
+    @Test fun fileNameRule() {
         assertEquals("renegade-immortal-volume-3.epub", downloadFileName("renegade-immortal", 3))
-        assertEquals("a_b_c.zip", downloadFileName("a b/c"))
-        assertEquals("book.zip", downloadFileName("???"))
+        assertEquals("a_b_c.epub", downloadFileName("a b/c"))
+        assertEquals("book.epub", downloadFileName("???"))
     }
 
     @Test fun neverOverwrites() {

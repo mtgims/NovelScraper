@@ -46,7 +46,6 @@ import com.novelscraper.app.ui.components.isTopLevelRoute
 import com.novelscraper.app.ui.screen.BookScreen
 import com.novelscraper.app.ui.screen.LibraryScreen
 import com.novelscraper.app.ui.screen.LoginScreen
-import com.novelscraper.app.ui.screen.ProgressScreen
 import com.novelscraper.app.ui.screen.ReaderScreen
 import com.novelscraper.app.ui.screen.RegisterScreen
 import com.novelscraper.app.ui.screen.SettingsScreen
@@ -57,22 +56,7 @@ import com.novelscraper.app.ui.screen.StatsScreen
 @Composable
 fun AppRoot() = MainApp()
 
-/** Stands in for a screen that needs the server while signed out. */
-@Composable
-private fun NeedsServer(what: String, onSignIn: () -> Unit, content: @Composable () -> Unit) {
-    val account by Account.state.collectAsState()
-    if (account is Account.State.SignedIn) { content(); return }
-    Column(
-        Modifier.fillMaxSize().padding(32.dp),
-        verticalArrangement = Arrangement.Center,
-        horizontalAlignment = Alignment.CenterHorizontally,
-    ) {
-        Text(what, style = MaterialTheme.typography.bodyLarge, textAlign = TextAlign.Center)
-        Button(onClick = onSignIn, modifier = Modifier.padding(top = 16.dp)) { Text("Sign in") }
-    }
-}
-
-private val TAB_ORDER = listOf("library", "browse", "jobs", "stats", "settings", "login", "register")
+private val TAB_ORDER = listOf("library", "browse", "stats", "settings", "login", "register")
 // Tab rank drives slide direction; detail screens (book/reader) rank high so
 // opening them slides forward (left), and back-navigation slides right.
 private fun routeRank(route: String?): Int {
@@ -182,9 +166,6 @@ private fun MainApp() {
                     onBack = { nav.popBackStack() },
                     onOpenNovel = { id -> nav.navigate("book/$id") },
                 )
-            }
-            composable("jobs") {
-                NeedsServer("Updates running on your NovelScraper server show here.", signIn) { ProgressScreen() }
             }
             // Worked out from the library on this device, so no account needed.
             composable("stats") { StatsScreen() }

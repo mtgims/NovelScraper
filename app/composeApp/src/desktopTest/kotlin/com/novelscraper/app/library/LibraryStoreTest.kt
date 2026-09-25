@@ -1,13 +1,5 @@
 package com.novelscraper.app.library
 
-import com.novelscraper.app.data.BookCollectionsUpdate
-import com.novelscraper.app.data.BookRead
-import com.novelscraper.app.data.BookUpdate
-import com.novelscraper.app.data.ChapterListItem
-import com.novelscraper.app.data.CollectionRead
-import com.novelscraper.app.data.CollectionUpdate
-import com.novelscraper.app.data.ProgressUpdate
-import com.novelscraper.app.data.ReadingProgressRead
 import com.novelscraper.app.data.SyncChange
 import com.novelscraper.app.data.SyncRequest
 import com.novelscraper.app.data.SyncResponse
@@ -64,39 +56,15 @@ class LibraryStoreTest {
         fun value(kind: String, key: String) = records[kind to key]?.c?.value
     }
 
-    /** A server holding two novels; can be taken offline. */
+    /** The sync endpoint; can be taken offline. */
     class FakeServer(val syncStore: FakeSync = FakeSync()) : ServerOrigin {
         override var enabled = true
         var offline = false
-        val books = mutableListOf(
-            BookRead(10, "a", "site-a", "Server A", "Author A", "en", rating = 4, collection_ids = listOf(100)),
-            BookRead(11, "b", "site-b", "Server B", "Author B", "en"),
-        )
-        val cols = mutableListOf(CollectionRead(100, "Favourites"))
-        val progress = HashMap<Int, ReadingProgressRead>()
-        val sent = ArrayList<Pair<Int, ProgressUpdate>>()
-        val ratings = ArrayList<Pair<Int, Int?>>()
-        val deleted = ArrayList<Int>()
 
-        private fun net() { if (offline) throw IOException("offline") }
-        override suspend fun books(): List<BookRead> { net(); return books.toList() }
-        override suspend fun book(id: Int): BookRead { net(); return books.first { it.id == id } }
-        override suspend fun collections(): List<CollectionRead> { net(); return cols.toList() }
-        override suspend fun chapters(id: Int): List<ChapterListItem> {
-            net(); return (1..4).map { ChapterListItem(it, "$it", "S$id ch $it", volume = if (it <= 2) 1 else 2) }
+        override suspend fun sync(request: SyncRequest): SyncResponse {
+            if (offline) throw IOException("offline")
+            return syncStore.sync(request)
         }
-        override suspend fun chapter(id: Int, position: Int): String { net(); return "<p>server $id/$position</p>" }
-        override suspend fun progress(id: Int): ReadingProgressRead {
-            net()
-            return progress[id] ?: ReadingProgressRead(1, 0f, emptyList(), 4, 0, 4, 0f, 0, 0, 0f, 0f)
-        }
-        override suspend fun putProgress(id: Int, update: ProgressUpdate) { net(); sent += id to update }
-        override suspend fun editBook(id: Int, update: BookUpdate) { net(); ratings += id to update.rating }
-        override suspend fun setBookCollections(id: Int, update: BookCollectionsUpdate) { net() }
-        override suspend fun updateCollection(id: Int, update: CollectionUpdate) { net() }
-        override suspend fun deleteCollection(id: Int) { net() }
-        override suspend fun deleteBook(id: Int) { net(); deleted += id }
-        override suspend fun sync(request: SyncRequest): SyncResponse { net(); return syncStore.sync(request) }
     }
 
     companion object {
@@ -206,67 +174,58 @@ class LibraryStoreTest {
     }
 
     @Test
-    fun serverLibraryIsImported() = runBlocking {
-        assertEquals(2, lib.pullServer())
-        val grid = lib.libraryFlow().first()
-        assertEquals(listOf("Server A", "Server B"), grid.map { it.title })
-        val a = grid[0]
-        assertEquals(10, a.serverId); assertEquals(4, a.rating); assertEquals("site-a", a.site)
-        assertEquals(4, lib.chaptersFlow(a.id).first().size)
-        assertEquals("<p>server 10/2</p>", lib.chapter(a.id, 2).content)
-
-        // Pulling again adds nothing; a novel deleted on the server goes.
-        server.books.removeAt(1)
-        assertEquals(0, lib.pullServer())
-        assertEquals(listOf("Server A"), lib.libraryFlow().first().map { it.title })
-    }
-
-    @Test
-    fun serverProgressAndShelvesArriveBySync() = runBlocking {
-        // What the server seeds from its tables for novel 10 on the first sync.
+    fun recordsFromAnotherDeviceArriveAndApply() = runBlocking {
+        // What another device has already synced about a novel this one has never seen.
+        val key = "src:fake\tn"
         val sync = server.syncStore
-        sync.seed("progress", "srv:10", """{"chapter":"3","scroll":0.5,"sentence":12}""")
-        for (p in 1..3) sync.seed("read", "srv:10\t$p", """{"read":true}""")
-        sync.seed("collection", "srv:100", """{"name":"Favourites","sort":1,"deleted":false}""")
-        sync.seed("shelf", "srv:100\tsrv:10", """{"member":true}""")
-        sync.seed("novel", "srv:10", """{"server_id":10,"title":"Server A","author":"Author A","site":"site-a","in_library":true}""")
+        sync.seed("novel", key, """{"plugin":"fake","path":"n","title":"The Novel","author":"Someone","in_library":true}""")
+        sync.seed("progress", key, """{"chapter":"n/c3","scroll":0.5,"sentence":12}""")
+        for (p in 1..3) sync.seed("read", "$key\tn/c$p", """{"read":true}""")
+        sync.seed("collection", "c-fav", """{"name":"Favourites","sort":1,"deleted":false}""")
+        sync.seed("shelf", "c-fav\t$key", """{"member":true}""")
 
-        // Sync first (the novel arrives before its chapters), then the import
-        // fetches the chapter list and the waiting records apply.
+        // The novel arrives before its chapters; refreshing fetches them and the
+        // waiting records then apply.
         assertTrue(lib.syncNow())
-        lib.pullServer()
-        val a = lib.libraryFlow().first().first { it.serverId == 10 }
+        val a = lib.libraryFlow().first().single()
+        assertEquals("The Novel", a.title)
+        lib.refresh(a.id)
+
         val p = lib.progress(a.id)
         assertEquals(setOf(1, 2, 3), p.readPositions); assertEquals(3, p.lastPosition)
         assertEquals(0.5f, p.scroll); assertEquals(12, p.sentence)
         val fav = lib.collectionsFlow().first().single()
         assertEquals("Favourites", fav.name)
-        assertEquals(listOf(fav.id), a.collectionIds)
-        assertEquals(1, lib.libraryFlow().first().count { it.serverId == 10 }, "one row, however it arrived")
+        assertEquals(listOf(fav.id), lib.book(a.id)!!.collectionIds)
+        assertEquals(1, lib.libraryFlow().first().size, "one row, however it arrived")
     }
 
     @Test
     fun changesMadeOfflineAreSentLater() = runBlocking {
-        lib.pullServer()
-        val a = lib.libraryFlow().first().first { it.serverId == 10 }
+        val id = lib.openSource("fake", "n", "The Novel", null).also { lib.refresh(it) }
+        lib.setInLibrary(id, true)
+        assertTrue(lib.syncNow())
+
         server.offline = true
-        lib.markOpened(a.id, 4)
-        lib.setRating(a.id, 2)
+        lib.markOpened(id, 4)
+        lib.setRating(id, 2)
         assertFailsWith<IOException> { lib.syncNow() }
         assertTrue(lib.pendingSyncCount() > 0)
-        assertEquals(setOf(4), lib.progress(a.id).readPositions, "kept here meanwhile")
+        assertEquals(setOf(4), lib.progress(id).readPositions, "kept here meanwhile")
 
         server.offline = false
         assertTrue(lib.syncNow())
         assertEquals(0L, lib.pendingSyncCount())
-        assertEquals("""{"read":true}""", server.syncStore.value("read", "srv:10\t4"))
-        assertEquals("""{"rating":2}""", server.syncStore.value("rating", "srv:10"))
+        assertEquals("""{"read":true}""", server.syncStore.value("read", "src:fake\tn\tn/c4"))
+        assertEquals("""{"rating":2}""", server.syncStore.value("rating", "src:fake\tn"))
     }
 
     @Test
-    fun signedOutServerIsLeftAlone() = runBlocking {
+    fun signedOutMeansNoSync() = runBlocking {
         server.enabled = false
-        assertEquals(0, lib.pullServer())
-        assertTrue(lib.libraryFlow().first().isEmpty())
+        val id = lib.openSource("fake", "n", "The Novel", null).also { lib.refresh(it) }
+        lib.setInLibrary(id, true)
+        assertFalse(lib.syncNow())
+        assertTrue(server.syncStore.records.isEmpty(), "nothing was sent")
     }
 }

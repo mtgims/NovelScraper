@@ -82,7 +82,6 @@ import com.novelscraper.app.ui.DownloadChoice
 import com.novelscraper.app.ui.components.BookCover
 import androidx.compose.material.icons.filled.LibraryAdd
 import androidx.compose.material.icons.filled.OpenInBrowser
-import com.novelscraper.app.net.Downloads
 import com.novelscraper.app.platform.showToast
 import com.novelscraper.app.ui.BookViewModel
 import com.novelscraper.app.ui.components.ChapterRow
@@ -109,7 +108,6 @@ fun BookScreen(
 
     var menuOpen by remember { mutableStateOf(false) }
     var showDelete by remember { mutableStateOf(false) }
-    var showEpub by remember { mutableStateOf(false) }
     var showDownload by remember { mutableStateOf(false) }
     var showAudio by remember { mutableStateOf(false) }
 
@@ -158,15 +156,11 @@ fun BookScreen(
                             text = { Text("Save as audio") },
                             onClick = { menuOpen = false; showAudio = true },
                         )
-                        if (b.server?.volumes?.isNotEmpty() == true) DropdownMenuItem(
+                        DropdownMenuItem(
                             text = { Text("Save as EPUB") },
-                            onClick = { menuOpen = false; showEpub = true },
+                            onClick = { menuOpen = false; vm.saveEpub(b.title, b.author) },
                         )
-                        if (b.isServer) DropdownMenuItem(
-                            text = { Text("Delete novel") },
-                            onClick = { menuOpen = false; showDelete = true },
-                        )
-                        else if (b.inLibrary) DropdownMenuItem(
+                        if (b.inLibrary) DropdownMenuItem(
                             text = { Text("Remove from library") },
                             onClick = { menuOpen = false; showDelete = true },
                         )
@@ -195,22 +189,6 @@ fun BookScreen(
     }
 
     val b = book
-    if (showEpub && b?.server != null) {
-        val server = b.server
-        EpubDialog(
-            book = server,
-            onVolume = { v ->
-                Downloads.volume(server.id, server.slug, v, server.title)
-                showToast("Saving volume $v…")
-            },
-            onAll = {
-                Downloads.all(server.id, server.slug, server.title)
-                showToast("Saving all volumes…")
-            },
-            onDismiss = { showEpub = false },
-        )
-    }
-
     if (showAudio && b != null) {
         AudioExportDialog(
             onChoice = { showAudio = false; vm.exportAudio(it) },
@@ -228,11 +206,11 @@ fun BookScreen(
     if (showDelete && b != null) {
         AlertDialog(
             onDismissRequest = { showDelete = false },
-            title = { Text(if (b.isServer) "Delete novel?" else "Remove from library?") },
+            title = { Text(if (b.pluginId == null) "Delete novel?" else "Remove from library?") },
             text = {
                 Text(
-                    if (b.isServer) "Remove \"${b.title}\" and all its chapters from your library, here and on " +
-                        "your server? Your reading position is archived, so re-adding it later restores where you were."
+                    if (b.pluginId == null) "Remove \"${b.title}\" and all its chapters? It was imported from a " +
+                        "file, so there is no source to add it back from: importing the EPUB again is the only way."
                     else "Remove \"${b.title}\" from your library, with its downloaded chapters? " +
                         "You can add it again from Browse."
                 )
@@ -240,8 +218,8 @@ fun BookScreen(
             confirmButton = {
                 TextButton(onClick = {
                     showDelete = false
-                    if (b.isServer) vm.delete(onBack) else vm.removeFromLibrary()
-                }) { Text(if (b.isServer) "Delete" else "Remove") }
+                    if (b.pluginId == null) vm.delete(onBack) else vm.removeFromLibrary()
+                }) { Text(if (b.pluginId == null) "Delete" else "Remove") }
             },
             dismissButton = { TextButton(onClick = { showDelete = false }) { Text("Cancel") } },
         )
@@ -455,44 +433,6 @@ private fun DownloadDialog(onChoice: (DownloadChoice) -> Unit, onDismiss: () -> 
             }
         },
         confirmButton = { TextButton(onClick = onDismiss) { Text("Cancel") } },
-    )
-}
-
-/** Pick a volume to save as EPUB, or all of them as a zip. The dialog stays open
- *  so several volumes can be queued in one go; each lands in Downloads with a
- *  system notification. */
-@Composable
-private fun EpubDialog(
-    book: BookRead,
-    onVolume: (Int) -> Unit,
-    onAll: () -> Unit,
-    onDismiss: () -> Unit,
-) {
-    AlertDialog(
-        onDismissRequest = onDismiss,
-        title = { Text("Save as EPUB") },
-        text = {
-            LazyColumn(Modifier.fillMaxWidth()) {
-                if (book.volumes.size > 1) {
-                    item {
-                        DownloadRow(
-                            label = "All volumes",
-                            detail = "${book.volumes.size} EPUBs in one zip",
-                            onClick = onAll,
-                        )
-                        HorizontalDivider(color = MaterialTheme.colorScheme.outline.copy(alpha = 0.3f))
-                    }
-                }
-                items(book.volumes.sortedBy { it.number }, key = { it.number }) { v ->
-                    DownloadRow(
-                        label = "Volume ${v.number}",
-                        detail = if (v.chapter_count == 1) "1 chapter" else "${v.chapter_count} chapters",
-                        onClick = { onVolume(v.number) },
-                    )
-                }
-            }
-        },
-        confirmButton = { TextButton(onClick = onDismiss) { Text("Done") } },
     )
 }
 

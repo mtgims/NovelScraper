@@ -1,13 +1,5 @@
 package com.novelscraper.app.library
 
-import com.novelscraper.app.data.BookCollectionsUpdate
-import com.novelscraper.app.data.BookRead
-import com.novelscraper.app.data.BookUpdate
-import com.novelscraper.app.data.ChapterListItem
-import com.novelscraper.app.data.CollectionRead
-import com.novelscraper.app.data.CollectionUpdate
-import com.novelscraper.app.data.ProgressUpdate
-import com.novelscraper.app.data.ReadingProgressRead
 import com.novelscraper.app.data.SyncRequest
 import com.novelscraper.app.data.SyncResponse
 import com.novelscraper.app.db.jdbcLibraryDriver
@@ -38,18 +30,6 @@ class LibrarySyncTest {
     private class Link(val store: LibraryStoreTest.FakeSync) : ServerOrigin {
         override val enabled = true
         var offline = false
-        override suspend fun books() = emptyList<BookRead>()
-        override suspend fun book(id: Int): BookRead = error("none")
-        override suspend fun collections() = emptyList<CollectionRead>()
-        override suspend fun chapters(id: Int) = emptyList<ChapterListItem>()
-        override suspend fun chapter(id: Int, position: Int) = ""
-        override suspend fun progress(id: Int): ReadingProgressRead = error("none")
-        override suspend fun putProgress(id: Int, update: ProgressUpdate) {}
-        override suspend fun editBook(id: Int, update: BookUpdate) {}
-        override suspend fun setBookCollections(id: Int, update: BookCollectionsUpdate) {}
-        override suspend fun updateCollection(id: Int, update: CollectionUpdate) {}
-        override suspend fun deleteCollection(id: Int) {}
-        override suspend fun deleteBook(id: Int) {}
         override suspend fun sync(request: SyncRequest): SyncResponse {
             if (offline) throw IOException("offline")
             return store.sync(request)

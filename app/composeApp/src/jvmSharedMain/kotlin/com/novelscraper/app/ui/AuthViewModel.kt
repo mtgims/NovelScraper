@@ -7,7 +7,6 @@ import com.novelscraper.app.data.RegisterRequest
 import com.novelscraper.app.data.UserRead
 import com.novelscraper.app.library.Library
 import com.novelscraper.app.net.Account
-import com.novelscraper.app.net.AutoUpdate
 import com.novelscraper.app.net.Net
 import com.novelscraper.app.net.detail
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -61,8 +60,6 @@ class AuthViewModel : ViewModel() {
         viewModelScope.launch {
             try {
                 Account.signedIn(call())
-                AutoUpdate.trigger()        // books due for an auto-update on the server
-                Library.pullServerSoon()    // bring the server's library in
                 onDone()
             } catch (e: HttpException) {
                 _error.value = e.detail() ?: "$what failed (${e.code()})"

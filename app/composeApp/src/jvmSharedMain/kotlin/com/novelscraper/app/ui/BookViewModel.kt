@@ -11,8 +11,9 @@ import com.novelscraper.app.library.Library
 import com.novelscraper.app.extensions.PluginNotInstalledException
 import com.novelscraper.app.net.Account
 import com.novelscraper.app.tts.AudiobookExport
-import com.novelscraper.app.net.Net
-import com.novelscraper.app.net.ScrapeRelay
+import com.novelscraper.app.epub.Epub
+import com.novelscraper.app.net.downloadFileName
+import com.novelscraper.app.platform.saveToDownloads
 import com.novelscraper.app.net.detail
 import com.novelscraper.app.ui.browse.describe
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -109,22 +110,28 @@ class BookViewModel(private val bookId: Int) : ViewModel() {
             }
             return
         }
-        val serverId = b.serverId ?: return
+        // Anything without a source (an imported EPUB) has nothing to check.
+        _action.value = "This novel was imported, so there is nothing to check."
+    }
+
+    /** Write the novel to an EPUB in the user's Downloads. The server used to
+     *  build this file; it is made here now, from the chapters held on the
+     *  device, so it works offline and needs no account. */
+    fun saveEpub(title: String, author: String) {
         viewModelScope.launch {
-            ScrapeRelay.start()  // best-effort: gated updates should use this device's IP
-            _action.value = try {
-                Net.api.updateBook(serverId)
-                "Checking for new chapters… they'll be added to the last volume."
-            } catch (e: HttpException) {
-                e.detail() ?: when (e.code()) {
-                    409 -> "An update is already running."
-                    400 -> "This novel has no source to update from (imported?)."
-                    401 -> "Sign in to your server to check for new chapters."
-                    else -> "Couldn't start the update (${e.code()})."
-                }
-            } catch (e: Exception) {
-                "Can't reach the server."
+            val chapters = lib.storedChapters(bookId)
+            if (chapters.isEmpty()) {
+                _action.value = "No chapters are on this device yet. Download some first."
+                return@launch
             }
+            val saved = runCatching {
+                saveToDownloads(downloadFileName(title), "application/epub+zip") { out ->
+                    Epub.write(title, author, chapters, out)
+                }
+            }.getOrNull()
+            _action.value =
+                if (saved != null) "Saved $saved (${chapters.size} chapters) to Downloads."
+                else "Couldn't save the EPUB."
         }
     }
 

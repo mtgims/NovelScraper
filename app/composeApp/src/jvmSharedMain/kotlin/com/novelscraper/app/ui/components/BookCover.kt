@@ -43,10 +43,7 @@ fun RemoteImage(
 }
 
 /** The cover image URL for a library novel, or null for none. */
-fun coverUrl(book: LibBook): String? = when {
-    book.serverId != null -> if (book.server?.has_cover == true) Net.coverUrl(book.serverId) else null
-    else -> book.cover?.takeIf { it.isNotBlank() }
-}
+fun coverUrl(book: LibBook): String? = book.cover?.takeIf { it.isNotBlank() }
 
 /** A novel's cover filling [modifier], over its initials (shown while loading or
  *  when there is no cover). */

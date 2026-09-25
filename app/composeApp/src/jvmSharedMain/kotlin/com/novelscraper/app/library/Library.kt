@@ -3,6 +3,7 @@ package com.novelscraper.app.library
 import com.novelscraper.app.db.openLibraryDriver
 import com.novelscraper.app.extensions.PluginException
 import com.novelscraper.app.extensions.SiteChallengeException
+import com.novelscraper.app.extensions.Extensions
 import com.novelscraper.app.net.Account
 import com.novelscraper.app.platform.Log
 import kotlinx.coroutines.CoroutineScope
@@ -25,19 +26,14 @@ object Library {
     val ready: Boolean get() = ::store.isInitialized
 
     /** Open the database; call once at startup, after [Account.init]. */
-    fun init(store: LibraryStore = LibraryStore(openLibraryDriver(), ExtensionSources, NetServer { Account.signedIn })) {
+    fun init(store: LibraryStore = LibraryStore(
+        openLibraryDriver(), ExtensionSources, NetServer { Account.signedIn },
+        installedSources = { Extensions.installed.value.map { it.id to it.repo } },
+    )) {
         this.store = store
         store.onLocalChange = { LibrarySyncRunner.soon() }
         store.prune()
         ChapterDownloads.start()
-    }
-
-    /** Import the server's library in the background, if signed in. */
-    fun pullServerSoon() {
-        if (!Account.signedIn) return
-        store.scope.launch {
-            runCatching { store.pullServer() }.onFailure { Log.w("Library", "server pull: ${it.message}") }
-        }
     }
 }
 

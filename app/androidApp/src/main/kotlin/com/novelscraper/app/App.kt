@@ -14,7 +14,6 @@ import com.novelscraper.app.library.DownloadKeeper
 import com.novelscraper.app.library.Library
 import com.novelscraper.app.net.Account
 import com.novelscraper.app.net.Net
-import com.novelscraper.app.net.ScrapeRelay
 import com.novelscraper.app.net.buildImageLoader
 import com.novelscraper.app.platform.initPlatform
 import com.novelscraper.app.tts.AndroidTtsPlayer
@@ -39,23 +38,18 @@ class App : Application(), SingletonImageLoader.Factory {
         LibraryPrefs.init()
         ThemeController.init()
         TtsController.player = AndroidTtsPlayer(this)
-        ScrapeRelay.init(this)  // lets the relay create its offscreen render WebView
-        // Keep a scrape-relay WebSocket open while the app is foregrounded, so
-        // scrapes fetch through this phone's IP (bypassing the server's Cloudflare
-        // block). Dropped when backgrounded — the server then fetches server-side.
-        registerActivityLifecycleCallbacks(ForegroundRelay)
+        // Sync while the app is foregrounded, and send what changed on the way out.
+        registerActivityLifecycleCallbacks(ForegroundSync)
     }
 
-    /** Ref-counts started activities → relay connected only while foregrounded. */
-    private object ForegroundRelay : ActivityLifecycleCallbacks {
+    /** Ref-counts started activities, so syncing runs only while foregrounded. */
+    private object ForegroundSync : ActivityLifecycleCallbacks {
         private var started = 0
         override fun onActivityStarted(activity: Activity) {
-            // Coming to the foreground: relay up, due server updates, and the
-            // server's library brought in (when signed in).
             if (started++ == 0) Account.onForeground()
         }
         override fun onActivityStopped(activity: Activity) {
-            if (--started <= 0) { started = 0; ScrapeRelay.stop(); Account.onBackground() }
+            if (--started <= 0) { started = 0; Account.onBackground() }
         }
         override fun onActivityCreated(activity: Activity, savedInstanceState: Bundle?) {}
         override fun onActivityResumed(activity: Activity) {}

@@ -83,3 +83,6 @@ WHERE (kind IN ('order', 'rating', 'progress') AND key = :novel)
 -- All shelf records (a few per novel; filtered by key in LibrarySync).
 shelves:
 SELECT * FROM sync_meta WHERE kind = 'shelf';
+
+ofKind:
+SELECT * FROM sync_meta WHERE kind = ?;

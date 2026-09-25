@@ -33,7 +33,6 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.viewmodel.compose.viewModel
-import com.novelscraper.app.net.Account
 import com.novelscraper.app.data.StatsRead
 import com.novelscraper.app.platform.SaveTarget
 import com.novelscraper.app.platform.rememberFileSaver
@@ -74,8 +73,7 @@ fun StatsScreen() {
             is StatsUi.Loading -> CircularProgressIndicator(Modifier.align(Alignment.Center))
             is StatsUi.Error -> Text(s.message, Modifier.align(Alignment.Center),
                 color = MaterialTheme.colorScheme.error)
-            // The export is the server's file, so it is offered only when signed in.
-            is StatsUi.Data -> StatsContent(s.stats, onExport = if (Account.signedIn) ({ chooser = true }) else null)
+            is StatsUi.Data -> StatsContent(s.stats, onExport = { chooser = true })
         }
     }
 

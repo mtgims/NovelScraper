@@ -40,7 +40,6 @@ internal data class NavItem(val route: String, val label: String, val icon: Imag
 internal val navItems = listOf(
     NavItem("library", "Library", Icons.AutoMirrored.Filled.MenuBook),
     NavItem("browse", "Browse", Icons.Filled.Explore),
-    NavItem("jobs", "Progress", Icons.Filled.Sync),
     NavItem("stats", "Stats", Icons.Filled.BarChart),
     NavItem("settings", "Settings", Icons.Filled.Settings),
 )

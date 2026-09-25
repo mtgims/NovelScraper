@@ -16,9 +16,9 @@ import okhttp3.HttpUrl.Companion.toHttpUrlOrNull
 import retrofit2.HttpException
 
 /**
- * The NovelScraper server account, which is optional: the library, Browse and the
- * reader work without one. Signed in, the server's library is imported and kept
- * in step, and the server-side tools (scraping by URL, EPUB import, stats) work.
+ * The NovelScraper server account, which is optional: everything the app does
+ * works without one. Signed in, the library is kept in step with the user's
+ * other devices, which is all an account is for.
  *
  * A saved session counts as signed in while the server can't be reached, so the
  * app opens offline straight into the library; only the server saying the
@@ -63,17 +63,13 @@ object Account {
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
 
     /**
-     * The app came to the foreground (or started, on desktop). Signed in: keep
-     * the scrape relay up (scrapes then go through this device's connection),
-     * ask for due server updates, confirm the session, then bring in what is new
-     * on the server and send changes made here.
+     * The app came to the foreground (or started, on desktop). Signed in:
+     * confirm the session and start syncing.
      */
     fun onForeground() {
         if (!signedIn) return
-        ScrapeRelay.start()
-        AutoUpdate.trigger()
         LibrarySyncRunner.start()
-        scope.launch { if (check()) Library.pullServerSoon() }
+        scope.launch { check() }
     }
 
     /** The app left the foreground (Android): send what changed here. */
@@ -85,7 +81,6 @@ object Account {
     fun signedIn(user: UserRead) {
         prefs.putString(KEY_USER, user.username)
         _state.value = State.SignedIn(user.username, online = true)
-        ScrapeRelay.start()
         LibrarySyncRunner.start()
     }
 
@@ -101,7 +96,6 @@ object Account {
     }
 
     private fun forget() {
-        ScrapeRelay.stop()
         LibrarySyncRunner.stop()
         // The next account syncs from scratch; this one's records aren't its.
         scope.launch { runCatching { Library.store.resetSync() } }

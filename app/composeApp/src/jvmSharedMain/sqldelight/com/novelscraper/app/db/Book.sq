@@ -1,10 +1,14 @@
 -- A novel the app knows about. Two origins:
---   source  read straight from its site through an extension: plugin_id + path
---   server  scraped or imported on the NovelScraper server: server_id (its id
---           there) and server_meta (the server's BookRead JSON: slug, volumes...)
+--   source    read from its site through an extension: plugin_id + path
+--   imported  read out of an EPUB on this device: neither, and no sync_key,
+--             because an imported novel stays on the device that imported it
 -- A source novel gets a row as soon as it is opened from Browse, with
 -- in_library = 0; "Add to library" sets it to 1. Rows outside the library that
 -- have not been opened for a while are pruned.
+--
+-- server_id / server_meta are left over from when the server stored novels. It
+-- does not any more, they are always NULL, and nothing reads them; SQLite before
+-- 3.35 cannot drop a column, so they stay until the table is next rebuilt.
 CREATE TABLE book (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     plugin_id TEXT,
@@ -46,12 +50,6 @@ SELECT * FROM book WHERE id = ?;
 selectBySource:
 SELECT * FROM book WHERE plugin_id = ? AND path = ?;
 
-selectByServerId:
-SELECT * FROM book WHERE server_id = ?;
-
-selectServerIds:
-SELECT id, server_id FROM book WHERE server_id IS NOT NULL;
-
 -- The library grid, with the counts it shows.
 selectLibrary:
 SELECT b.*,
@@ -67,16 +65,18 @@ insertSource:
 INSERT INTO book (plugin_id, path, title, author, cover, site, web_url, opened_at, sync_key)
 VALUES (:plugin_id, :path, :title, :author, :cover, :site, :web_url, :opened_at, 'src:' || :plugin_id || char(9) || :path);
 
-insertServer:
-INSERT INTO book (server_id, server_meta, title, author, site, rating, in_library, sort_order, added_at, sync_key)
-VALUES (:server_id, :server_meta, :title, :author, :site, :rating, 1, :sort_order, :added_at, 'srv:' || :server_id);
+-- A novel imported from an EPUB here. No plugin to fetch from, and no sync key:
+-- the file is on this device only, so the other devices have nothing to show.
+insertLocal:
+INSERT INTO book (title, author, cover, site, summary, in_library, sort_order, added_at, opened_at, checked_at)
+VALUES (:title, :author, :cover, 'Imported', :summary, 1, :sort_order, :added_at, :added_at, :added_at);
 
 selectBySyncKey:
 SELECT * FROM book WHERE sync_key = ?;
 
--- What sync shares: novels in the library, and every server novel.
+-- What sync shares: the novels in the library that came from a source.
 selectSyncable:
-SELECT id FROM book WHERE sync_key IS NOT NULL AND (in_library = 1 OR server_id IS NOT NULL);
+SELECT id FROM book WHERE sync_key IS NOT NULL AND in_library = 1;
 
 setSentence:
 UPDATE book SET sentence = ? WHERE id = ?;
@@ -86,10 +86,6 @@ SELECT last_insert_rowid();
 
 updateSourceMeta:
 UPDATE book SET title = ?, author = ?, cover = ?, summary = ?, genres = ?, status = ?, web_url = ?
-WHERE id = ?;
-
-updateServerMeta:
-UPDATE book SET server_meta = ?, title = ?, author = ?, site = ?
 WHERE id = ?;
 
 setInLibrary:

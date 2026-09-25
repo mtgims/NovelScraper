@@ -3,6 +3,31 @@
 Newest first.
 
 
+## 0.47.0, 2026-09-25 · `versionCode 96`
+- **An account now does one thing: sync.** The server used to scrape novels,
+  store their text, build EPUBs, serve covers and run a web reader. All of that
+  happens on the device already, so it has been taken out of the server and out
+  of the app. What an account adds is the library kept in step between devices:
+  the novels, their order, ratings, categories, read chapters, the reading
+  position to the sentence, and which sources are installed.
+- **Importing an EPUB happens here, and needs no account.** The file used to be
+  uploaded to the server; it is read on the device now, so importing works
+  offline, signed in or not. An imported novel stays on the device that
+  imported it and is deliberately not synced: the records carry what a library
+  holds, not the books themselves.
+- **Save as EPUB works for any novel, offline.** The file was built by the
+  server and offered only for novels stored there. It is written on the device
+  now, from the chapters held there, for any novel with something downloaded.
+- **Exporting the reading statistics no longer needs an account** either, for
+  the same reason: the file is written here.
+- **Novels that lived on the server have been removed from the library.** They
+  cannot be fetched any more, so the rows would only have failed to open.
+  Anything read from a source is untouched. A novel that was on the server can
+  be brought back by exporting it as an EPUB beforehand and importing the file.
+- **The Progress tab is gone**, along with checking a server novel for new
+  chapters and the scrape relay. Novels from a source are still checked for new
+  chapters, on the device, as before.
+
 ## 0.46.1, 2026-09-24 · `versionCode 95`
 - **Stats count every novel.** They came from the server, which knows only the
   novels scraped or imported there, so a novel added from a source never

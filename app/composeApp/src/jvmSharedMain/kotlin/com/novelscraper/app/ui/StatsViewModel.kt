@@ -5,14 +5,14 @@ import androidx.lifecycle.viewModelScope
 import com.novelscraper.app.data.BookStat
 import com.novelscraper.app.data.StatsRead
 import com.novelscraper.app.library.Library
-import com.novelscraper.app.net.Account
-import com.novelscraper.app.net.Net
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import kotlinx.serialization.json.Json
+import java.util.Locale
 
 sealed interface StatsUi {
     data object Loading : StatsUi
@@ -40,26 +40,16 @@ class StatsViewModel : ViewModel() {
     /**
      * The statistics of the whole library on this device.
      *
-     * They used to be the server's alone, and the server knows only the novels
-     * scraped or imported there: a novel added from a source was missing from
-     * every figure. Books and chapters now come from the library itself, which
-     * holds every novel and what has been read of it. Words need the text: the
-     * server's figure stands for its own novels, whose text it has, and a
-     * source novel's words are counted in the chapters whose text is on this
-     * device (downloaded, or kept from reading them).
+     * Books and chapters come from the library itself, which holds every novel
+     * and what has been read of it. Words need the text, so they are counted in
+     * the chapters whose text is on this device (downloaded, or kept from
+     * reading them).
      */
     private suspend fun libraryStats(): StatsRead = withContext(Dispatchers.IO) {
         val books = Library.store.libraryFlowOnce()
-        val server = if (Account.signedIn) runCatching { Net.api.stats() }.getOrNull() else null
-        var words = server?.words_read?.toLong() ?: 0L
-        for (b in books) {
-            // With the server's figure in hand its novels are already counted.
-            if (server != null && b.serverId != null) continue
-            words += Library.store.wordsRead(b.id)
-        }
-        // Hours at the server's own reading speed when it says, else a typical one.
-        val wordsPerMinute = server?.takeIf { it.words_read > 0 && it.hours_read > 0f }
-            ?.let { it.words_read / (it.hours_read * 60f) } ?: WORDS_PER_MINUTE
+        var words = 0L
+        for (b in books) words += Library.store.wordsRead(b.id)
+        val wordsPerMinute = WORDS_PER_MINUTE
         val perBook = books.map { b ->
             val read = b.chapterCount - b.unreadCount
             BookStat(b.id, b.title, b.chapterCount, read,
@@ -85,14 +75,37 @@ class StatsViewModel : ViewModel() {
         )
     }
 
-    /** Fetch the reading-progress export ("csv" | "json") as bytes; null on error. */
+    /** The reading-progress export ("csv" | "json") as bytes; null on error.
+     *  Written here from the library on this device, so it needs no account. */
     suspend fun export(format: String): ByteArray? = withContext(Dispatchers.IO) {
         try {
-            Net.api.exportProgress(format).use { it.bytes() }
+            val s = libraryStats()
+            val text = if (format == "json") toJson(s) else toCsv(s)
+            text.toByteArray(Charsets.UTF_8)
         } catch (e: Exception) {
             null
         }
     }
+
+    private fun toCsv(s: StatsRead): String = buildString {
+        append("title,total_chapters,read_chapters,percent_read\n")
+        for (b in s.books) {
+            append(csvField(b.title)).append(',')
+            append(b.total_chapters).append(',')
+            append(b.read_count).append(',')
+            append(String.format(Locale.ROOT, "%.1f", b.percent_read)).append('\n')
+        }
+    }
+
+    /** RFC 4180: quote when the value holds a comma, quote or newline, and
+     *  double any quote inside. */
+    private fun csvField(value: String): String =
+        if (value.any { it == ',' || it == '"' || it == '\n' || it == '\r' })
+            '"' + value.replace("\"", "\"\"") + '"'
+        else value
+
+    private fun toJson(s: StatsRead): String =
+        Json { prettyPrint = true }.encodeToString(StatsRead.serializer(), s)
 }
 
 /** A typical adult's silent reading speed, for hours read where the server

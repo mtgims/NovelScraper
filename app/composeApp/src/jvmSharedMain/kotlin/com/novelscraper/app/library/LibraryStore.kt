@@ -10,6 +10,7 @@ import com.novelscraper.app.data.SyncRequest
 import com.novelscraper.app.db.Book
 import com.novelscraper.app.db.LibraryDb
 import com.novelscraper.app.db.SelectLibrary
+import com.novelscraper.app.epub.Epub
 import com.novelscraper.app.extensions.ChapterItem
 import com.novelscraper.app.platform.Log
 import kotlinx.coroutines.CoroutineScope
@@ -29,30 +30,30 @@ import kotlinx.serialization.json.Json
  * recently read chapter text, reading progress, ratings and collections. Screens
  * and narration read and write here; nothing waits for a server.
  *
- * Chapter text comes from the novel's origin when it is not stored yet: its
- * extension ([SourceOrigin]) for source novels, the NovelScraper server
- * ([ServerOrigin]) for novels scraped or imported there. Text read while
- * streaming is cached (the newest [CACHE_CHAPTERS] chapters); downloads stay.
+ * Chapter text comes from the novel's extension ([SourceOrigin]) when it is not
+ * stored yet. Text read while streaming is cached (the newest [CACHE_CHAPTERS]
+ * chapters); downloads stay.
  *
  * Signed in, the library syncs with the user's other devices ([syncNow], see
  * [SyncRecords]): novels in the library, their order, ratings, reading position
- * (to the sentence), read marks and collections, never chapter text. Novels
- * stored on the server are found by [pullServer]; deleting one goes through a
- * small outbox ([flushOutbox]) as it deletes it on the server.
+ * (to the sentence), read marks, collections and which sources are installed.
+ * Never chapter text: the server stores no novels, and a book imported here
+ * from an EPUB stays on this device.
  */
 class LibraryStore(
     driver: SqlDriver,
     private val sources: SourceOrigin,
     private val server: ServerOrigin,
     private val now: () -> Long = System::currentTimeMillis,
+    /** This device's installed sources, as (plugin id, repository). */
+    private val installedSources: () -> List<Pair<String, String>> = { emptyList() },
 ) {
     private val db = LibraryDb(driver)
     private val books get() = db.bookQueries
     private val chapters get() = db.chapterQueries
     private val shelves get() = db.collectionQueries
-    private val outbox get() = db.outboxQueries
 
-    /** Background work (outbox sends, cache pruning). */
+    /** Background work (cache pruning). */
     internal val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
     // encodeDefaults: a sync record spells out every field, so "read: false"
     // travels as {"read":false} rather than an empty object.
@@ -153,10 +154,7 @@ class LibraryStore(
     /** Fetch the novel's details and chapter list from its origin again. */
     suspend fun refresh(id: Int) {
         val b = io { books.selectById(id.toLong()).executeAsOneOrNull() } ?: return
-        when {
-            b.plugin_id != null && b.path != null -> refreshSource(b, b.plugin_id, b.path)
-            b.server_id != null -> refreshServer(b.id.toInt(), b.server_id.toInt())
-        }
+        if (b.plugin_id != null && b.path != null) refreshSource(b, b.plugin_id, b.path)
     }
 
     private suspend fun refreshSource(b: Book, pluginId: String, path: String) {
@@ -212,11 +210,11 @@ class LibraryStore(
     }
 
     /** Fetch one chapter's text from the novel's origin, without storing it. */
-    internal suspend fun fetchContent(b: Book, chapterPath: String, position: Int): String = when {
-        b.plugin_id != null -> sources.chapter(b.plugin_id, chapterPath)
-        b.server_id != null -> server.chapter(b.server_id.toInt(), position)
-        else -> error("This novel has no source")
-    }
+    internal suspend fun fetchContent(b: Book, chapterPath: String, position: Int): String =
+        if (b.plugin_id != null) sources.chapter(b.plugin_id, chapterPath)
+        // An imported novel's text is stored when it is imported, so it never
+        // reaches here; anything else has no way to be fetched.
+        else error("This novel has no source")
 
     /** Opening a chapter: it becomes the resume point and counts as read. */
     suspend fun markOpened(id: Int, position: Int) = change {
@@ -331,16 +329,48 @@ class LibraryStore(
         }
     }
 
-    /** Remove a novel from this device, with its downloads. A server novel is
-     *  deleted on the server too (and so from the other devices). */
-    suspend fun delete(id: Int) {
-        val sid = serverIdOf(id)
-        change {
-            val b = books.selectById(id.toLong()).executeAsOneOrNull() ?: return@change
-            if (b.sync_key != null && sync.isSyncable(b)) sync.emitNovel(b.copy(in_library = 0))
-            books.delete(id.toLong())
+    /** Remove a novel from this device, with its downloads. The other devices
+     *  take it out of their libraries too, through sync. */
+    suspend fun delete(id: Int) = change {
+        val b = books.selectById(id.toLong()).executeAsOneOrNull() ?: return@change
+        if (b.sync_key != null && sync.isSyncable(b)) sync.emitNovel(b.copy(in_library = 0))
+        books.delete(id.toLong())
+    }
+
+    // --- imported novels -------------------------------------------------------
+
+    /**
+     * Add a novel read out of an EPUB on this device, and return its id.
+     *
+     * Its text is stored as downloaded (kept = 1), not cached: there is nowhere
+     * to fetch it from a second time, so the cache pruner must never take it.
+     *
+     * Imported novels are deliberately not synced. The records carry metadata,
+     * not books, and the other devices have no file to open, so the row gets no
+     * sync_key and never reaches [SyncRecords].
+     */
+    suspend fun importEpub(parsed: Epub.Parsed): Int = io {
+        db.transactionWithResult {
+            val order = books.maxSortOrder().executeAsOne() + 1
+            books.insertLocal(parsed.title, parsed.author, parsed.cover, "", order, now())
+            val bookId = books.lastInsertId().executeAsOne()
+            parsed.chapters.forEachIndexed { i, c ->
+                val pos = i.toLong() + 1
+                chapters.insert(bookId, pos, "epub/$pos", pos.toString(), c.title, 1, null)
+                chapters.putContent(chapters.lastInsertId().executeAsOne(), c.html, 1, now())
+            }
+            bookId.toInt()
         }
-        if (sid != null) queue(ServerOutbox.DELETE_BOOK, sid, "{}")
+    }
+
+    /** A novel's chapters with the text held on this device, for "Save as EPUB".
+     *  Chapters that have never been downloaded or read are left out. */
+    suspend fun storedChapters(id: Int): List<Epub.Chapter> = io {
+        chapters.selectByBook(id.toLong()).executeAsList().mapNotNull { c ->
+            chapters.content(c.id).executeAsOneOrNull()?.let { html ->
+                Epub.Chapter(c.title.ifBlank { "Chapter ${c.position}" }, html)
+            }
+        }
     }
 
     // --- downloads -----------------------------------------------------------
@@ -413,7 +443,7 @@ class LibraryStore(
 
     // --- sync ------------------------------------------------------------------
 
-    internal val sync = SyncRecords(db, json, now)
+    internal val sync = SyncRecords(db, json, now, installedSources)
 
     /** Called after a local change that other devices should get (the app
      *  schedules a sync). */
@@ -476,108 +506,6 @@ class LibraryStore(
 
     /** Signed out, or into another account: its records are not this one's. */
     suspend fun resetSync() = serverMutex.withLock { io { db.transaction { sync.reset() } } }
-
-    // --- the server ----------------------------------------------------------
-
-    /**
-     * Import the server's library: new novels are added (with their chapter lists
-     * and progress), known ones updated, ones deleted there removed here, and the
-     * server's shelves mirrored. Local changes are sent first; if they can't be,
-     * nothing is pulled (the server's older state would overwrite them).
-     * Returns the number of novels added.
-     */
-    suspend fun pullServer(): Int = serverMutex.withLock {
-        if (!server.enabled) return 0
-        if (!flushOutboxLocked()) return 0
-        val remote = server.books()
-        val added = io {
-            db.transactionWithResult {
-                val known = books.selectServerIds().executeAsList().associate { it.server_id.toInt() to it.id }
-                val added = ArrayList<Pair<Long, Int>>()
-                var order = books.maxSortOrder().executeAsOne()
-                for (r in remote) {
-                    val meta = json.encodeToString(BookRead.serializer(), r)
-                    val localId = known[r.id]
-                    if (localId != null) {
-                        books.updateServerMeta(meta, r.title, r.author, r.site, localId)
-                        // Arrived by sync from another device: its chapters are still to fetch.
-                        if (books.selectById(localId).executeAsOneOrNull()?.checked_at == 0L) added += localId to r.id
-                        continue
-                    }
-                    books.insertServer(r.id.toLong(), meta, r.title, r.author, r.site, r.rating?.toLong(), ++order, now())
-                    val id = books.lastInsertId().executeAsOne()
-                    added += id to r.id
-                    books.selectById(id).executeAsOneOrNull()?.let { b ->
-                        // New on the server (scraped or imported there): tell the other
-                        // devices, and take what they already know about it.
-                        sync.emitNovel(b)
-                        sync.reapplyNovel(b)
-                    }
-                }
-                val live = remote.map { it.id }.toSet()
-                known.filterKeys { it !in live }.values.forEach { books.delete(it) }
-                added
-            }
-        }
-        // Chapter lists for the new ones (best effort; opening a novel fetches
-        // them again).
-        for ((localId, serverId) in added) {
-            runCatching { refreshServerLocked(localId.toInt(), serverId) }
-                .onFailure { Log.w(TAG, "import server book $serverId: ${it.message}") }
-        }
-        if (added.isNotEmpty()) onLocalChange()
-        added.size
-    }
-
-    private suspend fun refreshServer(id: Int, serverId: Int): Unit = serverMutex.withLock {
-        if (!server.enabled) return
-        refreshServerLocked(id, serverId)
-    }
-
-    /** A server novel's details and chapter list. (Its progress, rating and
-     *  shelves come through sync.) */
-    private suspend fun refreshServerLocked(id: Int, serverId: Int) {
-        val meta = server.book(serverId)
-        val list = server.chapters(serverId)
-        io {
-            db.transaction {
-                books.updateServerMeta(json.encodeToString(BookRead.serializer(), meta),
-                    meta.title, meta.author, meta.site, id.toLong())
-                mergeChapters(id.toLong(), list.map {
-                    ChapterRow(it.position.toString(), it.number, it.title, it.volume.toLong(), null)
-                })
-                books.setCheckedAt(now(), id.toLong())
-                books.selectById(id.toLong()).executeAsOneOrNull()?.let { sync.reapplyNovel(it) }
-            }
-        }
-    }
-
-    /** Send queued changes now (in the background). */
-    fun flushOutboxSoon() {
-        scope.launch { runCatching { serverMutex.withLock { flushOutboxLocked() } } }
-    }
-
-    suspend fun flushOutbox(): Boolean = serverMutex.withLock { flushOutboxLocked() }
-
-    /** Send queued changes in order. True when the queue is empty afterwards. */
-    private suspend fun flushOutboxLocked(): Boolean {
-        if (!server.enabled) return io { outbox.count().executeAsOne() } == 0L
-        for (e in io { outbox.selectAll().executeAsList() }) {
-            when (ServerOutbox.send(server, json, e.kind, e.target.toInt(), e.body)) {
-                ServerOutbox.Result.Done, ServerOutbox.Result.Dropped -> io { outbox.delete(e.id) }
-                ServerOutbox.Result.Later -> return false
-            }
-        }
-        return true
-    }
-
-    private suspend fun queue(kind: String, target: Int, body: String) {
-        io { outbox.add(kind, target.toLong(), body, now()) }
-        flushOutboxSoon()
-    }
-
-    private suspend fun serverIdOf(id: Int): Int? =
-        io { books.selectById(id.toLong()).executeAsOneOrNull()?.server_id?.toInt() }
 
     // --- housekeeping --------------------------------------------------------
 

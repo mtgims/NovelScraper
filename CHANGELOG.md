@@ -11,6 +11,16 @@ since moved to a repository of their own; this one holds the apps.
 
 ---
 
+## 2026-09-25
+
+- **The server holds accounts and sync, and nothing else (0.47.0).** Scraping,
+  novel storage, EPUB building, covers, server-side narration and the web
+  reader are gone from it; the apps did all of it already. EPUB import and
+  export moved onto the device, where they work offline and without an account.
+
+- **The web reader has been retired.** The server repository keeps the API and
+  Caddy; novelscraper.com now sends a browser to the releases page.
+
 ## 2026-09-24
 
 - **Stats from the whole library, and engine choices that fit a phone

@@ -30,7 +30,6 @@ import com.novelscraper.app.extensions.Extensions
 import com.novelscraper.app.library.Library
 import com.novelscraper.app.net.Account
 import com.novelscraper.app.net.Net
-import com.novelscraper.app.net.ScrapeRelay
 import com.novelscraper.app.net.buildImageLoader
 import com.novelscraper.app.platform.DesktopDirs
 import com.novelscraper.app.platform.LocalAppWindow
@@ -101,9 +100,8 @@ fun main(args: Array<String>) {
     // Settings are saved in the background; make sure pending saves land however
     // the app exits (window close, logout, SIGTERM).
     Runtime.getRuntime().addShutdownHook(Thread { PropertiesStore.flush() })
-    // The desktop app is "in the foreground" while it runs: keep the relay up so
-    // scrapes go through this computer's connection, check for due updates and
-    // bring in the server's library (when signed in).
+    // The desktop app is "in the foreground" while it runs: confirm the session
+    // and keep syncing (when signed in).
     Account.onForeground()
     if (DesktopDirs.installedInsideData) {
         com.novelscraper.app.platform.Log.w("Main", "installed inside the data folder ${DesktopDirs.data}")
@@ -219,7 +217,6 @@ private fun shutdown() {
     TtsController.stop()
     MprisPlayer.stop()
     disposeSiteCheckBrowser()
-    ScrapeRelay.stop()
     com.novelscraper.app.tts.GpuVoice.stopProbe()
     // Releasing the voice waits for a sentence being synthesized to finish.
     // The process is ending and the system takes the memory back anyway, so

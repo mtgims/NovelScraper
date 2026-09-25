@@ -1,13 +1,5 @@
 package com.novelscraper.app.library
 
-import com.novelscraper.app.data.BookCollectionsUpdate
-import com.novelscraper.app.data.BookRead
-import com.novelscraper.app.data.BookUpdate
-import com.novelscraper.app.data.ChapterListItem
-import com.novelscraper.app.data.CollectionRead
-import com.novelscraper.app.data.CollectionUpdate
-import com.novelscraper.app.data.ProgressUpdate
-import com.novelscraper.app.data.ReadingProgressRead
 import com.novelscraper.app.data.SyncRequest
 import com.novelscraper.app.data.SyncResponse
 import com.novelscraper.app.db.jdbcLibraryDriver
@@ -21,8 +13,9 @@ import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertTrue
 
-/** A library made by 0.31 (schema 1) opens in this version, keeps everything,
- *  and enrolls in sync with it. */
+/** A library made by 0.31 (schema 1) opens in this version and enrolls in sync
+ *  with it. Novels that lived on the server go, because the server no longer
+ *  stores any; everything read from a source survives untouched. */
 class LibraryMigrationTest {
 
     private object NoSource : SourceOrigin {
@@ -34,18 +27,6 @@ class LibraryMigrationTest {
 
     private class SyncOnly(val store: LibraryStoreTest.FakeSync) : ServerOrigin {
         override val enabled = true
-        override suspend fun books() = emptyList<BookRead>()
-        override suspend fun book(id: Int): BookRead = error("none")
-        override suspend fun collections() = emptyList<CollectionRead>()
-        override suspend fun chapters(id: Int) = emptyList<ChapterListItem>()
-        override suspend fun chapter(id: Int, position: Int) = ""
-        override suspend fun progress(id: Int): ReadingProgressRead = error("none")
-        override suspend fun putProgress(id: Int, update: ProgressUpdate) {}
-        override suspend fun editBook(id: Int, update: BookUpdate) {}
-        override suspend fun setBookCollections(id: Int, update: BookCollectionsUpdate) {}
-        override suspend fun updateCollection(id: Int, update: CollectionUpdate) {}
-        override suspend fun deleteCollection(id: Int) {}
-        override suspend fun deleteBook(id: Int) {}
         override suspend fun sync(request: SyncRequest) = store.sync(request)
     }
 
@@ -73,18 +54,20 @@ class LibraryMigrationTest {
         val server = LibraryStoreTest.FakeSync()
         val lib = LibraryStore(jdbcLibraryDriver(file), NoSource, SyncOnly(server))
         val grid = lib.libraryFlow().first()
-        assertEquals(listOf("Server A", "Source B"), grid.map { it.title }, "nothing lost")
-        assertEquals(1, grid[1].downloadedCount)
+        assertEquals(listOf("Source B"), grid.map { it.title }, "the source novel is untouched")
+        assertEquals(1, grid[0].downloadedCount)
         assertEquals(setOf(1), lib.progress(2).readPositions)
+        // Both shelves survive: a shelf is the user's, whatever was on it.
+        assertEquals(listOf("Server shelf", "Local shelf"),
+            lib.collectionsFlow().first().map { it.name })
 
         lib.syncNow()
         val keys = server.records.keys
-        assertTrue("novel" to "srv:10" in keys)
+        assertTrue(keys.none { it.second.startsWith("srv:") || "\tsrv:" in it.second },
+            "nothing names a novel the server used to hold: ${'$'}keys")
         assertTrue("novel" to "src:rr\tfiction/5" in keys)
         assertTrue(("novel" to "src:rr\tfiction/6") !in keys, "a browsed novel stays private")
         assertTrue("read" to "src:rr\tfiction/5\tfiction/5/1" in keys)
-        assertEquals("""{"rating":4}""", server.value("rating", "srv:10"))
-        assertTrue("collection" to "srv:100" in keys, "the server shelf keeps its server name")
         val local = keys.filter { it.first == "shelf" }.single().second
         assertTrue(local.endsWith("\tsrc:rr\tfiction/5") && !local.startsWith("srv:"), local)
         assertTrue(server.records.values.all { it.c.ts == LibrarySyncEnrollTs }, "enrolled at the enrollment clock")

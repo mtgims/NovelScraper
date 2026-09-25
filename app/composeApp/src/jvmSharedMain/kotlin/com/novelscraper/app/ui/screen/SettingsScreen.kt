@@ -143,8 +143,9 @@ fun SettingsScreen(onSignIn: () -> Unit, onLogout: () -> Unit) {
             }
             Account.State.SignedOut -> {
                 Text(
-                    "Optional. Signed in to a NovelScraper server, its library comes into yours and " +
-                        "stays in step, and Scrape, Progress and Stats work.",
+                    "Optional, and only for syncing. Signed in on two devices, the same account keeps " +
+                        "their libraries in step: the novels, what has been read, categories and where " +
+                        "reading left off. Everything else works without one.",
                     style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
                 Button(onClick = onSignIn, modifier = Modifier.padding(top = 16.dp)) { Text("Sign in") }

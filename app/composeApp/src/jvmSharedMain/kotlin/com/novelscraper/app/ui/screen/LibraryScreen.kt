@@ -99,28 +99,28 @@ fun LibraryScreen(onOpenBook: (Int) -> Unit) {
 
     Column(Modifier.fillMaxSize()) {
         val coverWidth by LibraryPrefs.coverWidth.collectAsState()
-        // Importing an EPUB used to live under Scrape, beside pasting a novel's
-        // web address. That way of adding a novel is gone, but bringing one in
-        // from a file is not, and the library is where it belongs.
+        // Importing an EPUB reads the file here on the device; it used to be an
+        // upload to the server, and needed an account.
         val importVm: ImportViewModel = viewModel { ImportViewModel() }
         val importUi by importVm.ui.collectAsState()
         val pickEpubs = rememberEpubPicker { files -> importVm.importEpubs(files) }
         LaunchedEffect(importUi) {
             when (val ui = importUi) {
-                is ImportUi.Done -> { showToast("Imported ${'$'}{ui.book.title}."); importVm.reset(); vm.refresh() }
+                is ImportUi.Done -> {
+                    showToast(if (ui.count == 1) "Imported ${'$'}{ui.title}." else "Imported ${'$'}{ui.count} novels.")
+                    importVm.reset(); vm.refresh()
+                }
                 is ImportUi.Error -> { showToast(ui.message, long = true); importVm.reset() }
                 else -> Unit
             }
         }
         ScreenTitle("Library", action = {
-            if (Account.signedIn) {
-                if (importUi is ImportUi.Uploading) {
-                    Box(Modifier.size(48.dp), contentAlignment = Alignment.Center) {
-                        CircularProgressIndicator(Modifier.size(22.dp))
-                    }
-                } else IconButton(onClick = pickEpubs) {
-                    Icon(Icons.Filled.FileUpload, contentDescription = "Import an EPUB")
+            if (importUi is ImportUi.Importing) {
+                Box(Modifier.size(48.dp), contentAlignment = Alignment.Center) {
+                    CircularProgressIndicator(Modifier.size(22.dp))
                 }
+            } else IconButton(onClick = pickEpubs) {
+                Icon(Icons.Filled.FileUpload, contentDescription = "Import an EPUB")
             }
             if (isDesktop) {
                 IconButton(onClick = { LibraryPrefs.smaller() }, enabled = LibraryPrefs.canShrink) {

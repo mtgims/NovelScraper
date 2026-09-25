@@ -58,6 +58,9 @@ insert:
 INSERT INTO chapter (book_id, position, path, number, title, volume, release_time)
 VALUES (?, ?, ?, ?, ?, ?, ?);
 
+lastInsertId:
+SELECT last_insert_rowid();
+
 updateMeta:
 UPDATE chapter SET position = ?, number = ?, title = ?, volume = ?, release_time = ?
 WHERE id = ?;
