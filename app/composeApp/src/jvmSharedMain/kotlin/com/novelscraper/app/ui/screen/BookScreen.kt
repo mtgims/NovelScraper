@@ -70,7 +70,6 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.viewmodel.compose.viewModel
-import com.novelscraper.app.data.BookRead
 import com.novelscraper.app.library.LibBook
 import com.novelscraper.app.library.LibChapter
 import com.novelscraper.app.library.LibCollection

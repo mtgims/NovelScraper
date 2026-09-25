@@ -1,6 +1,5 @@
 package com.novelscraper.app.library
 
-import com.novelscraper.app.data.BookRead
 
 /** A novel in the local library (or opened from Browse and not added yet). */
 data class LibBook(
@@ -9,16 +8,13 @@ data class LibBook(
     val author: String,
     /** Cover image URL, or null for none. */
     val cover: String?,
-    /** The source's name, or the server's site. */
+    /** The source's name, or "Imported" for a novel read out of an EPUB. */
     val site: String,
     val rating: Int?,
     val inLibrary: Boolean,
     /** Source novels: the extension and the novel's path in it. */
     val pluginId: String?,
     val path: String?,
-    /** Server novels: the id there, and the server's last description of it. */
-    val serverId: Int?,
-    val server: BookRead?,
     val summary: String = "",
     val genres: String = "",
     val status: String = "",
@@ -30,8 +26,9 @@ data class LibBook(
     /** When the chapter list was last fetched (0 = never). */
     val checkedAt: Long = 0,
 ) {
-    val isServer: Boolean get() = serverId != null
     val isSource: Boolean get() = pluginId != null
+    /** Read out of an EPUB on this device: no source to fetch from. */
+    val isImported: Boolean get() = pluginId == null
 }
 
 data class LibChapter(
@@ -44,7 +41,7 @@ data class LibChapter(
     val releaseTime: String? = null,
 )
 
-data class LibCollection(val id: Int, val name: String, val sortOrder: Int, val serverId: Int?)
+data class LibCollection(val id: Int, val name: String, val sortOrder: Int)
 
 /** Where a novel's reader is: the resume point and the chapters marked read. */
 data class LibProgress(

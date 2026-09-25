@@ -28,64 +28,6 @@ data class UserRead(
 data class AuthConfig(val allow_open_signup: Boolean)
 
 @Serializable
-data class UpdateDueResult(val queued: Int)
-
-@Serializable
-data class VolumeRead(
-    val id: Int,
-    val number: Int,
-    val title: String,
-    val chapter_count: Int,
-    val size_bytes: Long,
-)
-
-@Serializable
-data class BookRead(
-    val id: Int,
-    val slug: String,
-    val site: String,
-    val title: String,
-    val author: String,
-    val language: String,
-    val has_cover: Boolean = false,
-    val rating: Int? = null,
-    val can_update: Boolean = false,
-    val imported: Boolean = false,
-    val collection_ids: List<Int> = emptyList(),
-    val volumes: List<VolumeRead> = emptyList(),
-)
-
-/** PATCH /api/books/{id}. A rating of 0 clears it. */
-@Serializable
-data class BookUpdate(val rating: Int? = null)
-
-@Serializable
-data class CollectionRead(val id: Int, val name: String, val sort_order: Int = 0)
-
-@Serializable
-data class CollectionCreate(val name: String)
-
-@Serializable
-data class CollectionUpdate(val name: String? = null, val sort_order: Int? = null)
-
-@Serializable
-data class BookCollectionsUpdate(val collection_ids: List<Int>)
-
-@Serializable
-data class JobRead(
-    val id: String,
-    val site: String,
-    val book_slug: String,
-    val status: String,
-    val phase: String,
-    val total_chapters: Int = 0,
-    val fetched_chapters: Int = 0,
-    val skipped_chapters: Int = 0,
-    val error: String? = null,
-    val book_id: Int? = null,
-)
-
-@Serializable
 data class BookStat(
     val book_id: Int,
     val title: String,
@@ -111,14 +53,6 @@ data class StatsRead(
 )
 
 @Serializable
-data class ChapterListItem(
-    val position: Int,
-    val number: String,
-    val title: String,
-    val volume: Int,
-)
-
-@Serializable
 data class ChapterRead(
     val position: Int,
     val number: String,
@@ -126,33 +60,6 @@ data class ChapterRead(
     val content: String,
     val has_prev: Boolean,
     val has_next: Boolean,
-)
-
-@Serializable
-data class ProgressUpdate(
-    val last_position: Int? = null,
-    val scroll: Float? = null,
-    val mark_read: Int? = null,
-    val unmark_read: Int? = null,
-    val mark_positions: List<Int>? = null,
-    val unmark_positions: List<Int>? = null,
-    val mark_all: Boolean? = null,
-    val reset: Boolean? = null,
-)
-
-@Serializable
-data class ReadingProgressRead(
-    val last_position: Int,
-    val scroll: Float,
-    val read_positions: List<Int>,
-    val total_chapters: Int,
-    val read_count: Int,
-    val chapters_left: Int,
-    val percent_read: Float,
-    val total_words: Int,
-    val words_read: Int,
-    val hours_total: Float,
-    val hours_left: Float,
 )
 
 // Library sync (POST /api/sync, backend app/services/sync.py).

@@ -4,7 +4,6 @@ import app.cash.sqldelight.coroutines.asFlow
 import app.cash.sqldelight.coroutines.mapToList
 import app.cash.sqldelight.coroutines.mapToOneOrNull
 import app.cash.sqldelight.db.SqlDriver
-import com.novelscraper.app.data.BookRead
 import com.novelscraper.app.data.ChapterRead
 import com.novelscraper.app.data.SyncRequest
 import com.novelscraper.app.db.Book
@@ -74,7 +73,7 @@ class LibraryStore(
 
     fun collectionsFlow(): Flow<List<LibCollection>> =
         shelves.selectAll().asFlow().mapToList(Dispatchers.IO).map { list ->
-            list.map { LibCollection(it.id.toInt(), it.name, it.sort_order.toInt(), it.server_id?.toInt()) }
+            list.map { LibCollection(it.id.toInt(), it.name, it.sort_order.toInt()) }
         }
 
     fun bookFlow(id: Int): Flow<LibBook?> =
@@ -579,14 +578,12 @@ class LibraryStore(
     private fun Book.toLib(cols: List<Int>) = LibBook(
         id = id.toInt(), title = title, author = author, cover = cover, site = site,
         rating = rating?.toInt(), inLibrary = in_library != 0L, pluginId = plugin_id, path = path,
-        serverId = server_id?.toInt(), server = server_meta?.let { runCatching { json.decodeFromString(BookRead.serializer(), it) }.getOrNull() },
         summary = summary, genres = genres, status = status, webUrl = web_url, collectionIds = cols, checkedAt = checked_at,
     )
 
     private fun SelectLibrary.toLib(cols: List<Int>) = LibBook(
         id = id.toInt(), title = title, author = author, cover = cover, site = site,
         rating = rating?.toInt(), inLibrary = true, pluginId = plugin_id, path = path,
-        serverId = server_id?.toInt(), server = server_meta?.let { runCatching { json.decodeFromString(BookRead.serializer(), it) }.getOrNull() },
         summary = summary, genres = genres, status = status, webUrl = web_url, collectionIds = cols,
         chapterCount = chapter_count.toInt(), unreadCount = unread_count.toInt(), downloadedCount = downloaded_count.toInt(),
         checkedAt = checked_at,

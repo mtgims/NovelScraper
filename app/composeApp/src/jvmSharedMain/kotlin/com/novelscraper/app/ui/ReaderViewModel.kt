@@ -96,6 +96,6 @@ class ReaderViewModel : ViewModel() {
     companion object {
         /** Server novels keep the server's id, as scroll positions saved before
          *  the local library were keyed by it. */
-        fun scrollKey(book: LibBook): String = book.serverId?.toString() ?: "L${book.id}"
+        fun scrollKey(book: LibBook): String = "L${book.id}"
     }
 }

@@ -63,7 +63,7 @@ class BookViewModel(private val bookId: Int) : ViewModel() {
             val b = lib.book(bookId) ?: return@launch
             // A source novel is fetched the first time it is opened; a server one
             // on every open, as its chapters and progress may have moved on there.
-            if (b.checkedAt == 0L || (b.isServer && Account.signedIn)) refresh()
+            if (b.checkedAt == 0L) refresh()
         }
     }
 
