@@ -3,6 +3,16 @@
 Newest first.
 
 
+## 0.48.1, 2026-09-25 · `versionCode 99`
+- **A dragged novel stays where it is dropped.** Reordering the library showed
+  the novel back in the slot it had been dragged out of for a moment before it
+  settled, easiest to catch after a quick drag. The grid was being handed the
+  order from before the drag while the database caught up with the new one.
+- **NovelScraper is free software under the GNU General Public License, version
+  3 or later.** The licence itself shipped in 0.48.0 with nothing said about it
+  here, which this puts right. The README now spells out what it means: the
+  source is open, and anything built on it has to stay just as free.
+
 ## 0.48.0, 2026-09-25 · `versionCode 98`
 - **Delete your account, yourself.** Settings, under Server account, has a
   *Delete account* button. It asks for your password again, because a session
