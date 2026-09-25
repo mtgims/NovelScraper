@@ -6,9 +6,13 @@ import kotlin.test.assertEquals
 
 class DownloadsTest {
     @Test fun fileNameRule() {
-        assertEquals("renegade-immortal-volume-3.epub", downloadFileName("renegade-immortal", 3))
-        assertEquals("a_b_c.epub", downloadFileName("a b/c"))
-        assertEquals("book.epub", downloadFileName("???"))
+        // One volume of a long novel, a short novel whole, and a zip of volumes.
+        assertEquals("renegade-immortal-volume-3.epub", epubFileName("renegade-immortal", 3))
+        assertEquals("a_b_c.epub", epubFileName("a b/c"))
+        assertEquals("book.epub", epubFileName("???"))
+        assertEquals("renegade-immortal.zip", zipFileName("renegade-immortal"))
+        assertEquals("a_b_c.zip", zipFileName("a b/c"))
+        assertEquals("book.zip", zipFileName("???"))
     }
 
     @Test fun neverOverwrites() {

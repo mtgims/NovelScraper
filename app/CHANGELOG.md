@@ -18,6 +18,10 @@ Newest first.
 - **Save as EPUB works for any novel, offline.** The file was built by the
   server and offered only for novels stored there. It is written on the device
   now, from the chapters held there, for any novel with something downloaded.
+  A novel is split into volumes of a hundred chapters, as the server split them:
+  one volume saves as a single EPUB, several save as a zip holding one EPUB per
+  volume. A volume is a fixed window of chapters, so volume 3 is always chapters
+  201 to 300 and exporting the same novel twice gives the same files.
 - **Exporting the reading statistics no longer needs an account** either, for
   the same reason: the file is written here.
 - **Novels that lived on the server have been removed from the library.** They

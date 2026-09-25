@@ -363,14 +363,25 @@ class LibraryStore(
         }
     }
 
-    /** A novel's chapters with the text held on this device, for "Save as EPUB".
-     *  Chapters that have never been downloaded or read are left out. */
-    suspend fun storedChapters(id: Int): List<Epub.Chapter> = io {
-        chapters.selectByBook(id.toLong()).executeAsList().mapNotNull { c ->
-            chapters.content(c.id).executeAsOneOrNull()?.let { html ->
-                Epub.Chapter(c.title.ifBlank { "Chapter ${c.position}" }, html)
+    /**
+     * A novel's chapters with the text held on this device, split into volumes
+     * for "Save as EPUB". Chapters never downloaded or read are left out.
+     *
+     * A volume is a fixed window of reading positions, not a slice of whatever
+     * happens to be downloaded, so volume 3 is always chapters 201 to 300 and a
+     * novel exported twice gives the same volumes both times. A window with
+     * nothing stored in it is dropped rather than written empty.
+     */
+    suspend fun storedVolumes(id: Int): List<Epub.Volume> = io {
+        chapters.selectByBook(id.toLong()).executeAsList()
+            .mapNotNull { c ->
+                chapters.content(c.id).executeAsOneOrNull()?.let { html ->
+                    c.position to Epub.Chapter(c.title.ifBlank { "Chapter ${c.position}" }, html)
+                }
             }
-        }
+            .groupBy { (position, _) -> ((position - 1) / Epub.CHAPTERS_PER_VOLUME + 1).toInt() }
+            .toSortedMap()
+            .map { (number, list) -> Epub.Volume(number, list.map { it.second }) }
     }
 
     // --- downloads -----------------------------------------------------------

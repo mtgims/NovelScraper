@@ -12,7 +12,8 @@ import com.novelscraper.app.extensions.PluginNotInstalledException
 import com.novelscraper.app.net.Account
 import com.novelscraper.app.tts.AudiobookExport
 import com.novelscraper.app.epub.Epub
-import com.novelscraper.app.net.downloadFileName
+import com.novelscraper.app.net.epubFileName
+import com.novelscraper.app.net.zipFileName
 import com.novelscraper.app.platform.saveToDownloads
 import com.novelscraper.app.net.detail
 import com.novelscraper.app.ui.browse.describe
@@ -119,19 +120,29 @@ class BookViewModel(private val bookId: Int) : ViewModel() {
      *  device, so it works offline and needs no account. */
     fun saveEpub(title: String, author: String) {
         viewModelScope.launch {
-            val chapters = lib.storedChapters(bookId)
-            if (chapters.isEmpty()) {
+            val volumes = lib.storedVolumes(bookId)
+            val chapterCount = volumes.sumOf { it.chapters.size }
+            if (volumes.isEmpty()) {
                 _action.value = "No chapters are on this device yet. Download some first."
                 return@launch
             }
+            // One volume is a single EPUB; several travel as a zip of them.
             val saved = runCatching {
-                saveToDownloads(downloadFileName(title), "application/epub+zip") { out ->
-                    Epub.write(title, author, chapters, out)
+                if (volumes.size == 1) {
+                    saveToDownloads(epubFileName(title), "application/epub+zip") { out ->
+                        Epub.write(title, author, volumes.single().chapters, out)
+                    }
+                } else {
+                    saveToDownloads(zipFileName(title), "application/zip") { out ->
+                        Epub.writeZip(title, title, author, volumes, out)
+                    }
                 }
             }.getOrNull()
-            _action.value =
-                if (saved != null) "Saved $saved (${chapters.size} chapters) to Downloads."
-                else "Couldn't save the EPUB."
+            _action.value = when {
+                saved == null -> "Couldn't save the EPUB."
+                volumes.size == 1 -> "Saved $saved ($chapterCount chapters) to Downloads."
+                else -> "Saved $saved (${volumes.size} volumes, $chapterCount chapters) to Downloads."
+            }
         }
     }
 

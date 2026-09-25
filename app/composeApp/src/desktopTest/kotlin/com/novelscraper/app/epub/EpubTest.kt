@@ -127,6 +127,33 @@ class EpubTest {
     }
 
     @Test
+    fun severalVolumesAreWrittenAsAZipOfEpubs() {
+        val volumes = listOf(
+            Epub.Volume(1, listOf(Epub.Chapter("One", "<p>first volume</p>"))),
+            Epub.Volume(2, listOf(Epub.Chapter("Two", "<p>second volume</p>"))),
+            Epub.Volume(3, listOf(Epub.Chapter("Three", "<p>third volume</p>"))),
+        )
+        val zipped = ByteArrayOutputStream()
+            .also { Epub.writeZip("a novel", "A Novel", "An Author", volumes, it) }.toByteArray()
+
+        val entries = mutableMapOf<String, ByteArray>()
+        ZipInputStream(ByteArrayInputStream(zipped)).use { z ->
+            while (true) {
+                val e = z.nextEntry ?: break
+                entries[e.name] = z.readBytes()
+            }
+        }
+        assertEquals(
+            listOf("a_novel-volume-1.epub", "a_novel-volume-2.epub", "a_novel-volume-3.epub"),
+            entries.keys.sorted())
+
+        // Each entry is a real EPUB, and says which volume it holds.
+        val second = Epub.read(ByteArrayInputStream(entries["a_novel-volume-2.epub"]!!))
+        assertEquals("A Novel - Volume 2", second.title)
+        assertContains(second.chapters.single().html, "second volume")
+    }
+
+    @Test
     fun somethingThatIsNotAnEpubIsRefusedClearly() {
         assertFailsWith<Epub.Invalid> { Epub.read(ByteArrayInputStream("not a zip at all".toByteArray())) }
         // A zip that is not an EPUB: no container.xml.

@@ -3,7 +3,9 @@ package com.novelscraper.app.epub
 import com.novelscraper.app.platform.Log
 import org.w3c.dom.Element
 import org.w3c.dom.Node
+import com.novelscraper.app.net.epubFileName
 import java.io.ByteArrayInputStream
+import java.io.ByteArrayOutputStream
 import java.io.InputStream
 import java.io.OutputStream
 import java.util.Base64
@@ -30,6 +32,14 @@ object Epub {
 
     /** One spine document: a chapter in the reader. */
     data class Chapter(val title: String, val html: String)
+
+    /** A hundred chapters of a novel, the unit an EPUB holds. */
+    data class Volume(val number: Int, val chapters: List<Chapter>)
+
+    /** How many chapters go in one volume, and so in one EPUB. The server split
+     *  scraped novels the same way, so a novel exported now matches the files
+     *  exported from it before. */
+    const val CHAPTERS_PER_VOLUME = 100
 
     data class Parsed(
         val title: String,
@@ -328,6 +338,24 @@ ${xhtmlBody(c.html)}
 <body><nav epub:type="toc"><h1>Contents</h1><ol>
       $toc
 </ol></nav></body></html>""")
+        }
+    }
+
+    /**
+     * Several volumes as one zip of EPUBs, one file per volume, named the way
+     * the server named them. A novel past a hundred chapters is too big to hand
+     * over as a single file, and volume-sized pieces are what a reader expects.
+     */
+    fun writeZip(slug: String, title: String, author: String, volumes: List<Volume>, out: OutputStream) {
+        ZipOutputStream(out).use { zip ->
+            for (v in volumes) {
+                zip.putNextEntry(ZipEntry(epubFileName(slug, v.number)))
+                // The volume's own title, so the file says which part it holds.
+                ByteArrayOutputStream().also { buf ->
+                    write("$title - Volume ${v.number}", author, v.chapters, buf)
+                }.let { zip.write(it.toByteArray()) }
+                zip.closeEntry()
+            }
         }
     }
 
