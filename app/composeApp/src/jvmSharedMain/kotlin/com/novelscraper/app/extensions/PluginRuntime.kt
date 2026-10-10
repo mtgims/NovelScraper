@@ -31,6 +31,11 @@ import kotlinx.serialization.json.put
 import okhttp3.MediaType.Companion.toMediaTypeOrNull
 import okhttp3.MultipartBody
 import okhttp3.OkHttpClient
+import okhttp3.Interceptor
+import okhttp3.Response
+import java.io.IOException
+import java.net.Inet6Address
+import java.net.InetAddress
 import okhttp3.Request
 import okhttp3.RequestBody.Companion.toRequestBody
 import java.io.Closeable
@@ -112,6 +117,14 @@ class PluginRuntime private constructor(
 
     companion object {
         private const val TAG = "Plugins"
+
+        /**
+         * The most a single plugin fetch may return. The whole body is buffered
+         * for the plugin to parse, so an unbounded read is one hostile or
+         * misconfigured reply away from taking the app down. Comfortably above
+         * any chapter or catalogue page.
+         */
+        private const val MAX_RESPONSE_BYTES = 16L * 1024 * 1024
         private const val CALL_TIMEOUT_MS = 90_000L
         private val json = Json { ignoreUnknownKeys = true; isLenient = true; coerceInputValues = true }
 
@@ -204,6 +217,42 @@ class PluginRuntime private constructor(
             .getOrDefault(Charsets.UTF_8)
 
     /** host.js rawFetch -> one HTTP request from this device. */
+    /**
+     * The client plugins fetch through.
+     *
+     * A source is third-party code running on someone's phone or desktop, and
+     * from there it can see a home network that is invisible from the internet:
+     * a router's admin page, a NAS, whatever else is listening. Refusing the
+     * addresses at the DNS layer means a redirect to one is refused as well,
+     * which a check on the requested URL alone would miss.
+     */
+    private val http: OkHttpClient by lazy {
+        if (env.allowPrivateHosts) env.http
+        // Both: the application interceptor refuses the first URL before any
+        // socket is opened, and the network one runs again on every redirect
+        // hop, which the application one never sees.
+        else env.http.newBuilder()
+            .addInterceptor(NoPrivateHosts)
+            .addNetworkInterceptor(NoPrivateHosts)
+            .build()
+    }
+
+    /**
+     * Read a response, refusing one too large to hold in memory. The whole body
+     * is buffered for the plugin, so without a ceiling a single reply can take
+     * the app down, by accident or otherwise.
+     */
+    private fun readCapped(resp: okhttp3.Response): ByteArray {
+        val body = resp.body ?: return ByteArray(0)
+        val source = body.source()
+        source.request(MAX_RESPONSE_BYTES + 1)
+        val buffered = source.buffer
+        if (buffered.size > MAX_RESPONSE_BYTES) {
+            throw IOException("the reply is over ${MAX_RESPONSE_BYTES / (1024 * 1024)} MiB")
+        }
+        return buffered.readByteArray()
+    }
+
     private suspend fun fetch(requestJson: String): String = withContext(Dispatchers.IO) {
         try {
             val r = json.parseToJsonElement(requestJson).jsonObject
@@ -224,8 +273,8 @@ class PluginRuntime private constructor(
             if (SiteChecks.wantsBrowser(url)) {
                 viaBrowser(url, method, headers, r["body"] as? JsonObject)?.let { return@withContext it }
             }
-            env.http.newCall(builder.build()).execute().use { resp ->
-                val bytes = resp.body?.bytes() ?: ByteArray(0)
+            http.newCall(builder.build()).execute().use { resp ->
+                val bytes = readCapped(resp)
                 if (isChallenge(resp.code, resp.headers, bytes)) {
                     // Cloudflare reads more than cookies, so a browser check can't
                     // hand this client a pass: ask through the browser instead.
@@ -383,4 +432,39 @@ class PluginEnvironment(
     val userAgent: String,
     /** A plugin's key/value storage (values are opaque JSON strings). */
     val storage: (pluginId: String) -> MutableMap<String, String>,
+    /**
+     * Let plugins reach loopback and the local network. False everywhere that
+     * matters: a source is third-party code, and the device it runs on can see
+     * a home network the author cannot. Tests serve their fixtures from
+     * 127.0.0.1 and set this.
+     */
+    val allowPrivateHosts: Boolean = false,
 )
+
+/**
+ * Refuses any host that resolves onto the machine or its local network.
+ *
+ * This resolves the host itself rather than relying on a custom [Dns], because
+ * OkHttp skips DNS entirely for a literal IP address: a plugin asking for
+ * http://192.168.1.1/ would never have reached a Dns-based check at all, and
+ * that is precisely the request worth refusing. getAllByName returns a literal
+ * unchanged and resolves a name, so one path covers both.
+ */
+private object NoPrivateHosts : Interceptor {
+    override fun intercept(chain: Interceptor.Chain): Response {
+        val host = chain.request().url.host
+        val addresses = runCatching { InetAddress.getAllByName(host).toList() }
+            .getOrDefault(emptyList())
+        if (addresses.any { it.isPrivateTarget() }) {
+            throw IOException(
+                "$host is on a private network; sources may only reach the public internet")
+        }
+        return chain.proceed(chain.request())
+    }
+}
+
+private fun InetAddress.isPrivateTarget(): Boolean =
+    isLoopbackAddress || isAnyLocalAddress || isLinkLocalAddress ||
+        isSiteLocalAddress || isMulticastAddress ||
+        // IPv6 unique local, fc00::/7. The JDK has no predicate for it.
+        (this is Inet6Address && (address[0].toInt() and 0xFE) == 0xFC)

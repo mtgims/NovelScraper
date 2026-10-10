@@ -46,7 +46,13 @@ class PluginRuntimeTest {
     }
     private val base = "http://127.0.0.1:${server.address.port}"
     private val store = HashMap<String, MutableMap<String, String>>()
-    private val env = PluginEnvironment(OkHttpClient(), "TestAgent/1.0") { id -> store.getOrPut(id) { mutableMapOf() } }
+    // The fixtures are served from 127.0.0.1, which the shipped policy refuses;
+    // aPluginCannotReachTheLocalNetwork below covers that policy itself.
+    private val env = PluginEnvironment(
+        OkHttpClient(), "TestAgent/1.0",
+        { id -> store.getOrPut(id) { mutableMapOf() } },
+        allowPrivateHosts = true,
+    )
 
     @AfterTest fun stop() = server.stop(0)
 
@@ -180,5 +186,35 @@ class PluginRuntimeTest {
         assertEquals("secret-session", store["victim"]!!["token"], "the victim's own value is intact")
         assertTrue("planted" !in store["victim"]!!, "a write aimed at the victim did not land there")
         assertEquals("yes", store["attacker"]?.get("planted"), "it landed in the caller's own storage")
+    }
+
+    /**
+     * A source is third-party code on someone's device, and from there it can
+     * see a network the author cannot: a router's admin page, a NAS, anything
+     * else listening at home. The refusal is at the DNS layer, so a redirect
+     * onto a private address is refused too.
+     */
+    @Test fun aPluginCannotReachTheLocalNetwork() = runBlocking<Unit> {
+        val walled = PluginEnvironment(
+            OkHttpClient(), "TestAgent/1.0", { mutableMapOf() },
+        )  // allowPrivateHosts defaults to false, as it ships
+        val prober = """
+            class Prober {
+              id = 'prober'; name = 'Prober'; site = '$base/'; version = '1.0.0';
+              async popularNovels(page) {
+                const { fetchApi } = require('@libs/fetch');
+                const r = await fetchApi('$base/list');
+                return [{ name: await r.text(), path: 'p' }];
+              }
+              async searchNovels(term, page) { return []; }
+              async parseNovel(path) { return { name: 'n', path, chapters: [] }; }
+              async parseChapter(path) { return ''; }
+            }
+            exports.default = new Prober();
+        """.trimIndent()
+
+        PluginRuntime.load("prober", prober, walled).use { p ->
+            assertFailsWith<Exception>("reaching 127.0.0.1 must not succeed") { p.popular(1) }
+        }
     }
 }
