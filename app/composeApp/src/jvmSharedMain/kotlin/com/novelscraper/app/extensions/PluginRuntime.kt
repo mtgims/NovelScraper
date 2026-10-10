@@ -57,6 +57,7 @@ import java.util.concurrent.atomic.AtomicLong
  */
 class PluginRuntime private constructor(
     private val js: QuickJs,
+    private val pluginId: String,
     private val env: PluginEnvironment,
 ) : Closeable {
 
@@ -140,8 +141,8 @@ class PluginRuntime private constructor(
             val js = QuickJs.create(Dispatchers.Default)
             try {
                 js.memoryLimit = 256L * 1024 * 1024
-                val rt = PluginRuntime(js, env)
-                rt.bindNative(pluginId)
+                val rt = PluginRuntime(js, pluginId, env)
+                rt.bindNative()
                 js.evaluate<Any?>(prelude, "host.js", false)
                 val infoJson = js.evaluate<String>("__loadPlugin(${q(pluginId)}, ${q(code)})", "$pluginId.js", false)
                 rt.info = json.decodeFromString(infoJson)
@@ -164,7 +165,7 @@ class PluginRuntime private constructor(
     private val responseSeq = AtomicLong()
 
     @OptIn(ExperimentalQuickJsApi::class)
-    private fun bindNative(pluginId: String) {
+    private fun bindNative() {
         js.def("__native") {
             function("log", FunctionBinding { a ->
                 val level = a.getOrNull(0) as? String ?: "info"
@@ -227,14 +228,17 @@ class PluginRuntime private constructor(
      * which a check on the requested URL alone would miss.
      */
     private val http: OkHttpClient by lazy {
-        if (env.allowPrivateHosts) env.http
-        // Both: the application interceptor refuses the first URL before any
-        // socket is opened, and the network one runs again on every redirect
-        // hop, which the application one never sees.
-        else env.http.newBuilder()
-            .addInterceptor(NoPrivateHosts)
-            .addNetworkInterceptor(NoPrivateHosts)
-            .build()
+        var b = env.http.newBuilder()
+        // Its own cookies, never another plugin's session. env.http carries the
+        // shared jar for the app's own fetches; this replaces it per plugin.
+        env.cookies?.let { b = b.cookieJar(it.forPlugin(pluginId)) }
+        if (!env.allowPrivateHosts) {
+            // Both: the application interceptor refuses the first URL before any
+            // socket is opened, and the network one runs again on every redirect
+            // hop, which the application one never sees.
+            b = b.addInterceptor(NoPrivateHosts).addNetworkInterceptor(NoPrivateHosts)
+        }
+        b.build()
     }
 
     /**
@@ -439,6 +443,12 @@ class PluginEnvironment(
      * 127.0.0.1 and set this.
      */
     val allowPrivateHosts: Boolean = false,
+    /**
+     * The shared cookie store. Each runtime takes a view of it scoped to itself,
+     * so a plugin cannot borrow a session another plugin earned. Null leaves the
+     * client's own jar alone, which is what the tests want.
+     */
+    val cookies: BrowserCookieJar? = null,
 )
 
 /**

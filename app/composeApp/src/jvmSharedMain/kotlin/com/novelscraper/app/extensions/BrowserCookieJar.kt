@@ -14,27 +14,68 @@ import okhttp3.HttpUrl
  * browser check earns (Cloudflare's clearance, DDoS-Guard's pass) is good for
  * days, and throwing it away when the app closes means being asked again every
  * single launch.
+ *
+ * **Cookies are owned.** A browser scopes cookies by site, because its only
+ * principal is the person using it. Here there is a second principal, the
+ * plugin, and a single shared jar does not model it: a source asking for a site
+ * that another source had logged into got that session attached by the jar, and
+ * could read the reply. It never had to touch the cookie, which is why keeping
+ * plugins out of each other's storage does not help.
+ *
+ * So each plugin fetches through [forPlugin] and sees only what it set itself,
+ * plus the shared pool. The shared pool is what a real browser earned on the
+ * reader's behalf, through [acceptFromBrowser]: clearance is not a credential,
+ * it says "not a bot", and it costs a captcha to replace. Isolating that too
+ * would mean every plugin passing its own challenge for the same site.
  */
 class BrowserCookieJar(private val store: KeyValueStore? = null) : CookieJar {
-    private val cookies = ArrayList<Cookie>()
+
+    /** [owner] null means the shared pool: earned by a browser check. */
+    private data class Owned(val owner: String?, val cookie: Cookie)
+
+    private val cookies = ArrayList<Owned>()
 
     init {
         store?.getString(KEY, null)?.let { saved ->
             val now = System.currentTimeMillis()
             for (line in saved.split('\n')) {
-                val c = decode(line) ?: continue
-                if (c.expiresAt > now) cookies += c
+                val o = decode(line) ?: continue
+                if (o.cookie.expiresAt > now) cookies += o
             }
         }
     }
 
     @Synchronized
-    override fun saveFromResponse(url: HttpUrl, cookies: List<Cookie>) {
-        for (c in cookies) {
-            this.cookies.removeAll { it.name == c.name && it.domain == c.domain && it.path == c.path }
-            if (c.expiresAt > System.currentTimeMillis()) this.cookies += c
+    private fun save(owner: String?, incoming: List<Cookie>) {
+        val now = System.currentTimeMillis()
+        for (c in incoming) {
+            cookies.removeAll {
+                it.owner == owner && it.cookie.name == c.name &&
+                    it.cookie.domain == c.domain && it.cookie.path == c.path
+            }
+            if (c.expiresAt > now) cookies += Owned(owner, c)
         }
         persist()
+    }
+
+    @Synchronized
+    private fun load(owner: String?, url: HttpUrl): List<Cookie> {
+        val now = System.currentTimeMillis()
+        cookies.removeAll { it.cookie.expiresAt <= now }
+        return cookies.filter { (it.owner == null || it.owner == owner) && it.cookie.matches(url) }
+            .map { it.cookie }
+    }
+
+    /** The app's own fetches (repository indexes, plugin code), which are not a
+     *  plugin and should not be able to borrow one's session either. */
+    override fun saveFromResponse(url: HttpUrl, cookies: List<Cookie>) = save(APP, cookies)
+    override fun loadForRequest(url: HttpUrl): List<Cookie> = load(APP, url)
+
+    /** A view for one plugin: it sets its own cookies and reads its own, plus
+     *  whatever a browser check earned for everyone. */
+    fun forPlugin(pluginId: String): CookieJar = object : CookieJar {
+        override fun saveFromResponse(url: HttpUrl, cookies: List<Cookie>) = save(pluginId, cookies)
+        override fun loadForRequest(url: HttpUrl): List<Cookie> = load(pluginId, url)
     }
 
     /** One cookie as a real browser holds it. */
@@ -51,72 +92,78 @@ class BrowserCookieJar(private val store: KeyValueStore? = null) : CookieJar {
 
     /** Take cookies a real browser collected (passing a site's check), keeping the
      *  domain and path it set them for: a check earned on "www.example.com" is
-     *  usually set for ".example.com", and the plugin may ask for either. */
-    @Synchronized
+     *  usually set for ".example.com", and the plugin may ask for either.
+     *  These go to the shared pool, so one captcha serves every plugin. */
     fun acceptFromBrowser(url: HttpUrl, incoming: List<BrowserCookie>) {
         val week = System.currentTimeMillis() + 7 * 24 * 3600_000L
-        for (c in incoming) {
+        val built = incoming.map { c ->
             val domain = c.domain?.trim()?.takeIf { it.isNotBlank() } ?: url.host
-            val builder = Cookie.Builder()
+            Cookie.Builder()
                 .name(c.name)
                 .value(c.value)
                 .path(c.path?.takeIf { it.startsWith("/") } ?: "/")
                 .expiresAt(if (c.expiresAt > System.currentTimeMillis()) c.expiresAt else week)
-            // A leading dot is the old way of saying "this domain and below".
-            if (domain.startsWith(".")) builder.domain(domain.removePrefix("."))
-            else builder.hostOnlyDomain(domain)
-            if (c.secure) builder.secure()
-            if (c.httpOnly) builder.httpOnly()
-            val cookie = builder.build()
-            cookies.removeAll { it.name == cookie.name && it.domain == cookie.domain && it.path == cookie.path }
-            cookies += cookie
+                .apply {
+                    // A leading dot is the old way of saying "this domain and below".
+                    if (domain.startsWith(".")) domain(domain.removePrefix(".")) else hostOnlyDomain(domain)
+                    if (c.secure) secure()
+                    if (c.httpOnly) httpOnly()
+                }
+                .build()
         }
-        persist()
+        save(null, built)
     }
 
-    /** Forget everything this host set, so its check runs again. Used when a site
-     *  starts refusing us again: the clearance was tied to an address we no
-     *  longer have (a VPN that moved), and sending it only wastes a request. */
+    /** Forget everything this host set, whoever owns it, so its check runs again.
+     *  Used when a site starts refusing us again: the clearance was tied to an
+     *  address we no longer have (a VPN that moved), and sending it only wastes
+     *  a request. */
     @Synchronized
     fun forget(host: String) {
-        cookies.removeAll { host == it.domain || host.endsWith("." + it.domain) }
+        cookies.removeAll { host == it.cookie.domain || host.endsWith("." + it.cookie.domain) }
         persist()
     }
 
-    /** Written as one line per cookie, which is all Set-Cookie ever was. */
+    /** Written as one line per cookie, which is all Set-Cookie ever was, with
+     *  the owner in front. */
     private fun persist() {
         val store = store ?: return
         val now = System.currentTimeMillis()
-        store.putString(KEY, cookies.filter { it.expiresAt > now }.joinToString("\n") { encode(it) })
+        store.putString(KEY, cookies.filter { it.cookie.expiresAt > now }
+            .joinToString("\n") { encode(it) })
     }
 
-    private fun encode(c: Cookie): String = listOf(
-        c.name, c.value, c.domain, c.path, c.expiresAt.toString(),
-        c.secure.toString(), c.httpOnly.toString(), c.hostOnly.toString(),
+    private fun encode(o: Owned): String = listOf(
+        o.owner ?: "", o.cookie.name, o.cookie.value, o.cookie.domain, o.cookie.path,
+        o.cookie.expiresAt.toString(), o.cookie.secure.toString(),
+        o.cookie.httpOnly.toString(), o.cookie.hostOnly.toString(),
     ).joinToString("\t") { it.replace('\t', ' ').replace('\n', ' ') }
 
-    private fun decode(line: String): Cookie? {
+    private fun decode(line: String): Owned? {
         val f = line.split('\t')
-        if (f.size < 8) return null
+        if (f.size < 9) return null
         return runCatching {
-            Cookie.Builder()
-                .name(f[0]).value(f[1]).path(f[3])
-                .expiresAt(f[4].toLong())
+            val cookie = Cookie.Builder()
+                .name(f[1]).value(f[2]).path(f[4])
+                .expiresAt(f[5].toLong())
                 .apply {
-                    if (f[7].toBoolean()) hostOnlyDomain(f[2]) else domain(f[2])
-                    if (f[5].toBoolean()) secure()
-                    if (f[6].toBoolean()) httpOnly()
+                    if (f[8].toBoolean()) hostOnlyDomain(f[3]) else domain(f[3])
+                    if (f[6].toBoolean()) secure()
+                    if (f[7].toBoolean()) httpOnly()
                 }
                 .build()
+            Owned(f[0].takeIf { it.isNotEmpty() }, cookie)
         }.getOrNull()
     }
 
-    private companion object { const val KEY = "site-cookies" }
+    private companion object {
+        /** Owner for the app's own requests, which no plugin id can collide with. */
+        const val APP = "\u0000app"
 
-    @Synchronized
-    override fun loadForRequest(url: HttpUrl): List<Cookie> {
-        val now = System.currentTimeMillis()
-        cookies.removeAll { it.expiresAt <= now }
-        return cookies.filter { it.matches(url) }
+        /** Deliberately not the old key. Cookies written before ownership existed
+         *  cannot say who earned them, and guessing would hand every plugin
+         *  whatever sessions were already there, which is the bug. They are left
+         *  behind: one round of browser checks, and any site login set again. */
+        const val KEY = "site-cookies-owned"
     }
 }

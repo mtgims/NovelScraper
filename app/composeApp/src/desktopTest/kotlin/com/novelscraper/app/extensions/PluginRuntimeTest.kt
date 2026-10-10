@@ -36,6 +36,14 @@ class PluginRuntimeTest {
                     ex.responseHeaders.add("cf-mitigated", "challenge")
                     Triple(403, "text/html", "<title>Just a moment...</title>".toByteArray())
                 }
+                "/set-cookie" -> {
+                    ex.responseHeaders.add("Set-Cookie", "sid=secret; Path=/")
+                    Triple(200, "text/plain", "set".toByteArray())
+                }
+                // Reports back whatever the client chose to send, which is what
+                // the cookie-isolation test actually needs to see.
+                "/echo-cookie" ->
+                    Triple(200, "text/plain", (ex.requestHeaders.getFirst("Cookie") ?: "(none)").toByteArray())
                 else -> Triple(200, "text/plain", "echo".toByteArray())
             }
             ex.responseHeaders.add("Content-Type", type)
@@ -215,6 +223,65 @@ class PluginRuntimeTest {
 
         PluginRuntime.load("prober", prober, walled).use { p ->
             assertFailsWith<Exception>("reaching 127.0.0.1 must not succeed") { p.popular(1) }
+        }
+    }
+
+    /**
+     * One plugin must not ride another's session.
+     *
+     * The jar scopes cookies by site, as a browser does, but a browser has one
+     * principal and this has two. A source asking for a site another source had
+     * logged into used to get that session attached automatically, and could
+     * read the reply; it never touched the cookie, so keeping plugins out of
+     * each other's storage does nothing about it.
+     *
+     * What a browser check earns stays shared: clearance says "not a bot"
+     * rather than "this is who I am", and isolating it would mean a captcha per
+     * plugin for the same site.
+     */
+    @Test fun aPluginCannotUseAnotherPluginsSession() = runBlocking<Unit> {
+        val jar = BrowserCookieJar()
+        val shared = PluginEnvironment(
+            OkHttpClient(), "TestAgent/1.0", { mutableMapOf() },
+            allowPrivateHosts = true, cookies = jar,
+        )
+        fun code(id: String, path: String) = """
+            class P {
+              id = '$id'; name = '$id'; site = '$base/'; version = '1.0.0';
+              async popularNovels(page) {
+                const { fetchApi } = require('@libs/fetch');
+                const r = await fetchApi('$base$path');
+                return [{ name: await r.text(), path: 'p' }];
+              }
+              async searchNovels(term, page) { return []; }
+              async parseNovel(path) { return { name: 'n', path, chapters: [] }; }
+              async parseChapter(path) { return ''; }
+            }
+            exports.default = new P();
+        """.trimIndent()
+
+        // alpha signs in; the site sets a session for it.
+        PluginRuntime.load("alpha", code("alpha", "/set-cookie"), shared).use { it.popular(1) }
+
+        PluginRuntime.load("beta", code("beta", "/echo-cookie"), shared).use { p ->
+            assertEquals("(none)", p.popular(1).single().name,
+                "beta asked the same site and must not carry alpha's session")
+        }
+        PluginRuntime.load("alpha", code("alpha", "/echo-cookie"), shared).use { p ->
+            assertTrue("sid=secret" in p.popular(1).single().name, "alpha still has its own")
+        }
+
+        // Clearance earned by a real browser is shared, so one captcha serves all.
+        jar.acceptFromBrowser(
+            "$base/".toHttpUrl(),
+            listOf(BrowserCookieJar.BrowserCookie(
+                "cf_clearance", "pass", null, "/",
+                System.currentTimeMillis() + 86_400_000L, false, false)),
+        )
+        PluginRuntime.load("beta", code("beta", "/echo-cookie"), shared).use { p ->
+            val sent = p.popular(1).single().name
+            assertTrue("cf_clearance=pass" in sent, "beta gets the shared clearance: $sent")
+            assertTrue("sid=secret" !in sent, "but still not alpha's session: $sent")
         }
     }
 }

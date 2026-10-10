@@ -226,7 +226,7 @@ object Extensions {
             ?.mapValues { (it.value as? kotlinx.serialization.json.JsonPrimitive)?.content.orEmpty() }
             .orEmpty()
 
-    private fun environment() = PluginEnvironment(http, browserUserAgent, ::storageFor)
+    private fun environment() = PluginEnvironment(http, browserUserAgent, ::storageFor, cookies = cookies)
 
     /** A plugin's storage: a map persisted as JSON under its id. */
     private fun storageFor(id: String): MutableMap<String, String> = synchronized(storageCache) {
