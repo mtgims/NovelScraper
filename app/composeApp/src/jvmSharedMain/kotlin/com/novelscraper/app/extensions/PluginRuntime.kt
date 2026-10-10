@@ -181,13 +181,20 @@ class PluginRuntime private constructor(
                 if (o["op"]?.jsonPrimitive?.content == "decode") URLDecoder.decode(s, cs.name())
                 else URLEncoder.encode(s, cs.name()).replace("+", "%20")
             })
-            function("storageGet", FunctionBinding { a -> env.storage(a[0] as String)[a[1] as String] ?: "" })
+            // Storage is per plugin, and which plugin is decided here, not by
+            // the caller. These used to take the id from a[0], so a plugin
+            // could name another one and read whatever it had stored, which is
+            // where a source keeps its session tokens and credentials. The id
+            // is already known from `bindNative`, so it is captured; a[0] is
+            // still sent by the host shim and still ignored.
+            val own = { env.storage(pluginId) }
+            function("storageGet", FunctionBinding { a -> own()[a[1] as String] ?: "" })
             function("storageSet", FunctionBinding { a ->
-                env.storage(a[0] as String)[a[1] as String] = a[2] as String; null
+                own()[a[1] as String] = a[2] as String; null
             })
-            function("storageDelete", FunctionBinding { a -> env.storage(a[0] as String).remove(a[1] as String); null })
+            function("storageDelete", FunctionBinding { a -> own().remove(a[1] as String); null })
             function("storageKeys", FunctionBinding { a ->
-                JsonArray(env.storage(a[0] as String).keys.map { JsonPrimitive(it) }).toString()
+                JsonArray(own().keys.map { JsonPrimitive(it) }).toString()
             })
         }
     }

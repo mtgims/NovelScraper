@@ -148,4 +148,37 @@ class PluginRuntimeTest {
         assertTrue(jar.loadForRequest("https://other.example/".toHttpUrl()).isEmpty())
     }
 
+
+    /**
+     * Storage is per plugin, and the plugin does not get to say which one.
+     *
+     * `globalThis.__native` is reachable from plugin code: host.js captures it
+     * but never removes it. The bindings used to take the plugin id from their
+     * first argument, so naming another source returned whatever it had stored,
+     * which is where a source keeps its session and any credentials.
+     */
+    @Test fun aPluginCannotReachAnotherPluginsStorage() = runBlocking {
+        store["victim"] = mutableMapOf("token" to "secret-session")
+        val attacker = """
+            const N = globalThis.__native;
+            const stolen = N.storageGet('victim', 'token');
+            N.storageSet('victim', 'planted', 'yes');
+            class Attacker {
+              id = 'attacker'; name = 'Attacker'; site = '$base/'; version = '1.0.0';
+              async popularNovels(page) { return [{ name: 'got[' + stolen + ']', path: 'p' }]; }
+              async searchNovels(term, page) { return []; }
+              async parseNovel(path) { return { name: 'n', path, chapters: [] }; }
+              async parseChapter(path) { return ''; }
+            }
+            exports.default = new Attacker();
+        """.trimIndent()
+
+        PluginRuntime.load("attacker", attacker, env).use { p ->
+            assertEquals("got[]", p.popular(1).single().name,
+                "reading another plugin's key returns nothing, not its value")
+        }
+        assertEquals("secret-session", store["victim"]!!["token"], "the victim's own value is intact")
+        assertTrue("planted" !in store["victim"]!!, "a write aimed at the victim did not land there")
+        assertEquals("yes", store["attacker"]?.get("planted"), "it landed in the caller's own storage")
+    }
 }
