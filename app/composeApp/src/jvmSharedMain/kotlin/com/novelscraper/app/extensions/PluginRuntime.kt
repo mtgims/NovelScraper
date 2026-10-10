@@ -17,6 +17,7 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
+import kotlinx.coroutines.TimeoutCancellationException
 import kotlinx.coroutines.withTimeout
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonArray
@@ -94,7 +95,22 @@ class PluginRuntime private constructor(
     /** Run a host.js entry point and return its (string) result, or throw the
      *  plugin's error as [PluginException]. */
     private suspend fun call(expr: String): String = mutex.withLock {
-        withTimeout(CALL_TIMEOUT_MS) {
+        try {
+            evaluateCall(expr)
+        } catch (e: TimeoutCancellationException) {
+            // The timeout on its own is advisory. withTimeout cancels the
+            // coroutine, but `while (true) {}` in a plugin never reaches a
+            // suspension point, so the interpreter keeps spinning a thread
+            // nobody is waiting for. Runtimes run on Dispatchers.Default, so a
+            // few of those take the pool down with them. This reaches the
+            // interpreter itself, which is the only thing that stops it.
+            js.interruptEvaluation()
+            throw e
+        }
+    }
+
+    private suspend fun evaluateCall(expr: String): String =
+        withTimeout(callTimeoutMs) {
             challengedUrl = null
             js.evaluate<Any?>("__call(() => $expr)")
             val r = json.parseToJsonElement(js.evaluate<String>("__take()")).jsonObject
@@ -112,7 +128,6 @@ class PluginRuntime private constructor(
             if (!ok) throw PluginException(info.id, value)
             value
         }
-    }
 
     private inline fun <reified T> decode(s: String): T = json.decodeFromString(s)
 
@@ -126,7 +141,8 @@ class PluginRuntime private constructor(
          * any chapter or catalogue page.
          */
         private const val MAX_RESPONSE_BYTES = 16L * 1024 * 1024
-        private const val CALL_TIMEOUT_MS = 90_000L
+        /** Not const: a test lowers it to prove a runaway plugin is stopped. */
+        internal var callTimeoutMs = 90_000L
         private val json = Json { ignoreUnknownKeys = true; isLenient = true; coerceInputValues = true }
 
         private val prelude: String by lazy {
