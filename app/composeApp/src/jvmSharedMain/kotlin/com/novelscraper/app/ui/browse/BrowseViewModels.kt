@@ -153,7 +153,17 @@ class SourceViewModel(private val pluginId: String) : ViewModel() {
 
     fun show(mode: SourceMode, query: String = _ui.value.query) {
         job?.cancel()
-        _ui.update { it.copy(mode = mode, query = query, items = emptyList(), page = 0, endReached = false, error = null) }
+        // loading has to be cleared here. The job just cancelled rethrows the
+        // cancellation without clearing it, so switching to search while the
+        // catalogue was still loading left it set, and the loadMore below
+        // returned at its own guard: no request, no items, no error, an empty
+        // list and nothing to explain it.
+        _ui.update {
+            it.copy(
+                mode = mode, query = query, items = emptyList(), page = 0,
+                endReached = false, error = null, loading = false,
+            )
+        }
         loadMore()
     }
 
