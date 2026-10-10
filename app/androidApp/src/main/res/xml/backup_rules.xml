@@ -1,0 +1,21 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  Android 11 and below. Backups are kept: a reader moving to a new phone wants
+  their library, and losing it is the worst thing this app could do to them.
+
+  Credentials are not. A cloud backup leaves the device and is restorable onto
+  another one, so a session that travels in it is a session someone else may
+  end up holding:
+
+    ns.xml            the NovelScraper account's session cookie
+    site-cookies.xml  what sites set while sources browse them, including any
+                      login a source made on the reader's behalf
+    plugin-data.xml   whatever a source stored, which is where its tokens live
+
+  Signing in again is a small cost; the alternative is handing them out.
+-->
+<full-backup-content>
+    <exclude domain="sharedpref" path="ns.xml" />
+    <exclude domain="sharedpref" path="site-cookies.xml" />
+    <exclude domain="sharedpref" path="plugin-data.xml" />
+</full-backup-content>
