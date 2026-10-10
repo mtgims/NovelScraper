@@ -9,6 +9,32 @@ plugins {
     id("org.jetbrains.kotlin.plugin.compose")
 }
 
+// Release signing.
+//
+// The keystore and its passwords are never in the repository and never in a
+// Gradle file: they come from the environment, which is a set of secrets in CI
+// and a local file kept outside the tree otherwise.
+//
+// Without one, a release build falls back to the debug key so that building
+// from a fresh checkout still works. That fallback must never reach anyone:
+// the debug key is generated per machine, so an APK signed on one machine
+// cannot update an install signed on another. Android refuses the update, and
+// the only way through is to uninstall, which takes the reader's library with
+// it. Pass -PrequireReleaseKey=true for any build that will be published, and
+// the build fails rather than quietly producing an unupdatable APK.
+val releaseKeystore: String? =
+    System.getenv("NOVELSCRAPER_KEYSTORE")
+        ?: providers.gradleProperty("novelscraperKeystore").orNull
+
+if (providers.gradleProperty("requireReleaseKey").orNull == "true" && releaseKeystore == null) {
+    throw GradleException(
+        "requireReleaseKey=true, but no signing key was given. Set " +
+        "NOVELSCRAPER_KEYSTORE (and its password variables), or drop the flag " +
+        "for a local build. Publishing a debug-signed APK would strand every " +
+        "existing install: Android will not update across a change of key."
+    )
+}
+
 android {
     namespace = "com.novelscraper.app"
     compileSdk = 37
@@ -36,10 +62,22 @@ android {
         }
     }
 
+    signingConfigs {
+        if (releaseKeystore != null) {
+            create("release") {
+                storeFile = file(releaseKeystore)
+                storePassword = System.getenv("NOVELSCRAPER_KEYSTORE_PASSWORD")
+                keyAlias = System.getenv("NOVELSCRAPER_KEY_ALIAS") ?: "novelscraper"
+                keyPassword = System.getenv("NOVELSCRAPER_KEY_PASSWORD")
+            }
+        }
+    }
+
     buildTypes {
         release {
-            // Not debuggable, so ART/Compose run optimized. Signed with the debug
-            // key so the release APK sideloads without extra key setup.
+            // Not debuggable, so ART/Compose run optimized. Signed with the real
+            // key when one is configured above, and the debug key otherwise, which
+            // is for local builds only; see the note at the top of this file.
             //
             // R8 + resource shrinking. The keep rules in proguard-rules.pro cover
             // what R8 cannot see: sherpa-onnx's JNI classes, kotlinx-serialization's
@@ -48,7 +86,8 @@ android {
             isMinifyEnabled = true
             isShrinkResources = true
             isDebuggable = false
-            signingConfig = signingConfigs.getByName("debug")
+            signingConfig = signingConfigs.findByName("release")
+                ?: signingConfigs.getByName("debug")
             proguardFiles(
                 getDefaultProguardFile("proguard-android-optimize.txt"),
                 "proguard-rules.pro",

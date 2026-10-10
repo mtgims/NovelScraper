@@ -46,6 +46,45 @@ source:
 -PliveTts=true [-PliveTtsOut=<file.wav>]
 ```
 
+## Signing a release
+
+The APK is signed in CI with a real release key. The keystore is never in the
+repository, never in a Gradle file, and never on a developer's machine as part
+of a build: it reaches the build as environment variables, from repository
+secrets.
+
+**The key cannot be replaced later.** Android refuses an update whose signature
+differs from the installed one, so a lost or rotated keystore means every
+existing reader must uninstall, and uninstalling takes their library with them.
+Back the keystore and its passwords up somewhere that survives losing the
+machine, before the first signed release goes out.
+
+Creating one, once:
+
+```bash
+keytool -genkeypair -v -keystore novelscraper-release.jks \
+  -alias novelscraper -keyalg RSA -keysize 4096 \
+  -validity 10000 -storetype PKCS12
+base64 -w0 novelscraper-release.jks     # the value for ANDROID_KEYSTORE_BASE64
+```
+
+Four repository secrets, under Settings, Secrets and variables, Actions:
+
+| Secret | What it holds |
+|---|---|
+| `ANDROID_KEYSTORE_BASE64` | the `.jks` file, base64 |
+| `ANDROID_KEYSTORE_PASSWORD` | the store password |
+| `ANDROID_KEY_ALIAS` | the alias, `novelscraper` above |
+| `ANDROID_KEY_PASSWORD` | the key password |
+
+Until those exist the release workflow logs a warning and builds no APK, rather
+than attaching one signed with the debug key.
+
+A local `./gradlew :androidApp:assembleRelease` still falls back to the debug
+key, which is fine for a build nobody else installs. Any build that will be
+published must pass `-PrequireReleaseKey=true`, which fails rather than
+producing an APK that cannot update what readers already have.
+
 ## App conventions
 
 - **Shared code first.** Anything not tied to a platform belongs in
