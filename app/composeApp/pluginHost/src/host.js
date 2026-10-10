@@ -21,6 +21,15 @@ const g = globalThis;
 // body(bodyId) -> base64 of a response's bytes,
 // storageDelete(pluginId, key), storageKeys(pluginId) -> JSON array,
 // userAgent() -> the User-Agent this device sends.
+// Plugin code shares this context, so `globalThis.__native` is reachable from a
+// source as well as from here. It cannot be taken away: QuickJS defines it
+// {writable: false, enumerable: false, configurable: false}, so `delete` and
+// assignment both fail silently, and a line pretending otherwise would only
+// mislead. Nothing behind it is a privilege any more: storage is scoped to the
+// calling plugin on the Kotlin side whatever id is passed, and fetch goes
+// through that plugin's own client, with its own cookies and the
+// private-network refusal. Reaching the raw bindings buys a plugin nothing the
+// wrappers would not give it.
 const N = g.__native;
 
 // --- URL --------------------------------------------------------------------------
