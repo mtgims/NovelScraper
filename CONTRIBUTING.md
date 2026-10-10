@@ -31,6 +31,10 @@ mise exec -- ./gradlew :composeApp:run                    # Linux, from source
 ./gradlew :composeApp:desktopTest :composeApp:testAndroidHostTest :androidApp:lintRelease
 ```
 
+Those three also run in CI, on every push to master and every pull request
+(`.github/workflows/check.yml`). Running them locally first is still faster
+than waiting for a red run.
+
 Checks that touch real sites, a real browser or a speech model are opt-in and
 stay that way. Nothing in the ordinary suite opens a browser or reaches a
 source:
