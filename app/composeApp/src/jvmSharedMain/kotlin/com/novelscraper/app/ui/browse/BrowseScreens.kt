@@ -237,7 +237,12 @@ fun ExtensionsScreen(onBack: () -> Unit) {
     LaunchedEffect(ui.message) { ui.message?.let { showToast(it); vm.clearMessage() } }
 
     val offered = remember(ui.available) { ui.available.associateBy { it.id } }
-    val updates = installed.filter { Extensions.hasUpdate(it, offered[it.id]) }
+    // Keyed by the installed plugin, not by id: the offer has to come from the
+    // repository that plugin was installed from.
+    val updateOffers = remember(ui.available, installed) {
+        installed.associate { it.id to Extensions.updateFor(it, ui.available) }
+    }
+    val updates = installed.filter { updateOffers[it.id] != null }
     val installedIds = installed.mapTo(HashSet()) { it.id }
     val languages = remember(ui.available) {
         ui.available.map { it.lang }.distinct().sortedWith(compareBy({ languageRank(it) }, { languageName(it) }))
@@ -280,11 +285,11 @@ fun ExtensionsScreen(onBack: () -> Unit) {
                 if (list.isEmpty()) Centered { Text("Nothing installed yet. Pick sources under Available.") }
                 else LazyColumn(contentPadding = PaddingValues(bottom = 104.dp)) {
                     items(list, key = { it.id }) { p ->
-                        val offer = offered[p.id]
+                        val offer = updateOffers[p.id]
                         SourceRow(p.name, p.lang, p.iconUrl, "v${p.version}", null) {
                             if (p.id in ui.busy) CircularProgressIndicator(Modifier.size(22.dp), strokeWidth = 2.dp)
                             else Row {
-                                if (offer != null && Extensions.hasUpdate(p, offer)) TextButton(onClick = { vm.install(offer) }) { Text("Update") }
+                                if (offer != null) TextButton(onClick = { vm.install(offer) }) { Text("Update") }
                                 TextButton(onClick = { vm.uninstall(p) }) { Text("Remove") }
                             }
                         }

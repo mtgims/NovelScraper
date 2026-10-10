@@ -172,9 +172,27 @@ object Extensions {
         saveInstalled(_installed.value.filter { it.id != id })
     }
 
-    /** True if [available] offers a newer version than the installed one. */
-    fun hasUpdate(installed: InstalledPlugin, offered: RepoPlugin?): Boolean =
-        offered != null && compareVersions(offered.version, installed.version) > 0
+    /**
+     * The update on offer for [installed], or null if there is none.
+     *
+     * Matched on id **and** repository. Matching on id alone meant any
+     * repository added afterwards could list an installed plugin's id with a
+     * higher version and have it quietly replace the real one, which is a
+     * plugin swap rather than an update: the code runs on the reader's device
+     * with that source's stored session already attached to it.
+     */
+    fun updateFor(installed: InstalledPlugin, available: List<RepoPlugin>): RepoPlugin? {
+        val sameId = available.filter { it.id == installed.id }
+        val candidate = when {
+            installed.repo.isNotBlank() -> sameId.firstOrNull { it.repo == installed.repo }
+            // Installed before the repository was recorded. One offer is
+            // unambiguous; several mean there is no way to tell which one it
+            // came from, and guessing is the hole being closed.
+            sameId.size == 1 -> sameId.single()
+            else -> null
+        }
+        return candidate?.takeIf { compareVersions(it.version, installed.version) > 0 }
+    }
 
     /** Called after a source is installed or removed, so the library can sync
      *  which sources this device has. Set by Library.init. */
