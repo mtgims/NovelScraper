@@ -563,6 +563,20 @@ class LibraryStore(
 
     /** Make the book's chapters [list], in its order: known paths keep their row
      *  (and so their read state and text), new ones are added, missing ones go. */
+    /**
+     * Bring a novel's chapter list in line with what the source now reports.
+     *
+     * Chapters the source no longer lists are removed, but not unconditionally.
+     * A refresh runs unattended every few hours against a site that can fail in
+     * ways that look like success: an empty list, or a page of a paged list
+     * quietly missing. Deleting on that answer destroys downloaded text, which
+     * `chapter_content` and `download_queue` both cascade away, and read marks,
+     * which live on the chapter row. So a short list is treated as suspect
+     * rather than authoritative, and anything the device cannot fetch again for
+     * free is kept. The cost of keeping a chapter the source really did drop is
+     * one stale row; the cost of the other mistake is a re-download of a whole
+     * novel, or someone's place in it.
+     */
     private fun mergeChapters(bookId: Long, list: List<ChapterRow>) {
         val existing = chapters.selectPaths(bookId).executeAsList().associate { it.path to it.id }
         list.forEachIndexed { i, ch ->
@@ -572,7 +586,23 @@ class LibraryStore(
             else chapters.insert(bookId, pos, ch.path, ch.number, ch.title, ch.volume, ch.release)
         }
         val keep = list.map { it.path }.toSet()
-        existing.filterKeys { it !in keep }.values.forEach { chapters.deleteById(it) }
+        val missing = existing.filterKeys { it !in keep }.values.toList()
+        if (missing.isEmpty()) return
+
+        // Nothing at all is an error dressed as an answer: no novel has zero
+        // chapters, and a parser that broke returns exactly this.
+        if (list.isEmpty()) {
+            Log.w(TAG, "refresh of book $bookId returned no chapters; keeping all ${missing.size}")
+            return
+        }
+
+        val protect = chapters.protectedIds(bookId).executeAsList().toSet()
+        val (held, disposable) = missing.partition { it in protect }
+        disposable.forEach { chapters.deleteById(it) }
+        if (held.isNotEmpty()) {
+            Log.w(TAG, "refresh of book $bookId dropped ${missing.size} chapters; " +
+                       "kept ${held.size} holding downloads or read marks")
+        }
     }
 
     private fun Book.toLib(cols: List<Int>) = LibBook(

@@ -68,6 +68,16 @@ WHERE id = ?;
 deleteById:
 DELETE FROM chapter WHERE id = ?;
 
+-- Chapters carrying something this device cannot fetch again for free: a read
+-- mark, or text the reader asked to keep. A refresh refuses to delete these
+-- when a source's chapter list comes back short, because a short list is far
+-- more often a broken parser or a missing page than a novel losing chapters.
+-- Cached text (kept = 0) is left out on purpose: the pruner discards it anyway.
+protectedIds:
+SELECT c.id FROM chapter c
+LEFT JOIN chapter_content cc ON cc.chapter_id = c.id AND cc.kept = 1
+WHERE c.book_id = ? AND (c.read != 0 OR cc.chapter_id IS NOT NULL);
+
 setRead:
 UPDATE chapter SET read = ? WHERE book_id = ? AND position = ?;
 
