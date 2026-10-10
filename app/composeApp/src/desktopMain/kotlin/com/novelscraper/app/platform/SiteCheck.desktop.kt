@@ -143,7 +143,23 @@ actual suspend fun passSiteCheck(url: String, onStatus: (String) -> Unit): Boole
  *  [fetchThroughBrowser]. */
 internal suspend fun ensureSiteCheckBrowser(onStatus: (String) -> Unit): Boolean = ensureBrowser(onStatus)
 
+/**
+ * Whether the bundled Chromium (KCEF) may be used at all.
+ *
+ * Off, on purpose, and the code is left standing while that is proved out.
+ * [passSiteCheck] only ever reaches KCEF when [SystemBrowser] cannot be made
+ * ready, and SystemBrowser now drives either a browser the reader already has
+ * or one the app downloads itself, so there should be nothing left for KCEF to
+ * do. It also carries real cost: a second Chromium to ship, pinned at a version
+ * that no longer updates, started with sandboxing switched off.
+ *
+ * If checks keep working with this false, delete KCEF and its dependency. If
+ * something stops working, this is one word to change while that is understood.
+ */
+internal const val KCEF_ENABLED = false
+
 private suspend fun ensureBrowser(onStatus: (String) -> Unit): Boolean {
+    if (!KCEF_ENABLED) return false
     if (browserReady) return true
     return withContext(Dispatchers.IO) {
         try {
