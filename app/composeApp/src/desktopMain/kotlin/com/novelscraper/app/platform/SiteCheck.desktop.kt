@@ -55,7 +55,7 @@ actual suspend fun passSiteCheck(url: String, onStatus: (String) -> Unit): Boole
         }
         val cookies = runCatching { SystemBrowser.cookies(url) }.getOrDefault(emptyList())
         if (page != null && cookies.isNotEmpty()) {
-            Log.i(TAG, "system browser check: " + cookies.joinToString { "${'$'}{it.name}@${'$'}{it.domain}" })
+            Log.i(TAG, "system browser check: " + cookies.joinToString { "${it.name}@${it.domain}" })
             Extensions.cookies.acceptFromBrowser(http, cookies)
             onStatus("Done.")
             return true

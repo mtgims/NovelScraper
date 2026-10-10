@@ -64,7 +64,7 @@ class LibraryMigrationTest {
         lib.syncNow()
         val keys = server.records.keys
         assertTrue(keys.none { it.second.startsWith("srv:") || "\tsrv:" in it.second },
-            "nothing names a novel the server used to hold: ${'$'}keys")
+            "nothing names a novel the server used to hold: $keys")
         assertTrue("novel" to "src:rr\tfiction/5" in keys)
         assertTrue(("novel" to "src:rr\tfiction/6") !in keys, "a browsed novel stays private")
         assertTrue("read" to "src:rr\tfiction/5\tfiction/5/1" in keys)

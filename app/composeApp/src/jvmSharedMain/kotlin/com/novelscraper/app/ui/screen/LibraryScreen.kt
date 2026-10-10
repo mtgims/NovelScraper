@@ -107,7 +107,7 @@ fun LibraryScreen(onOpenBook: (Int) -> Unit) {
         LaunchedEffect(importUi) {
             when (val ui = importUi) {
                 is ImportUi.Done -> {
-                    showToast(if (ui.count == 1) "Imported ${'$'}{ui.title}." else "Imported ${'$'}{ui.count} novels.")
+                    showToast(if (ui.count == 1) "Imported ${ui.title}." else "Imported ${ui.count} novels.")
                     importVm.reset(); vm.refresh()
                 }
                 is ImportUi.Error -> { showToast(ui.message, long = true); importVm.reset() }
@@ -185,7 +185,7 @@ fun LibraryScreen(onOpenBook: (Int) -> Unit) {
                                     MenuAction("Open") { onOpenBook(book.id) },
                                     MenuAction("Download all chapters") {
                                         vm.downloadAll(book.id)
-                                        showToast("Downloading ${'$'}{book.title}…")
+                                        showToast("Downloading ${book.title}…")
                                     },
                                     MenuAction("Mark all read") { vm.markAllRead(book.id) },
                                     MenuAction("Remove downloads") { vm.removeDownloads(book.id) },

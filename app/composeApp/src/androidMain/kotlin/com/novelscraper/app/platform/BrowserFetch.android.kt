@@ -135,7 +135,7 @@ actual suspend fun requestThroughBrowser(
                     is BrowserBody.Text -> quote(body.value)
                     is BrowserBody.Form -> buildString {
                         append("(function(){ var f = new FormData(); ")
-                        for ((name, value) in body.parts) append("f.append(${'$'}{quote(name)}, ${'$'}{quote(value)}); ")
+                        for ((name, value) in body.parts) append("f.append(${quote(name)}, ${quote(value)}); ")
                         append("return f; })()")
                     }
                 }
