@@ -17,6 +17,7 @@ import kotlinx.serialization.builtins.ListSerializer
 import kotlinx.serialization.builtins.MapSerializer
 import kotlinx.serialization.builtins.serializer
 import kotlinx.serialization.json.Json
+import okhttp3.HttpUrl.Companion.toHttpUrlOrNull
 import okhttp3.OkHttpClient
 import okhttp3.Request
 import java.io.File
@@ -274,11 +275,36 @@ object Extensions {
             synchronized(m) { m.remove(key).also { save(HashMap(m)) } }
     }
 
+    /**
+     * Refuse to fetch a repository index or plugin code over plain http.
+     *
+     * The app allows cleartext generally, and has to: sources read novel sites
+     * the reader chose, and plenty of those are still http. Reading a page that
+     * way risks the page. This is different in kind. A repository index decides
+     * which code is offered, and plugin code *runs on the device*, with that
+     * source's stored tokens and cookies available to it. Over http, anyone on
+     * the path between here and the server chooses what runs, which is not a
+     * weaker guarantee but no guarantee at all.
+     *
+     * Loopback is allowed, because a repository served from the reader's own
+     * machine has no network path for anyone to sit on, and writing a source is
+     * hard enough without forbidding a local index.
+     */
+    internal fun requireTrustworthyOrigin(url: String) {
+        val parsed = url.toHttpUrlOrNull() ?: error("not a usable address: $url")
+        if (parsed.isHttps) return
+        val host = parsed.host
+        if (host == "localhost" || host == "127.0.0.1" || host == "::1") return
+        error("$host has to be served over https. Repository indexes and plugin " +
+              "code are run on this device, and over plain http whoever is " +
+              "between here and that server decides what runs.")
+    }
+
     private fun get(url: String): String =
-        http.newCall(Request.Builder().url(url).header("User-Agent", browserUserAgent).build()).execute().use { r ->
+        requireTrustworthyOrigin(url).let { http.newCall(Request.Builder().url(url).header("User-Agent", browserUserAgent).build()).execute().use { r ->
             if (!r.isSuccessful) error("HTTP ${r.code}")
             r.body?.string() ?: error("empty response")
-        }
+        } }
 }
 
 /** Compare dotted version strings numerically ("2.10.0" > "2.9.1"). */
