@@ -194,6 +194,13 @@ object SystemBrowser {
             var lastRetry = System.currentTimeMillis()
             while (page != null && looksLikeBrowserCheck(page) && System.currentTimeMillis() < deadline) {
                 val now = System.currentTimeMillis()
+                // Waiting on a check is using the browser, so say so. lastUsed
+                // was set once before this loop, and the idle watcher closes an
+                // unused browser after IDLE_MS, which is a minute: a check the
+                // reader took longer than that to answer had the window shut
+                // from under them, part way through, despite the interactive
+                // budget being five.
+                lastUsed = now
                 if (!shown && now - started > patienceMs) {
                     shown = true
                     Log.i(TAG, "the check needs a visible browser; showing it")
