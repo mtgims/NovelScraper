@@ -25,7 +25,15 @@ actual val canFetchThroughBrowser: Boolean
     get() = SystemBrowser.available || browserReady ||
         java.io.File(appFilesDir(), "browser/install.lock").exists()
 
-private val lock = Mutex()
+/**
+ * One browser, one tab, so one thing at a time may drive it.
+ *
+ * Shared with [passSiteCheck]: a check and a plugin's fetch both navigate this
+ * tab, and whichever moved second used to steer the other off its page, which
+ * on a challenge meant abandoning a check the reader was part way through
+ * answering.
+ */
+internal val browserTabLock = Mutex()
 private const val LOAD_MS = 90_000L
 private const val SETTLE_MS = 2_000L
 /** How long a check gets to pass by itself before the window is shown. */
@@ -52,7 +60,7 @@ private var frame: JFrame? = null
  * drawn, and some want a tick in a box. It goes away again once the page comes
  * through. One page at a time, so a chapter download doesn't open twelve.
  */
-actual suspend fun fetchThroughBrowser(url: String): String? = lock.withLock {
+actual suspend fun fetchThroughBrowser(url: String): String? = browserTabLock.withLock {
     // The reader's own browser first: it is current, it has the graphics card
     // behind it, and checks that turn the bundled one away pass in it.
     if (SystemBrowser.available) {
@@ -201,7 +209,7 @@ actual suspend fun requestThroughBrowser(
     method: String,
     headers: Map<String, String>,
     body: BrowserBody?,
-): BrowserReply? = lock.withLock {
+): BrowserReply? = browserTabLock.withLock {
     if (!SystemBrowser.available) return null
     val reply = SystemBrowser.request(url, method, headers, body)
     if (reply != null) keepSystemCookies(url)

@@ -6,6 +6,7 @@ import com.novelscraper.app.platform.browserUserAgent
 import dev.datlag.kcef.KCEF
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.withTimeoutOrNull
 import okhttp3.HttpUrl.Companion.toHttpUrlOrNull
@@ -38,7 +39,14 @@ private const val TAG = "SiteCheck"
  * Chromium is downloaded the first time this is used, into the app's data
  * folder; [onStatus] reports that so the UI can explain the wait.
  */
-actual suspend fun passSiteCheck(url: String, onStatus: (String) -> Unit): Boolean {
+actual suspend fun passSiteCheck(url: String, onStatus: (String) -> Unit): Boolean =
+    // The tab is shared with fetchThroughBrowser. Answering a check can hold it
+    // for the whole interactive budget, which is minutes, and that is correct:
+    // a fetch arriving meanwhile should wait its turn rather than navigate the
+    // challenge away from under the reader.
+    browserTabLock.withLock { passSiteCheckHoldingTab(url, onStatus) }
+
+private suspend fun passSiteCheckHoldingTab(url: String, onStatus: (String) -> Unit): Boolean {
     val http = url.toHttpUrlOrNull() ?: return false
     // Without an X display there is nothing to put the browser in, and Chromium
     // would take the whole app down rather than fail.
