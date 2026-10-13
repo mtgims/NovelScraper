@@ -57,7 +57,9 @@ object Epub {
     private const val MAX_IMAGE_BYTES = 2 * 1024 * 1024
 
     /** Guards against a zip bomb: an EPUB of novel text is far under this. */
-    private const val MAX_TOTAL_BYTES = 256L * 1024 * 1024
+    /** Not const: a test lowers it, rather than building a quarter-gigabyte
+     *  fixture to prove the budget is enforced. */
+    internal var maxTotalBytes = 256L * 1024 * 1024
 
     // --- reading -------------------------------------------------------------
 
@@ -103,6 +105,21 @@ object Epub {
         return Parsed(title, author, cover, chapters)
     }
 
+    /** Read one zip entry, refusing it as soon as it passes [budget] bytes. */
+    private fun readWithin(zip: ZipInputStream, budget: Long): ByteArray {
+        val out = java.io.ByteArrayOutputStream()
+        val chunk = ByteArray(16 * 1024)
+        var left = budget
+        while (true) {
+            val n = zip.read(chunk)
+            if (n <= 0) break
+            left -= n
+            if (left < 0) throw Invalid("the file is too large")
+            out.write(chunk, 0, n)
+        }
+        return out.toByteArray()
+    }
+
     private fun unzip(input: InputStream): Map<String, ByteArray> {
         val out = HashMap<String, ByteArray>()
         var total = 0L
@@ -110,9 +127,12 @@ object Epub {
             while (true) {
                 val entry: ZipEntry = zip.nextEntry ?: break
                 if (entry.isDirectory) continue
-                val bytes = zip.readBytes()
+                // Read against the remaining budget rather than reading the
+                // entry and measuring afterwards. One entry claiming to be a
+                // few KB can decompress to gigabytes, and readBytes() would
+                // have taken the app down before the check below ever ran.
+                val bytes = readWithin(zip, maxTotalBytes - total)
                 total += bytes.size
-                if (total > MAX_TOTAL_BYTES) throw Invalid("the file is too large")
                 // Normalise away "./" and any parent traversal in the stored name.
                 out[entry.name.removePrefix("./").replace("\\", "/")] = bytes
             }
@@ -129,9 +149,36 @@ object Epub {
         return path?.takeIf { it.isNotBlank() } ?: throw Invalid("not an EPUB (no package file)")
     }
 
+    /**
+     * Undo percent-escaping in a manifest href.
+     *
+     * Hrefs are IRIs, so a file called "Chapter 1.xhtml" is written
+     * "Chapter%201.xhtml", while the zip stores the name with the space. Left
+     * encoded, the lookup missed and the chapter silently vanished from the
+     * import. Deliberately not URLDecoder, which also turns "+" into a space,
+     * and a plus is a perfectly ordinary character in a filename.
+     */
+    private fun percentDecode(s: String): String {
+        if ('%' !in s) return s
+        val out = java.io.ByteArrayOutputStream()
+        var i = 0
+        while (i < s.length) {
+            val c = s[i]
+            val hex = if (c == '%' && i + 2 < s.length) s.substring(i + 1, i + 3).toIntOrNull(16) else null
+            if (hex != null) {
+                out.write(hex)
+                i += 3
+            } else {
+                out.write(c.toString().toByteArray(Charsets.UTF_8))
+                i++
+            }
+        }
+        return out.toByteArray().toString(Charsets.UTF_8)
+    }
+
     /** A manifest href is relative to the package file. */
     private fun resolve(base: String, href: String): String {
-        val clean = href.substringBefore('#').removePrefix("./")
+        val clean = percentDecode(href.substringBefore('#').removePrefix("./"))
         if (base.isEmpty()) return clean
         val parts = ArrayList<String>()
         for (seg in (base.split('/') + clean.split('/'))) {
@@ -361,8 +408,44 @@ ${xhtmlBody(c.html)}
 
     /** Stored chapter HTML is a fragment, and not necessarily well-formed XML.
      *  Close the void tags XHTML insists on and drop anything unrecognised. */
+    /**
+     * Named entities XHTML has no declaration for, resolved to the characters
+     * they mean.
+     *
+     * Only five entity names are predefined in XML. Everything else needs a
+     * DTD, so `&nbsp;` straight from a source site, which is most of them, is
+     * not well-formed in an EPUB and a strict reader refuses the file. The
+     * output is UTF-8, so the character itself is always safe.
+     *
+     * Names not listed are neutralised to a literal "&name;" instead of being
+     * dropped: it reads oddly in the rare case, where silently losing text or
+     * producing a file that will not open reads worse.
+     */
+    private val NAMED_ENTITIES = mapOf(
+        "nbsp" to "\u00A0", "mdash" to "\u2014", "ndash" to "\u2013", "hellip" to "\u2026",
+        "lsquo" to "\u2018", "rsquo" to "\u2019", "ldquo" to "\u201C", "rdquo" to "\u201D",
+        "laquo" to "\u00AB", "raquo" to "\u00BB", "bull" to "\u2022", "middot" to "\u00B7",
+        "deg" to "\u00B0", "times" to "\u00D7", "trade" to "\u2122", "copy" to "\u00A9",
+        "reg" to "\u00AE", "sect" to "\u00A7", "para" to "\u00B6", "dagger" to "\u2020",
+        "prime" to "\u2032", "Prime" to "\u2033", "eacute" to "\u00E9", "egrave" to "\u00E8",
+        "agrave" to "\u00E0", "ccedil" to "\u00E7", "uuml" to "\u00FC", "ouml" to "\u00F6",
+        "auml" to "\u00E4", "szlig" to "\u00DF", "ntilde" to "\u00F1",
+    )
+    private val XML_PREDEFINED = setOf("amp", "lt", "gt", "quot", "apos")
+    private val ENTITY_OR_AMP = Regex("&(#[0-9]+|#[xX][0-9a-fA-F]+|[a-zA-Z][a-zA-Z0-9]{1,31});|&")
+
+    private fun xmlEntities(s: String): String = ENTITY_OR_AMP.replace(s) { m ->
+        val ref = m.groupValues[1]
+        when {
+            ref.isEmpty() -> "&amp;"            // a bare ampersand in the text
+            ref.startsWith("#") -> m.value      // numeric, always valid
+            ref in XML_PREDEFINED -> m.value
+            else -> NAMED_ENTITIES[ref] ?: "&amp;$ref;"
+        }
+    }
+
     private fun xhtmlBody(html: String): String =
-        TAG.replace(html) { m ->
+        TAG.replace(xmlEntities(html)) { m ->
             val closing = m.groupValues[1] == "/"
             val name = m.groupValues[2].lowercase()
             val attrs = m.groupValues[3]
