@@ -46,12 +46,17 @@ fun imageHeaders(init: JsonObject?): Map<String, String> =
 
 // --- Extensions (install / update / remove) -------------------------------------------
 
+/** A source from another device whose repository this one does not have yet. */
+data class SyncedInstall(val id: String, val repo: String)
+
 data class ExtensionsUi(
     val loading: Boolean = false,
     val available: List<RepoPlugin> = emptyList(),
     val failedRepos: List<String> = emptyList(),
     val busy: Set<String> = emptySet(),
     val message: String? = null,
+    /** Set while waiting for the reader to agree to a new repository. */
+    val confirmRepo: SyncedInstall? = null,
 )
 
 class ExtensionsViewModel : ViewModel() {
@@ -90,7 +95,24 @@ class ExtensionsViewModel : ViewModel() {
      * device lists, so it is added first; the plugin is then found in the
      * refreshed catalogue by id and installed like any other.
      */
-    fun installSynced(id: String, repo: String) = act(id, "Installed $id.") {
+    fun installSynced(id: String, repo: String) {
+        // The repository comes out of a sync record, which is data this device
+        // was handed rather than anything the reader chose. Adding one is
+        // adding a place the app will take executable code from, so a
+        // repository that is not already theirs gets asked about by name.
+        if (repo in Extensions.repos.value) addSynced(id, repo)
+        else _ui.update { it.copy(confirmRepo = SyncedInstall(id, repo)) }
+    }
+
+    fun confirmSyncedRepo() {
+        val pending = _ui.value.confirmRepo ?: return
+        _ui.update { it.copy(confirmRepo = null) }
+        addSynced(pending.id, pending.repo)
+    }
+
+    fun cancelSyncedRepo() = _ui.update { it.copy(confirmRepo = null) }
+
+    private fun addSynced(id: String, repo: String) = act(id, "Installed $id.") {
         if (repo !in Extensions.repos.value) Extensions.addRepo(repo)
         val offered = Extensions.available()
         val plugin = offered.plugins.firstOrNull { it.id == id }

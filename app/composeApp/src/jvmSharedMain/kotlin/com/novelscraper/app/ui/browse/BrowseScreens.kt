@@ -236,6 +236,25 @@ fun ExtensionsScreen(onBack: () -> Unit) {
 
     LaunchedEffect(ui.message) { ui.message?.let { showToast(it); vm.clearMessage() } }
 
+    // Installing a source another device has can mean trusting a repository
+    // this one has never listed, and that address arrived in a sync record
+    // rather than from the reader. Name it before taking code from it.
+    ui.confirmRepo?.let { pending ->
+        AlertDialog(
+            onDismissRequest = { vm.cancelSyncedRepo() },
+            title = { Text("Add this repository?") },
+            text = {
+                Text(
+                    "${pending.id} comes from a repository this device does not have:\n\n" +
+                        "${pending.repo}\n\n" +
+                        "Sources from it run on this device. Add it only if that address is one you trust.",
+                )
+            },
+            confirmButton = { TextButton(onClick = { vm.confirmSyncedRepo() }) { Text("Add and install") } },
+            dismissButton = { TextButton(onClick = { vm.cancelSyncedRepo() }) { Text("Cancel") } },
+        )
+    }
+
     val offered = remember(ui.available) { ui.available.associateBy { it.id } }
     // Keyed by the installed plugin, not by id: the offer has to come from the
     // repository that plugin was installed from.
