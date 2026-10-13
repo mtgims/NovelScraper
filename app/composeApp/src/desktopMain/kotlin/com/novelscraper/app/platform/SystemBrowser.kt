@@ -88,6 +88,9 @@ object SystemBrowser {
     @Volatile private var lastUsed = 0L
     @Volatile private var idleWatch: Thread? = null
 
+    /** Where the browser's own complaints go while it starts; see [startProcess]. */
+    @Volatile private var startupLog: File? = null
+
     /** Whether the browser runs without a window at all. */
     @Volatile private var headless = System.getenv("NOVELSCRAPER_BROWSER_HEADLESS") == "1"
 
@@ -714,11 +717,19 @@ object SystemBrowser {
             "--disable-blink-features=AutomationControlled",
             "about:blank",
         )
+        // Kept, not discarded. When the browser fails to come up, what it said
+        // on the way down is the only evidence of why, and start() has to tell
+        // a sandbox problem from any other before it considers giving the
+        // sandbox away.
+        val complaints = File.createTempFile("novelscraper-browser", ".log")
+            .also { it.deleteOnExit() }
+        startupLog = complaints
         process = (if (ownDesktop) HiddenDesktop.launch(command) else null)
             ?: ProcessBuilder(command)
                 .apply { ownScreen?.let { environment()["DISPLAY"] = it } }
                 .redirectOutput(ProcessBuilder.Redirect.DISCARD)
-                .redirectError(ProcessBuilder.Redirect.DISCARD)
+                .redirectErrorStream(false)
+                .redirectError(ProcessBuilder.Redirect.to(complaints))
                 .start()
                 .toHandle()
                 .also { if (ownDesktop) onOwnScreen = false }
@@ -753,10 +764,19 @@ object SystemBrowser {
                 Log.i(TAG, "cleared a browser left behind on our profile; trying again")
                 return@withContext start()
             }
-            // A browser that died on the spot usually couldn't build its sandbox.
-            if (!noSandbox) {
+            // Only give the sandbox away when the browser actually said that
+            // was the problem. This used to fire on any failure to open the
+            // port within twenty seconds, so a slow machine, a busy port or a
+            // profile still being released was answered by turning off the
+            // isolation that pages fetched for plugins are rendered inside,
+            // and it stayed off for the rest of the run.
+            val said = runCatching { startupLog?.readText().orEmpty() }.getOrDefault("")
+            if (said.isNotBlank()) Log.w(TAG, "the browser said: ${said.trim().takeLast(600)}")
+            val blamesSandbox = said.contains("sandbox", ignoreCase = true) ||
+                said.contains("new namespace", ignoreCase = true)
+            if (!noSandbox && blamesSandbox) {
                 noSandbox = true
-                Log.i(TAG, "trying again without the sandbox")
+                Log.i(TAG, "it could not build its sandbox; trying again without one")
                 return@withContext start()
             }
             return@withContext false
