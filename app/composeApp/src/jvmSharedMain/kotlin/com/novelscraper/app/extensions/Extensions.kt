@@ -152,23 +152,36 @@ object Extensions {
 
     /** Download the plugin's code, check that it loads,
      *  and add it to [installed]; replaces an installed older version. */
-    suspend fun install(p: RepoPlugin) = mutex.withLock {
+    suspend fun install(p: RepoPlugin) {
+        // Downloaded and checked outside the lock. runtime() needs the same
+        // lock to start a source, so holding it across a download meant every
+        // other source stopped working for as long as the network took:
+        // installing one thing froze browsing everything.
         val code = withContext(Dispatchers.IO) { get(p.url) }
         // Refuse code that doesn't load, before it replaces a working version.
         val headers = PluginRuntime.load(p.id, code, environment()).use { rt ->
             require(rt.info.id == p.id) { "The plugin calls itself ${rt.info.id}, the index says ${p.id}" }
             headersOf(rt.info)
         }
-        withContext(Dispatchers.IO) {
-            dir.mkdirs()
-            val f = codeFile(p.id)
-            val tmp = File(dir, "${f.name}.tmp")
-            tmp.writeText(code)
-            if (!tmp.renameTo(f)) { f.delete(); tmp.renameTo(f) }
+        // The lock covers only what it has to: putting the file in place and
+        // recording it.
+        mutex.withLock {
+            withContext(Dispatchers.IO) {
+                dir.mkdirs()
+                val f = codeFile(p.id)
+                val tmp = File(dir, "${f.name}.tmp")
+                tmp.writeText(code)
+                if (!tmp.renameTo(f)) { f.delete(); tmp.renameTo(f) }
+            }
+            // Idle first, for the same reason eviction waits: the version being
+            // replaced may be mid-call, and ending its interpreter there would
+            // take the app with it.
+            running.remove(p.id)?.let { old ->
+                evicting.launch { runCatching { old.closeWhenIdle() } }
+            }
+            val entry = InstalledPlugin(p.id, p.name, p.site, p.lang, p.version, p.iconUrl, p.repo, headers)
+            saveInstalled(_installed.value.filter { it.id != p.id } + entry)
         }
-        running.remove(p.id)?.close()
-        val entry = InstalledPlugin(p.id, p.name, p.site, p.lang, p.version, p.iconUrl, p.repo, headers)
-        saveInstalled(_installed.value.filter { it.id != p.id } + entry)
     }
 
     suspend fun uninstall(id: String) = mutex.withLock {
