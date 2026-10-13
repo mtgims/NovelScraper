@@ -111,6 +111,13 @@ object Extensions {
             ?: emptyList()
         _installed.value = runCatching {
             json.decodeFromString(ListSerializer(InstalledPlugin.serializer()), File(dir, "installed.json").readText())
+        }.onFailure {
+            // Only absent on a first run. Anything else means the list was
+            // damaged, and carrying on as though no source was ever installed
+            // is a drastic thing to do in silence.
+            if (File(dir, "installed.json").exists()) {
+                Log.w(TAG, "installed.json could not be read, starting with no sources: ${it.message}")
+            }
         }.getOrDefault(emptyList())
     }
 
@@ -221,7 +228,19 @@ object Extensions {
     private fun saveInstalled(list: List<InstalledPlugin>) {
         _installed.value = list.sortedBy { it.name.lowercase() }
         dir.mkdirs()
-        File(dir, "installed.json").writeText(json.encodeToString(ListSerializer(InstalledPlugin.serializer()), _installed.value))
+        // Written beside and renamed, the way the plugin code files already
+        // are. writeText truncates first, so losing power or crashing in the
+        // middle left a half-written list, and the read below treats anything
+        // it cannot parse as "no sources installed": every novel in the
+        // library unopenable, with nothing to say why. A rename cannot leave
+        // that state.
+        val target = File(dir, "installed.json")
+        val tmp = File(dir, "installed.json.tmp")
+        tmp.writeText(json.encodeToString(ListSerializer(InstalledPlugin.serializer()), _installed.value))
+        if (!tmp.renameTo(target)) {
+            target.delete()
+            if (!tmp.renameTo(target)) Log.w(TAG, "could not replace installed.json")
+        }
         onInstalledChange?.invoke(_installed.value)
     }
 
