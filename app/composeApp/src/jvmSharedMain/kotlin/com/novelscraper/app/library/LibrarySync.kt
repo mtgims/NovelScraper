@@ -302,11 +302,11 @@ internal class SyncRecords(
     fun reapplyNovel(b: Book) {
         val key = b.sync_key ?: return
         q.aboutNovel(key).executeAsList().forEach { m -> runCatching { applyAbout(b, m.kind, m.key, m.value_) } }
-        q.shelves().executeAsList().filter { it.key.endsWith(TAB + key) }.forEach { m -> runCatching { apply(m.kind, m.key, m.value_) } }
+        q.shelvesOfNovel(key).executeAsList().forEach { m -> runCatching { apply(m.kind, m.key, m.value_) } }
     }
 
     fun reapplyCollection(key: String) {
-        q.shelves().executeAsList().filter { it.key.startsWith(key + TAB) }.forEach { m -> runCatching { apply(m.kind, m.key, m.value_) } }
+        q.shelvesOfCollection(key).executeAsList().forEach { m -> runCatching { apply(m.kind, m.key, m.value_) } }
     }
 
     // --- sending -----------------------------------------------------------------------

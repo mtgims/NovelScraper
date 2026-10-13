@@ -84,5 +84,17 @@ WHERE (kind IN ('order', 'rating', 'progress') AND key = :novel)
 shelves:
 SELECT * FROM sync_meta WHERE kind = 'shelf';
 
+-- A shelf key is '<collection>\t<novel>'. These two filter here rather than
+-- reading every shelf record in the database and sifting it in Kotlin, which
+-- happened once per novel on every refresh. char(9) is the tab, and substr
+-- comparison avoids LIKE, whose _ and % would match inside a key.
+shelvesOfNovel:
+SELECT * FROM sync_meta
+WHERE kind = 'shelf' AND substr(key, instr(key, char(9)) + 1) = :novel;
+
+shelvesOfCollection:
+SELECT * FROM sync_meta
+WHERE kind = 'shelf' AND substr(key, 1, instr(key, char(9)) - 1) = :collection;
+
 ofKind:
 SELECT * FROM sync_meta WHERE kind = ?;
