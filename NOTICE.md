@@ -8,8 +8,7 @@ under their own terms.
 
 All three are shipped inside the Android and desktop builds, so their licence
 travels with them: the full text is in
-[third-party/OFL-1.1.txt](third-party/OFL-1.1.txt). The copyright lines are
-taken from the font files' own metadata rather than retyped.
+[third-party/OFL-1.1.txt](third-party/OFL-1.1.txt).
 
 | Family | Copyright | Licence |
 |---|---|---|
@@ -24,17 +23,22 @@ chooses, once, from the sherpa-onnx releases at
 https://github.com/k2-fsa/sherpa-onnx/releases/download/tts-models, and it then
 runs on the device.
 
-| Model | Notes |
-|---|---|
-| Kokoro | Downloaded on request. Carries its own terms from upstream. |
-| Piper | A collection of per-voice models, whose terms differ from voice to voice. |
-| Supertonic | Reported to be under an OpenRAIL-M licence, which unlike the others carries **use restrictions** rather than only attribution. |
+| Model | Licence | Upstream |
+|---|---|---|
+| Kokoro | Apache License 2.0 | [hexgrad/Kokoro-82M](https://huggingface.co/hexgrad/Kokoro-82M) |
+| Supertonic | OpenRAIL-M (the sample code is MIT) | [Supertone/supertonic](https://huggingface.co/Supertone/supertonic) |
+| Piper | Per voice; each carries its own, and they differ | [rhasspy/piper](https://github.com/rhasspy/piper) |
 
-The exact terms for each have not been confirmed against upstream, and the
-Supertonic line above comes from a code review rather than from the model card.
-Confirm all three before the app is promoted anywhere, because an OpenRAIL-M
-use restriction is a condition on what the software may be used *for*, which is
-a different kind of obligation from the fonts' attribution.
+**Supertonic is the one with conditions on use, not only on credit.** An
+OpenRAIL-M licence restricts what the model may be used *for*, where Apache 2.0
+asks only to be acknowledged. Its terms forbid, among other things, using the
+model to impersonate a person without their consent, presenting what it
+generates as human-made without saying otherwise, and any use against
+applicable law. Anyone narrating with that voice is bound by them; the full
+text is with the model at the link above.
+
+Piper ships as a collection of separate voices rather than one model, and the
+licence varies from voice to voice. The voice's own model card states which.
 
 ## Runtimes and libraries
 

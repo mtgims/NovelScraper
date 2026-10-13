@@ -11,6 +11,39 @@ since moved to a repository of their own; this one holds the apps.
 
 ---
 
+## 2026-10-13
+
+- **1.0.0, and sources are kept apart.** A source is third-party code running
+  on someone's device, and until now one could read another's stored tokens,
+  use another's site logins, or reach anything listening on the home network
+  behind it. Each now has its own storage and its own cookies, private
+  addresses are refused, and a source can only be updated by the repository it
+  came from. Clearance from a site's robot check is still shared, so those are
+  still answered once.
+
+- **A bad answer from a source could delete downloaded chapters.** The update
+  check runs unattended every few hours, and a short or empty chapter list was
+  taken at face value: everything missing from it went, downloaded text and
+  reading marks included. Short lists are now treated as the error they usually
+  are.
+
+- **The Android build is signed with a real release key, built in CI.** It had
+  been signed with a debug key generated on one machine, so a build from
+  anywhere else could not have updated an existing install.
+
+- **Updates are checked against their published checksum** before the installer
+  runs or the running program is replaced.
+
+- **Chinese and Japanese chapters split into sentences properly**, where the
+  old rule needed a space after the full stop and so returned whole paragraphs
+  as one.
+
+- **Tests and lint run on every change**, which nothing did before: the release
+  workflow only packaged, and only on a tag.
+
+- **The fonts and speech models the app carries are credited**, in `NOTICE.md`,
+  with the SIL Open Font License text alongside them.
+
 ## 2026-09-25
 
 - **Accounts can be deleted by the people who own them (0.48.0).** A button in
