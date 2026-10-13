@@ -6,6 +6,9 @@ import com.novelscraper.app.platform.appFilesDir
 import com.novelscraper.app.platform.browserUserAgent
 import com.novelscraper.app.platform.settingsStore
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -64,6 +67,9 @@ object Extensions {
 
     private const val TAG = "Extensions"
     private const val MAX_RUNNING = 4
+
+    /** Where evicted runtimes are closed, once they go idle. */
+    private val evicting = CoroutineScope(SupervisorJob() + Dispatchers.Default)
     private val json = Json { ignoreUnknownKeys = true; prettyPrint = false }
 
     private lateinit var prefs: KeyValueStore
@@ -231,7 +237,17 @@ object Extensions {
         while (running.size > MAX_RUNNING) {
             val eldest = running.entries.first()
             running.remove(eldest.key)
-            eldest.value.close()
+            val evicted = eldest.value
+            // Dropped from the map at once, so nothing new reaches it, but
+            // closed only once it is idle. close() ends the interpreter where
+            // it stands, and with more than MAX_RUNNING sources in use the one
+            // falling off the end can be in the middle of a call: closing a
+            // QuickJS context under a running evaluation takes the app with it.
+            //
+            // Off this coroutine as well, because waiting here would hold the
+            // extensions lock for as long as that call takes, which is up to
+            // the full plugin timeout, and block every other source meanwhile.
+            evicting.launch { runCatching { evicted.closeWhenIdle() } }
         }
         rt
     }
