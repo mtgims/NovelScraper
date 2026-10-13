@@ -42,7 +42,11 @@ object AppUpdates {
         /** Nothing has been asked yet, or the app is the newest there is. */
         data class Idle(val checkedAt: Long = 0, val upToDate: Boolean = false) : State
         data object Checking : State
-        data class Available(val version: String, val notes: String, val url: String, val bytes: Long) : State
+        data class Available(
+            val version: String, val notes: String, val url: String, val bytes: Long,
+            /** The asset's "sha256:..." digest from the releases API. */
+            val digest: String,
+        ) : State
         data class Downloading(val version: String, val done: Long, val total: Long) : State
         /** Downloaded and waiting: the phone needs a tap, the desktop a restart. */
         data class Ready(val version: String, val file: File) : State
@@ -96,6 +100,7 @@ object AppUpdates {
                         notes = notes.lineSequence().take(12).joinToString("\n").trim(),
                         url = asset["browser_download_url"]!!.jsonPrimitive.content,
                         bytes = asset["size"]?.jsonPrimitive?.contentOrNull?.toLongOrNull() ?: 0L,
+                        digest = asset["digest"]?.jsonPrimitive?.contentOrNull.orEmpty(),
                     )
                 }
             } catch (e: Exception) {
@@ -139,6 +144,15 @@ object AppUpdates {
         val into = File(appCacheDir(), "updates").apply { mkdirs() }
         into.listFiles()?.forEach { it.delete() }
         val file = File(into, updateAssetName)
+        // What the releases API says this asset should hash to. Checked below,
+        // because what happens next is running an installer unattended or
+        // replacing the running program: both deserve more than "the download
+        // finished".
+        val expected = available.digest.removePrefix("sha256:").lowercase()
+        if (expected.length != 64) {
+            error("the release gives no checksum for $updateAssetName, so it will not be installed")
+        }
+        val sha = java.security.MessageDigest.getInstance("SHA-256")
         http.newCall(Request.Builder().url(available.url).build()).execute().use { r ->
             val body = r.body ?: error("empty response")
             if (!r.isSuccessful) error("HTTP ${r.code}")
@@ -151,11 +165,17 @@ object AppUpdates {
                         val n = input.read(buffer)
                         if (n < 0) break
                         out.write(buffer, 0, n)
+                        sha.update(buffer, 0, n)
                         done += n
                         _state.value = State.Downloading(available.version, done, total)
                     }
                 }
             }
+        }
+        val got = sha.digest().joinToString("") { "%02x".format(it) }
+        if (got != expected) {
+            file.delete()
+            error("the download does not match the checksum the release gives for it")
         }
         return file
     }
