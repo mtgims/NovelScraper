@@ -1,5 +1,6 @@
 package com.novelscraper.app.library
 
+import com.novelscraper.app.platform.Log
 import com.novelscraper.app.data.SyncChange
 import com.novelscraper.app.db.Book
 import com.novelscraper.app.db.LibraryDb
@@ -30,6 +31,9 @@ internal data class NovelRec(
 @Serializable internal data class ShelfRec(val member: Boolean = false)
 /** An installed source extension, so the same sources follow the account. */
 @Serializable internal data class SourceRec(val repo: String = "", val enabled: Boolean = true)
+
+private const val TAG = "LibrarySync"
+private const val MAX_CLOCK_DRIFT_MS = 24L * 60 * 60 * 1000
 
 internal object Kind {
     const val NOVEL = "novel"
@@ -79,15 +83,30 @@ internal class SyncRecords(
     private fun tick(): Long {
         device()
         val s = q.state().executeAsOne()
-        val t = maxOf(now(), s.clock + 1)
+        // Saturating, not wrapping. A clock at Long.MAX_VALUE plus one is
+        // Long.MIN_VALUE, and every comparison in last-writer-wins would
+        // silently invert from then on.
+        val stepped = if (s.clock == Long.MAX_VALUE) s.clock else s.clock + 1
+        val t = maxOf(now(), stepped)
         q.setClock(t)
         return t
     }
 
+    /**
+     * How far past this device's own time a remote stamp may drag the clock.
+     *
+     * A hybrid clock has to follow the fastest device it hears from, but it
+     * took any number offered. One device with its date set wrong, by years or
+     * by a careless test, pushed this one there for good: every later write
+     * here carried that time, and last-writer-wins meant this device then beat
+     * every other for as long as the error stood. A day is far more slack than
+     * real clocks need and far less than a wrong one asks for.
+     */
     private fun observe(ts: Long) {
         device()
         val s = q.state().executeAsOne()
-        if (ts > s.clock) q.setClock(ts)
+        val accepted = minOf(ts, now() + MAX_CLOCK_DRIFT_MS)
+        if (accepted > s.clock) q.setClock(accepted)
     }
 
     fun <T> emit(kind: String, key: String, serializer: KSerializer<T>, value: T, ts: Long? = null) {
@@ -179,6 +198,12 @@ internal class SyncRecords(
             q.putMeta(c.kind, c.key, c.value, c.ts, dev)
             observe(c.ts)
             runCatching { apply(c.kind, c.key, c.value) }
+                .onFailure {
+                    // Was swallowed. A record that cannot be applied leaves the
+                    // two devices quietly disagreeing, and nothing anywhere
+                    // said which one or why.
+                    Log.w(TAG, "could not apply ${c.kind} ${c.key}: ${it.message}")
+                }
         }
     }
 
