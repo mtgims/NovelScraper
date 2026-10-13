@@ -1,6 +1,8 @@
 package com.novelscraper.app.data
 
 import com.novelscraper.app.platform.htmlToPlain
+import java.text.BreakIterator
+import java.util.Locale
 
 /**
  * Shared sentence splitting so the reader (highlight / tap-to-start) and the
@@ -8,8 +10,6 @@ import com.novelscraper.app.platform.htmlToPlain
  * the same plain-text form of the chapter HTML and the same split rule.
  */
 object Sentences {
-    private val SPLIT = Regex("(?<=[.!?。！？])\\s+|\\n+")
-
     /** The Object Replacement Character HtmlCompat substitutes for each <img>.
      *  It stays in plain() as its own isolated line, so it becomes one "sentence"
      *  the reader renders as an image block and TtsService treats as silence. */
@@ -37,16 +37,45 @@ object Sentences {
         return raw.replace(OBJ_PAD, "\n\uFFFC\n").trim()
     }
 
-    /** Character ranges (inclusive) of each non-empty sentence in [plain]. */
+    /**
+     * Character ranges (inclusive) of each non-empty sentence in [plain].
+     *
+     * Lines are split first, then each line by [BreakIterator]. The line pass
+     * is not an optimisation: an image placeholder sits alone on its own line
+     * and has to stay one "sentence" of its own, which is the contract the
+     * reader draws image blocks from and the narrator reads as silence.
+     *
+     * Within a line the work is BreakIterator's. The rule here used to be a
+     * regular expression needing whitespace after the terminator, which Chinese
+     * and Japanese do not write: a whole CJK paragraph came back as a single
+     * sentence, so narration read it as one unbroken run and tap-to-start had
+     * one place to land in the lot.
+     */
     fun ranges(plain: String): List<IntRange> {
         val out = ArrayList<IntRange>()
-        var start = 0
-        for (m in SPLIT.findAll(plain)) {
-            trim(plain, start, m.range.first)?.let { out.add(it) }
-            start = m.range.last + 1
+        var pos = 0
+        while (pos <= plain.length) {
+            val newline = plain.indexOf('\n', pos)
+            val lineEnd = if (newline < 0) plain.length else newline
+            if (lineEnd > pos) splitLine(plain, pos, lineEnd, out)
+            if (newline < 0) break
+            pos = newline + 1
         }
-        trim(plain, start, plain.length)?.let { out.add(it) }
         return out
+    }
+
+    private fun splitLine(whole: String, from: Int, to: Int, out: MutableList<IntRange>) {
+        val line = whole.substring(from, to)
+        if (line.isBlank()) return
+        val breaks = BreakIterator.getSentenceInstance(Locale.ROOT)
+        breaks.setText(line)
+        var a = breaks.first()
+        var b = breaks.next()
+        while (b != BreakIterator.DONE) {
+            trim(whole, from + a, from + b)?.let { out.add(it) }
+            a = b
+            b = breaks.next()
+        }
     }
 
     private fun trim(s: String, a: Int, endExclusive: Int): IntRange? {
