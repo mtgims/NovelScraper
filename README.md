@@ -49,21 +49,27 @@ contribute it.
 - **Reads from sources.** Sources are extensions, and the app ships with none:
   add a repository, install the sources wanted, then browse, search and read
   from those sites over the device's own connection.
+- **Keeps sources apart.** A source is someone else's code running on the
+  device, so each gets its own storage and its own cookies: it cannot read what
+  another source saved, use a site another source signed into, or reach
+  anything on the local network. A source is only updated by the repository it
+  was installed from, and indexes and source code must be served over https.
 - **Keeps a library on the device.** Novels, chapter lists, progress, ratings
   and collections live in SQLite on the phone or the computer. Download keeps a
   novel's chapters for reading and listening offline.
 - **Typeset reader.** A choice of font, size and line spacing. It remembers the
   position in each chapter, restores it after images and fonts settle, and marks
   chapters read as they are finished.
-- **Narrates.** Kokoro, Supertonic and Piper, all running locally through sherpa-onnx, with
-  gapless playback across chapters, a sleep timer, a pronunciation dictionary,
+- **Narrates.** Kokoro, Supertonic and Piper, all running locally through
+  sherpa-onnx, with gapless playback across chapters, a sleep timer, a
+  pronunciation dictionary,
   and audio export to WAV. Android plays in the background and on the lock
   screen; Linux answers the keyboard's media keys through MPRIS.
 - **Answers browser checks.** Sources behind Cloudflare or DDoS-Guard are
-  fetched through a real browser: the phone's WebView, or on Linux the browser
-  already installed (Chromium, Brave, Chrome, Edge or Vivaldi), driven in a
-  profile of the app's own. A check that needs a person brings its window
-  forward and goes away again afterwards.
+  fetched through a real browser: the phone's WebView, or on a computer one
+  already installed (Chromium, Brave, Chrome, Edge or Vivaldi), or one the app
+  fetches if there is none, driven in a profile of its own. A check that needs
+  a person brings its window forward and goes away again afterwards.
 
 [`app/CHANGELOG.md`](app/CHANGELOG.md) tracks every version.
 
@@ -105,3 +111,8 @@ on, and copyleft is what makes that a licence violation rather than someone
 else's business model.
 
 Contributions are accepted on the same terms.
+
+The fonts bundled with the app, and the speech models it downloads, belong to
+other people and are credited in [NOTICE.md](NOTICE.md). Worth reading before
+narrating anything for an audience: one of the voices is under a licence that
+restricts what it may be used for, rather than only asking to be credited.
