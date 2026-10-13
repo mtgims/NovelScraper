@@ -212,9 +212,21 @@ expect suspend fun requestThroughBrowser(
  * means nothing: the interstitial names itself in the title and carries the
  * challenge's own options.
  */
+private val TITLE_TAG = Regex(
+    "<title[^>]*>(.*?)</title>",
+    setOf(RegexOption.IGNORE_CASE, RegexOption.DOT_MATCHES_ALL),
+)
+
 fun looksLikeBrowserCheck(html: String): Boolean {
     val head = html.take(6000)
-    return head.contains("Just a moment", ignoreCase = true) ||
+    // Only in the title. "Just a moment" is ordinary English, and matching it
+    // anywhere in the first 6KB meant a chapter opening with dialogue like
+    // "Just a moment," she said was taken for a challenge page: the reader was
+    // sent to a browser and left waiting out the interactive timeout on a
+    // chapter that had downloaded perfectly. The interstitial puts the phrase
+    // in its title; novels put it in their prose.
+    val title = TITLE_TAG.find(head)?.groupValues?.getOrNull(1).orEmpty()
+    return title.contains("Just a moment", ignoreCase = true) ||
         head.contains("cf_chl_opt", ignoreCase = true) ||
         head.contains("cf-chl-bypass", ignoreCase = true) ||
         head.contains("Checking your browser before accessing", ignoreCase = true) ||
