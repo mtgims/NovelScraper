@@ -366,11 +366,17 @@ g.__loadPlugin = (pluginId, rawCode) => {
 // functions like fetch) to completion but hands back the promise rather than its
 // value, so a call parks its outcome here and the host collects it with __take.
 let settled = null;
+// Which call the slot belongs to. A call the host gave up on leaves its promise
+// pending here: when the fetch it was waiting for finally answers, the old
+// continuation runs and used to drop its value into the slot, by then owned by
+// the next call. The host then collected one call's answer as another's.
+let currentCall = 0;
 g.__call = fn => {
+  const mine = ++currentCall;
   settled = null;
   Promise.resolve().then(fn).then(
-    v => { settled = { ok: true, v: typeof v === 'string' ? v : JSON.stringify(v ?? null) }; },
-    e => { settled = { ok: false, v: e && e.stack ? `${e}\n${e.stack}` : String(e) }; },
+    v => { if (mine === currentCall) settled = { ok: true, v: typeof v === 'string' ? v : JSON.stringify(v ?? null) }; },
+    e => { if (mine === currentCall) settled = { ok: false, v: e && e.stack ? `${e}\n${e.stack}` : String(e) }; },
   );
 };
 g.__take = () => {

@@ -36,6 +36,12 @@ class PluginRuntimeTest {
                     ex.responseHeaders.add("cf-mitigated", "challenge")
                     Triple(403, "text/html", "<title>Just a moment...</title>".toByteArray())
                 }
+                // Answers long after the host has given up on the call that
+                // asked, which is the situation the call slot has to survive.
+                "/slow" -> {
+                    Thread.sleep(2_500)
+                    Triple(200, "text/plain", "SLOW-ANSWER".toByteArray())
+                }
                 "/set-cookie" -> {
                     ex.responseHeaders.add("Set-Cookie", "sid=secret; Path=/")
                     Triple(200, "text/plain", "set".toByteArray())
@@ -282,6 +288,47 @@ class PluginRuntimeTest {
             val sent = p.popular(1).single().name
             assertTrue("cf_clearance=pass" in sent, "beta gets the shared clearance: $sent")
             assertTrue("sid=secret" !in sent, "but still not alpha's session: $sent")
+        }
+    }
+
+
+    /**
+     * A call the host gave up on must not answer the next one.
+     *
+     * The outcome slot is a single global. A timed-out call leaves its promise
+     * pending, and when the fetch it was waiting on finally returns, that
+     * continuation used to write into the slot, which by then belonged to a
+     * different call: one request quietly received another's answer.
+     */
+    @Test fun anAbandonedCallCannotAnswerTheNextOne() = runBlocking<Unit> {
+        val previous = PluginRuntime.callTimeoutMs
+        PluginRuntime.callTimeoutMs = 700
+        try {
+            val code = """
+                class P {
+                  id = 'slowpoke'; name = 'Slowpoke'; site = '$base/'; version = '1.0.0';
+                  async popularNovels(page) {
+                    const { fetchApi } = require('@libs/fetch');
+                    const r = await fetchApi(page === 1 ? '$base/slow' : '$base/list');
+                    return [{ name: (await r.text()).slice(0, 24), path: 'p' }];
+                  }
+                  async searchNovels(term, page) { return []; }
+                  async parseNovel(path) { return { name: 'n', path, chapters: [] }; }
+                  async parseChapter(path) { return ''; }
+                }
+                exports.default = new P();
+            """.trimIndent()
+
+            PluginRuntime.load("slowpoke", code, env).use { p ->
+                assertFailsWith<Exception>("the slow page must not beat the timeout") { p.popular(1) }
+                // Long enough for the abandoned fetch to come back underneath.
+                kotlinx.coroutines.delay(3_000)
+                val answer = p.popular(2).single().name
+                assertTrue("SLOW-ANSWER" !in answer, "got the abandoned call's answer: $answer")
+                assertTrue(answer.startsWith("<ul>"), "got its own answer: $answer")
+            }
+        } finally {
+            PluginRuntime.callTimeoutMs = previous
         }
     }
 }
