@@ -8,3 +8,9 @@ node_modules/
 /hs_err_pid*.log
 /core.*
 /backend/
+
+# Signing keys. These must never be committed: the release key cannot be
+# replaced without forcing every reader to uninstall and lose their library.
+*.jks
+*.keystore
+keystore-password.txt
