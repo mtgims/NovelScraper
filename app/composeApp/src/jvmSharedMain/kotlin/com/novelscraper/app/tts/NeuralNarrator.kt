@@ -215,6 +215,14 @@ class NeuralNarrator(
             val reached = ArrayList<Mark>()
             synchronized(marks) {
                 while (cursor < marks.size && marks[cursor].frame <= out.framesPlayed) reached.add(marks[cursor++])
+                // Marks already passed are never looked at again, and one is
+                // added per sentence: a long sitting kept every sentence of
+                // every chapter narrated since playback began. Dropped once
+                // enough have gone by to be worth the copy.
+                if (cursor > 512) {
+                    marks.subList(0, cursor).clear()
+                    cursor = 0
+                }
             }
             if (reached.isEmpty() || my != epoch) return
             // Every chapter whose audio has been heard counts as read, even if
@@ -267,7 +275,13 @@ class NeuralNarrator(
             withContext(Dispatchers.IO) { fetchChapter(bookId, position) }
         } catch (e: Exception) {
             showToast("Couldn't load the chapter to narrate.")
-            stopNow(); return null
+            // load() is reached from the producer, which runs on
+            // Dispatchers.Default rather than the single thread everything
+            // else in here mutates state from. Tearing playback down from
+            // there races whatever that thread is doing. Harmless when already
+            // on it, which is the other way load() is called.
+            withContext(state) { stopNow() }
+            return null
         }
         val plain = Sentences.plain(chapter.content)
         val sentences = Sentences.ranges(plain).map { plain.substring(it.first, it.last + 1) }
