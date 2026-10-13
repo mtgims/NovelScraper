@@ -578,15 +578,24 @@ class LibraryStore(
      * novel, or someone's place in it.
      */
     private fun mergeChapters(bookId: Long, list: List<ChapterRow>) {
-        val existing = chapters.selectPaths(bookId).executeAsList().associate { it.path to it.id }
+        val existing = chapters.selectForMerge(bookId).executeAsList().associateBy { it.path }
         list.forEachIndexed { i, ch ->
             val pos = i.toLong() + 1
             val known = existing[ch.path]
-            if (known != null) chapters.updateMeta(pos, ch.number, ch.title, ch.volume, ch.release, known)
-            else chapters.insert(bookId, pos, ch.path, ch.number, ch.title, ch.volume, ch.release)
+            when {
+                known == null ->
+                    chapters.insert(bookId, pos, ch.path, ch.number, ch.title, ch.volume, ch.release)
+                // Only when something actually moved. Most refreshes find the
+                // same chapters in the same order and nothing to say, and
+                // rewriting every row regardless is thousands of writes on a
+                // long novel, every few hours, for no change at all.
+                known.position != pos || known.number != ch.number || known.title != ch.title ||
+                    known.volume != ch.volume || known.release_time != ch.release ->
+                    chapters.updateMeta(pos, ch.number, ch.title, ch.volume, ch.release, known.id)
+            }
         }
         val keep = list.map { it.path }.toSet()
-        val missing = existing.filterKeys { it !in keep }.values.toList()
+        val missing = existing.filterKeys { it !in keep }.values.map { it.id }
         if (missing.isEmpty()) return
 
         // Nothing at all is an error dressed as an answer: no novel has zero

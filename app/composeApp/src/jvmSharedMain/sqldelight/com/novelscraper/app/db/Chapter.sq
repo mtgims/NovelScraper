@@ -51,6 +51,13 @@ SELECT * FROM chapter WHERE id = ?;
 selectPaths:
 SELECT id, path FROM chapter WHERE book_id = ?;
 
+-- Everything a refresh might change, so rows that did not change can be left
+-- alone. A refresh used to rewrite every chapter of a novel each time, which
+-- on a long one is thousands of writes every few hours for nothing.
+selectForMerge:
+SELECT id, path, position, number, title, volume, release_time
+FROM chapter WHERE book_id = ?;
+
 maxPosition:
 SELECT coalesce(max(position), 0) FROM chapter WHERE book_id = ?;
 
