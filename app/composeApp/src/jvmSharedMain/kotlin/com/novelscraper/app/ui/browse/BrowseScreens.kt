@@ -354,7 +354,9 @@ fun ExtensionsScreen(onBack: () -> Unit) {
                         }
                         item { HorizontalDivider(Modifier.padding(vertical = 8.dp)) }
                     }
-                    items(list, key = { it.id }) { p ->
+                    // Keyed by repository too: the same id may now legitimately
+                    // be offered by two, and a repeated key crashes the list.
+                    items(list, key = { "${it.id}@${it.repo}" }) { p ->
                         SourceRow(p.name, p.lang, p.iconUrl, "v${p.version}", null) {
                             if (p.id in ui.busy) CircularProgressIndicator(Modifier.size(22.dp), strokeWidth = 2.dp)
                             else TextButton(onClick = { vm.install(p) }) { Text("Install") }

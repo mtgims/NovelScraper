@@ -6,6 +6,9 @@ import com.novelscraper.app.platform.appFilesDir
 import com.novelscraper.app.platform.browserUserAgent
 import com.novelscraper.app.platform.settingsStore
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.coroutineScope
+import kotlinx.coroutines.awaitAll
+import kotlinx.coroutines.async
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.CoroutineScope
@@ -139,18 +142,31 @@ object Extensions {
     /** Every plugin the repositories offer. A repository that
      *  can't be reached is skipped and reported in [AvailableResult.failed]. */
     suspend fun available(): AvailableResult = withContext(Dispatchers.IO) {
+        // Asked all at once. One repository at a time meant opening Browse
+        // cost the sum of every repository's response, and one slow or dead
+        // host held up all the others behind it.
+        val fetched = coroutineScope {
+            _repos.value.map { repo ->
+                async {
+                    repo to runCatching {
+                        json.decodeFromString(ListSerializer(RepoPlugin.serializer()), get(repo))
+                            .map { it.copy(repo = repo) }
+                    }
+                }
+            }.awaitAll()
+        }
         val plugins = ArrayList<RepoPlugin>()
         val failed = ArrayList<String>()
-        for (repo in _repos.value) {
-            try {
-                val body = get(repo)
-                plugins += json.decodeFromString(ListSerializer(RepoPlugin.serializer()), body).map { it.copy(repo = repo) }
-            } catch (e: Exception) {
-                Log.w(TAG, "repo $repo: ${e.message}")
-                failed += repo
-            }
+        for ((repo, result) in fetched) {
+            result.onSuccess { plugins += it }
+                .onFailure { Log.w(TAG, "repo $repo: ${it.message}"); failed += repo }
         }
-        AvailableResult(plugins.distinctBy { it.id }, failed)
+        // Distinct per repository, not per id. Collapsing by id alone dropped
+        // whichever repository came second, so a source could be hidden by an
+        // unrelated one that happened to use the same id, and the offer from
+        // the repository a plugin was actually installed from could be the one
+        // thrown away, leaving no update where there was one.
+        AvailableResult(plugins.distinctBy { it.id to it.repo }, failed)
     }
 
     data class AvailableResult(val plugins: List<RepoPlugin>, val failed: List<String>)
