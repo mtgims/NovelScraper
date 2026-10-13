@@ -394,12 +394,12 @@ class LibraryStore(
      * nothing stored in it is dropped rather than written empty.
      */
     suspend fun storedVolumes(id: Int): List<Epub.Volume> = io {
-        chapters.selectByBook(id.toLong()).executeAsList()
-            .mapNotNull { c ->
-                chapters.content(c.id).executeAsOneOrNull()?.let { html ->
-                    c.position to Epub.Chapter(c.title.ifBlank { "Chapter ${c.position}" }, html)
-                }
-            }
+        // One query, not one per chapter. The text still all arrives at once,
+        // which on a very long novel is a lot to hold while the file is
+        // written; bounding that means handing the writer a volume at a time
+        // rather than a finished list, which is a change to Epub's shape.
+        chapters.selectStoredWithContent(id.toLong()).executeAsList()
+            .map { c -> c.position to Epub.Chapter(c.title.ifBlank { "Chapter ${c.position}" }, c.html) }
             .groupBy { (position, _) -> ((position - 1) / Epub.CHAPTERS_PER_VOLUME + 1).toInt() }
             .toSortedMap()
             .map { (number, list) -> Epub.Volume(number, list.map { it.second }) }
