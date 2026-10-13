@@ -3,6 +3,85 @@
 Newest first.
 
 
+## 1.0.0, 2026-10-13 · `versionCode 100`
+
+The first stable release. Most of what changed here is not visible: sources are
+third-party code running on your device, and this release stops them being able
+to reach each other, your home network, or anything you are signed in to
+elsewhere. The one bug worth calling out on its own could delete chapters you
+had downloaded.
+
+### Sources are kept apart
+- **A source can no longer read what another source stored.** That is where a
+  source keeps its session and any credentials you gave it.
+- **A source can no longer use another source's logins.** Each one now has its
+  own cookies. Clearance earned by passing a site's "are you a robot" check is
+  still shared, so you only answer those once.
+- **A source can no longer reach your home network.** Your router's admin page,
+  a NAS, anything else listening at home: all refused, including through a
+  redirect.
+- **A source can no longer be replaced by a different repository.** Adding a
+  repository that claimed one of your installed sources, with a higher version
+  number, used to offer it as an update and swap the real one out.
+- **Repository indexes and source code must now be served over https.** Over
+  plain http, anyone between you and that server chooses what runs on your
+  device.
+- **Installing a source another device has now asks first** when it means
+  trusting a repository you have never added, and shows you the address.
+- **A source that stops responding is now actually stopped.** One stuck in a
+  loop used to keep a processor core busy for good.
+
+### Fixed
+- **A bad answer from a source could delete chapters you had downloaded**, along
+  with your reading marks, and the update check runs on its own every few hours.
+  An empty or short chapter list is now treated as the error it usually is.
+- **One source's reply could be delivered to another source's request**, after a
+  slow page timed out. Nothing crashed; you simply got the wrong results.
+- **Chinese and Japanese chapters were read as a single long sentence**, so
+  narration had nowhere to resume and tapping to start had one place to land.
+- **A chapter could be mistaken for a Cloudflare check** if the words "just a
+  moment" appeared early in it, sending you to a browser for no reason.
+- **The browser closed itself part way through a check** that took more than a
+  minute to answer.
+- **A source fetching in the background could navigate away** from a check you
+  were in the middle of answering.
+- **Switching to search while a source was still loading** left an empty list
+  with no spinner and no error.
+- **Installing a source froze every other source** until the download finished.
+- **Form uploads through the in-app browser failed on Android** and fell back
+  after a long pause.
+- **Some messages showed raw placeholder text** instead of the novel's name.
+- **Narration could stop unsafely** when a chapter would not load, and its
+  memory grew for as long as you kept listening.
+- **One device with its clock set wrong could spoil sync for all of them**, for
+  as long as the mistake stood.
+- **The list of installed sources could be lost** if the app stopped at the
+  wrong moment, leaving every novel unopenable.
+- **EPUB import**: chapters whose filename contained a space went missing, and a
+  deliberately oversized file could exhaust memory before being refused.
+- **EPUB export**: exported files could be refused by stricter readers.
+
+### Faster
+- Repositories are asked all at once rather than one after another, so Browse no
+  longer waits on the slowest.
+- Exporting a novel takes one query instead of one per chapter.
+- Checking a novel for new chapters no longer rewrites every chapter it already
+  had: on a long novel that was thousands of writes, every few hours, for
+  nothing.
+
+### Also
+- **The Android build is signed with a real release key and built on GitHub.**
+  It was signed with a debug key made on one machine, which meant a build from
+  anywhere else could not update an existing install.
+- **Your account session, site cookies and source tokens are no longer included
+  in Android backups.** Your library still is.
+- **Updates are checked against the checksum the release publishes** before
+  anything is installed.
+- The bundled copy of Chromium is switched off. Site checks use a browser you
+  already have, or one the app fetches, which stays up to date.
+- Tests and lint now run automatically on every change.
+- The fonts and speech models the app carries are credited in `NOTICE.md`.
+
 ## 0.48.1, 2026-09-25 · `versionCode 99`
 - **A dragged novel stays where it is dropped.** Reordering the library showed
   the novel back in the slot it had been dragged out of for a moment before it
