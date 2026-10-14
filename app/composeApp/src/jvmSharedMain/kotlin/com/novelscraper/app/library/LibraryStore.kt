@@ -12,6 +12,10 @@ import com.novelscraper.app.db.SelectLibrary
 import com.novelscraper.app.epub.Epub
 import com.novelscraper.app.extensions.ChapterItem
 import com.novelscraper.app.platform.Log
+import com.novelscraper.app.sync.FolderSync
+import com.novelscraper.app.sync.KeyCache
+import com.novelscraper.app.sync.SyncFolder
+import com.novelscraper.app.sync.SyncTx
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
@@ -532,6 +536,19 @@ class LibraryStore(
         }
         true
     }
+
+    /**
+     * Sync through a folder in the user's own storage ([FolderSync]) rather
+     * than the server. Throws as [syncNow] does when the folder can't be
+     * reached, and one of the Sync*Exceptions when its passphrase stands in the
+     * way.
+     */
+    internal suspend fun syncFolder(folder: SyncFolder, passphrase: CharArray?, keys: KeyCache) =
+        serverMutex.withLock {
+            FolderSync(sync, object : SyncTx {
+                override suspend fun <T> run(block: () -> T): T = io { db.transactionWithResult { block() } }
+            }, folder, passphrase, keys).run()
+        }
 
     /** Changes here not yet accepted by the server. */
     suspend fun pendingSyncCount(): Long = io { sync.pendingCount() }

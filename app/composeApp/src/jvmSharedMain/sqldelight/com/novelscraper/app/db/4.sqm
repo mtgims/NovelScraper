@@ -1,8 +1,9 @@
 -- Sync through a folder in the user's own cloud storage (FolderSync): each
--- device numbers the batches it writes, and remembers how far it has read
--- every other device's.
+-- device numbers the batches it writes (and marks the one being uploaded),
+-- and remembers how far it has read every other device's.
 ALTER TABLE sync_state ADD COLUMN out_seq INTEGER NOT NULL DEFAULT 0;
 ALTER TABLE sync_state ADD COLUMN snap_seq INTEGER NOT NULL DEFAULT 0;
+ALTER TABLE sync_state ADD COLUMN out_nonce TEXT;
 
 CREATE TABLE sync_peer (
     device TEXT NOT NULL PRIMARY KEY,

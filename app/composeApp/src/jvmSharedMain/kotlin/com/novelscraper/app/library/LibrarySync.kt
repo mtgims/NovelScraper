@@ -336,6 +336,9 @@ internal class SyncRecords(
     fun setOutSeq(seq: Long) = q.setOutSeq(seq)
     fun snapSeq(): Long { device(); return q.state().executeAsOne().snap_seq }
     fun setSnapSeq(seq: Long) = q.setSnapSeq(seq)
+    /** The nonce of the batch being uploaded, recorded before the upload. */
+    fun outNonce(): String? { device(); return q.state().executeAsOne().out_nonce }
+    fun setOutNonce(nonce: String?) = q.setOutNonce(nonce)
 
     /** Another copy of this database writes under this id: take a new one. */
     fun newDevice(): String {
