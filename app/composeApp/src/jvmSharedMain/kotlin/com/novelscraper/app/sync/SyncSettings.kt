@@ -11,6 +11,8 @@ import com.novelscraper.app.platform.settingsStore
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 import okhttp3.CookieJar
 import java.io.File
 
@@ -107,9 +109,9 @@ object SyncSettings {
     }
 
     /** Start finding and meeting the other devices ([onReceived]: something new arrived). */
-    suspend fun startLan(onReceived: () -> Unit) {
-        if (_state.value?.provider != Provider.LAN) return
-        val code = code() ?: return
+    suspend fun startLan(onReceived: () -> Unit) = lanLock.withLock {
+        if (_state.value?.provider != Provider.LAN) return@withLock
+        val code = code() ?: return@withLock
         val lan = _lan.value ?: LanSync(
             localFolder, keysOf(code), Library.store.syncDevice(), deviceName, onReceived,
             manualPeers = { prefs.getStringSet(KEY_PEERS).orEmpty().toList() },
@@ -118,6 +120,10 @@ object SyncSettings {
         hearLocalNetwork(true)
         lan.start()
     }
+
+    /** Starting is asked for from more than one place at once (the app coming
+     *  to the foreground, sync being set up): one LanSync, however it lands. */
+    private val lanLock = Mutex()
 
     fun stopLan() {
         _lan.value?.stop()

@@ -177,11 +177,15 @@ object LibrarySyncRunner {
     /** The app is in use: sync now, then periodically. */
     @Synchronized
     fun start() {
-        if (loop?.isActive == true) { wake.trySend(Unit); return }
-        loop = scope.launch {
-            // Same Wi-Fi: listen for the other devices while the app is in use.
+        // Same Wi-Fi: listen for the other devices while the app is in use. Here
+        // and not only when the loop begins: sync set up while the loop is
+        // already running (for the server account) has to start it too.
+        scope.launch {
             runCatching { SyncSettings.startLan(onReceived = ::soon) }
                 .onFailure { Log.w("Sync", "same-Wi-Fi sync didn't start: ${it.message}") }
+        }
+        if (loop?.isActive == true) { wake.trySend(Unit); return }
+        loop = scope.launch {
             while (true) {
                 runOnce()
                 withTimeoutOrNull(PERIOD_MS) { wake.receive() }
