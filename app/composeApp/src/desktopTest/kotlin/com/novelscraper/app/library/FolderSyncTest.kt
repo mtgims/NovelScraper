@@ -5,20 +5,28 @@ import com.novelscraper.app.db.jdbcLibraryDriver
 import com.novelscraper.app.extensions.ChapterItem
 import com.novelscraper.app.extensions.SourceNovel
 import com.novelscraper.app.sync.FakeFolder
+import com.novelscraper.app.sync.FakeGoogle
+import com.novelscraper.app.sync.GoogleDriveFolder
 import com.novelscraper.app.sync.KeyCache
+import com.novelscraper.app.sync.OAuthSession
 import com.novelscraper.app.sync.SyncCodec
+import com.novelscraper.app.sync.SyncFolder
 import com.novelscraper.app.sync.SyncFiles
 import com.novelscraper.app.sync.SyncNotEncryptedException
 import com.novelscraper.app.sync.SyncPassphraseNeededException
 import com.novelscraper.app.sync.SyncWrongPassphraseException
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.runBlocking
+import okhttp3.HttpUrl.Companion.toHttpUrl
+import okhttp3.OkHttpClient
+import okhttp3.Request
 import java.io.ByteArrayOutputStream
 import java.io.File
 import java.io.IOException
 import java.nio.file.Files
 import java.sql.DriverManager
 import java.util.zip.GZIPOutputStream
+import kotlin.concurrent.thread
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFailsWith
@@ -40,7 +48,7 @@ class FolderSyncTest {
     }
 
     private class Device(
-        val folder: FakeFolder,
+        val folder: SyncFolder,
         var clock: Long = 1_000_000,
         var passphrase: String? = null,
         file: File? = null,
@@ -178,6 +186,37 @@ class FolderSyncTest {
         b.sync()
         assertEquals(2, libraryOf(b).single().rating, "B reads the reconnected device's new snapshot")
         assertEquals(before, a.id, "reconnecting is not mistaken for a copied library")
+    }
+
+    /** Each device with its own sign-in to one Google account's app folder. */
+    @Test
+    fun aLibraryRoundTripsThroughGoogleDrive() = runBlocking<Unit> {
+        val google = FakeGoogle()
+        try {
+            val http = OkHttpClient()
+            suspend fun drive(): GoogleDriveFolder {
+                val oauth = GoogleDriveFolder.oauth(http, base = google.base, authBase = google.base)
+                val tokens = oauth.authorize(openBrowser = { page ->
+                    val url = page.toHttpUrl()
+                    google.challenge = url.queryParameter("code_challenge")
+                    val back = "${url.queryParameter("redirect_uri")}/?state=${url.queryParameter("state")}&code=good-code"
+                    thread { http.newCall(Request.Builder().url(back).build()).execute().close() }
+                })
+                return GoogleDriveFolder(OAuthSession(oauth, tokens.refresh!!).also { it.seed(tokens) }, http, google.base)
+            }
+            val x = Device(drive(), passphrase = "drive pass")
+            val y = Device(drive(), passphrase = "drive pass")
+            val idX = addNovel(x); x.lib.setRating(idX, 3); x.sync()
+            y.sync()
+            assertEquals(3, libraryOf(y).single().rating)
+            y.clock = 2_000_000; y.lib.setRating(libraryOf(y).single().id, 5); y.sync()
+            x.sync()
+            assertEquals(5, x.lib.book(idX)!!.rating)
+            assertTrue(google.files.values.none { "The Novel".toByteArray().let { t ->
+                it.bytes.toList().windowed(t.size).any { w -> w == t.toList() } } }, "sealed in Drive too")
+        } finally {
+            google.close()
+        }
     }
 
     @Test
