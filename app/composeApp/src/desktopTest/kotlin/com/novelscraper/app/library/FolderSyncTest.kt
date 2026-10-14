@@ -154,6 +154,33 @@ class FolderSyncTest {
     }
 
     @Test
+    fun anEmptiedFolderIsFilledAgainWhole() = runBlocking<Unit> {
+        val idA = addNovel(a); a.lib.setRating(idA, 4); a.sync()
+        repeat(3) { a.clock += 1_000; a.lib.setRating(idA, it + 1); a.sync() }
+        folder.files.clear()   // "Delete synced data" on another device, or by hand
+
+        a.clock += 1_000; a.lib.setRating(idA, 5); a.sync()
+        val c = Device(folder); c.sync()
+        assertEquals(5, libraryOf(c).single().rating, "a newcomer reads everything, not a hole")
+        assertEquals("The Novel", libraryOf(c).single().title)
+    }
+
+    @Test
+    fun whatChangedWhileDisconnectedArrivesOnReconnecting() = runBlocking<Unit> {
+        val idA = addNovel(a); a.sync()
+        b.sync()
+        val before = a.id
+        // "Delete synced data" on A: its files go, and it disconnects.
+        folder.files.keys.removeAll { SyncFiles.parse(it)?.device == before }
+        a.lib.resetSync()
+        a.clock += 1_000; a.lib.setRating(idA, 2)
+        a.sync()            // connect again
+        b.sync()
+        assertEquals(2, libraryOf(b).single().rating, "B reads the reconnected device's new snapshot")
+        assertEquals(before, a.id, "reconnecting is not mistaken for a copied library")
+    }
+
+    @Test
     fun aBatchVanishingMidReadIsReadNextTime() = runBlocking<Unit> {
         addNovel(a); a.sync()
         folder.vanishOnce += folder.files.keys.filter { SyncFiles.parse(it)?.device == a.id }

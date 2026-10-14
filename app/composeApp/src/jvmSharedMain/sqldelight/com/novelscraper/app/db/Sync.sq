@@ -69,9 +69,11 @@ UPDATE sync_state SET out_nonce = ? WHERE id = 1;
 setDevice:
 UPDATE sync_state SET device = ?, out_seq = 0, snap_seq = 0, out_nonce = NULL WHERE id = 1;
 
--- Another account or folder: start over (the device id stays).
+-- Another account or folder: start over. The device id stays, and so does
+-- out_seq: other devices remember how far they read this id, so its batch
+-- numbers only ever go up. snap_seq = 0 makes the next batch a snapshot.
 reset {
-    UPDATE sync_state SET cursor = 0, enrolled = 0, out_seq = 0, snap_seq = 0, out_nonce = NULL WHERE id = 1;
+    UPDATE sync_state SET cursor = 0, enrolled = 0, snap_seq = 0, out_nonce = NULL WHERE id = 1;
     DELETE FROM sync_meta;
     DELETE FROM sync_pending;
     DELETE FROM sync_peer;

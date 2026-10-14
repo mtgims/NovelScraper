@@ -49,9 +49,14 @@ internal class FolderSync(
         val files = listing.mapNotNull { f -> SyncFiles.parse(f.name)?.let { Entry(it, f) } }
         tx.run { records.enroll() }
         val renamed = takeNewIdIfCloned(codec, files)
-        val me = tx.run { records.device() }
+        val (me, snapSeq) = tx.run { records.device() to records.snapSeq() }
+        val own = files.filter { it.batch.device == me }
+        // This device's snapshot is gone (the folder was emptied, or files
+        // were deleted by hand): without a new one, a device arriving later
+        // could not read past the hole.
+        val lost = snapSeq > 0 && own.none { it.batch.snapshot && it.batch.seq == snapSeq }
         pull(codec, files.filter { it.batch.device != me })
-        push(codec, me, own = files.filter { it.batch.device == me }, snapshot = renamed)
+        push(codec, me, own, snapshot = renamed || lost)
     }
 
     // --- the manifest ------------------------------------------------------------

@@ -70,7 +70,6 @@ private fun MainApp() {
     val nav = rememberNavController()
     val auth: AuthViewModel = viewModel { AuthViewModel() }
     val scope = rememberCoroutineScope()
-    val signIn = { nav.navigate("login") { launchSingleTop = true } }
     val entry by nav.currentBackStackEntryAsState()
     val route = entry?.destination?.route
     val slideSpec = tween<IntOffset>(260)
@@ -170,7 +169,7 @@ private fun MainApp() {
             // Worked out from the library on this device, so no account needed.
             composable("stats") { StatsScreen() }
             composable("settings") {
-                SettingsScreen(onSignIn = signIn, onLogout = { scope.launch { Account.logout() } })
+                SettingsScreen(onLogout = { scope.launch { Account.logout() } })
             }
             composable(
                 "book/{id}",

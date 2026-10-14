@@ -8,7 +8,6 @@ import com.novelscraper.app.library.ChapterDownloads
 import com.novelscraper.app.library.Library
 import com.novelscraper.app.library.LibrarySyncRunner
 import com.novelscraper.app.library.LibraryUpdates
-import com.novelscraper.app.net.Account
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
@@ -52,7 +51,7 @@ class LibraryViewModel : ViewModel() {
     /** Pull to refresh: sync, and a look for new chapters. */
     fun refresh(force: Boolean = true) {
         LibraryUpdates.checkAll(force = force, announce = force)
-        if (_refreshing.value || !Account.signedIn) return
+        if (_refreshing.value || !LibrarySyncRunner.enabled) return
         _refreshing.value = true
         viewModelScope.launch {
             try {

@@ -16,6 +16,7 @@ import com.novelscraper.app.net.Account
 import com.novelscraper.app.net.Net
 import com.novelscraper.app.net.buildImageLoader
 import com.novelscraper.app.platform.initPlatform
+import com.novelscraper.app.sync.SyncSettings
 import com.novelscraper.app.tts.AndroidTtsPlayer
 import com.novelscraper.app.tts.TtsController
 import com.novelscraper.app.ui.theme.ThemeController
@@ -26,6 +27,7 @@ class App : Application(), SingletonImageLoader.Factory {
         initPlatform(this, BuildConfig.DEBUG)  // first: the shared code's settings/files/toasts need it
         Net.init()
         Account.init()
+        SyncSettings.init()
         Extensions.init(Net.client)
         AppUpdates.init(Net.client)
         // A quiet look at the releases page on startup: a reader who didn't

@@ -37,6 +37,7 @@ import com.novelscraper.app.platform.PropertiesStore
 import com.novelscraper.app.platform.ToastHost
 import com.novelscraper.app.platform.disposeSiteCheckBrowser
 import com.novelscraper.app.platform.settingsStore
+import com.novelscraper.app.sync.SyncSettings
 import com.novelscraper.app.tts.DesktopTtsPlayer
 import com.novelscraper.app.tts.MprisPlayer
 import com.novelscraper.app.tts.TtsController
@@ -51,6 +52,7 @@ import java.io.File
 fun initApp() {
     Net.init()
     Account.init()
+    SyncSettings.init()
     Extensions.init(Net.client)
     AppUpdates.init(Net.client)
     // A quiet look at the releases page on startup: a reader who didn't

@@ -59,12 +59,19 @@ import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import com.novelscraper.app.ui.components.ColumnScrollbar
 import androidx.compose.ui.text.input.PasswordVisualTransformation
+import androidx.compose.ui.text.input.VisualTransformation
 import androidx.compose.material3.ButtonDefaults
 import retrofit2.HttpException
 import com.novelscraper.app.net.detail
 import com.novelscraper.app.platform.showToast
 import com.novelscraper.app.net.Account
 import com.novelscraper.app.net.Net
+import com.novelscraper.app.sync.FolderAuthException
+import com.novelscraper.app.sync.SyncNewerFormatException
+import com.novelscraper.app.sync.SyncNotEncryptedException
+import com.novelscraper.app.sync.SyncPassphraseNeededException
+import com.novelscraper.app.sync.SyncSettings
+import com.novelscraper.app.sync.SyncWrongPassphraseException
 import com.novelscraper.app.platform.hasSystemTts
 import com.novelscraper.app.tts.KokoroDownloader
 import com.novelscraper.app.tts.TtsModels
@@ -76,8 +83,9 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 
 @Composable
-fun SettingsScreen(onSignIn: () -> Unit, onLogout: () -> Unit) {
+fun SettingsScreen(onLogout: () -> Unit) {
     val account by Account.state.collectAsState()
+    val folder by SyncSettings.state.collectAsState()
     var deleting by remember { mutableStateOf(false) }
     val theme by ThemeController.theme.collectAsState()
     val rate by ReaderPrefs.ttsRate.collectAsState()
@@ -137,35 +145,28 @@ fun SettingsScreen(onSignIn: () -> Unit, onLogout: () -> Unit) {
             OutlinedButton(onClick = { ReaderPrefs.increaseFont() }) { Text("A+") }
         }
 
-        Section("SERVER ACCOUNT")
-        when (val a = account) {
-            is Account.State.SignedIn -> {
-                Text(a.username.ifBlank { "Signed in" }, style = MaterialTheme.typography.titleMedium,
-                    fontWeight = FontWeight.SemiBold)
-                Text(Net.baseUrl + if (a.online) "" else " · not reached yet", style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant)
-                SyncStatus()
-                Row(
-                    Modifier.padding(top = 16.dp),
-                    horizontalArrangement = Arrangement.spacedBy(8.dp),
-                    verticalAlignment = Alignment.CenterVertically,
-                ) {
-                    Button(onClick = onLogout) { Text("Sign out") }
-                    TextButton(
-                        onClick = { deleting = true },
-                        colors = ButtonDefaults.textButtonColors(
-                            contentColor = MaterialTheme.colorScheme.error),
-                    ) { Text("Delete account") }
-                }
-            }
-            Account.State.SignedOut -> {
-                Text(
-                    "Optional, and only for syncing. Signed in on two devices, the same account keeps " +
-                        "their libraries in step: the novels, what has been read, categories and where " +
-                        "reading left off. Everything else works without one.",
-                    style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant,
-                )
-                Button(onClick = onSignIn, modifier = Modifier.padding(top = 16.dp)) { Text("Sign in") }
+        Section("SYNC")
+        FolderSyncSection()
+
+        // Accounts are on their way out: shown only to someone still signed in.
+        (account as? Account.State.SignedIn)?.let { a ->
+            Section("SERVER ACCOUNT")
+            Text(a.username.ifBlank { "Signed in" }, style = MaterialTheme.typography.titleMedium,
+                fontWeight = FontWeight.SemiBold)
+            Text(Net.baseUrl + if (a.online) "" else " · not reached yet", style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant)
+            if (folder == null) SyncStatus()
+            Row(
+                Modifier.padding(top = 16.dp),
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Button(onClick = onLogout) { Text("Sign out") }
+                TextButton(
+                    onClick = { deleting = true },
+                    colors = ButtonDefaults.textButtonColors(
+                        contentColor = MaterialTheme.colorScheme.error),
+                ) { Text("Delete account") }
             }
         }
         if (deleting) DeleteAccountDialog(onDismiss = { deleting = false })
@@ -186,6 +187,204 @@ object SettingsHooks {
  * engine's model download. Downloading runs off the main thread; progress is
  * mirrored back to Compose state.
  */
+/**
+ * Sync through the reader's own storage: what it is and a way to set it up, or
+ * where it goes and how it is doing.
+ */
+@Composable
+private fun FolderSyncSection() {
+    val conn by SyncSettings.state.collectAsState()
+    var setup by remember { mutableStateOf(false) }
+    var deleting by remember { mutableStateOf(false) }
+    var busy by remember { mutableStateOf(false) }
+    val scope = rememberCoroutineScope()
+
+    when (val c = conn) {
+        null -> {
+            Text(
+                "Optional. Keeps the library in step across devices through storage you already " +
+                    "have: the novels, what has been read, categories and where reading left off. " +
+                    "Nothing goes anywhere else.",
+                style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+            Button(onClick = { setup = true }, modifier = Modifier.padding(top = 16.dp)) { Text("Set up WebDAV") }
+            Text(
+                "Nextcloud, ownCloud, Koofr, a NAS, or any other WebDAV storage.",
+                style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant,
+                modifier = Modifier.padding(top = 8.dp),
+            )
+        }
+        else -> {
+            Text(c.provider.label, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
+            Text(c.where + if (c.encrypted) " · encrypted" else "", style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant)
+            SyncStatus()
+            Row(
+                Modifier.padding(top = 16.dp),
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Button(enabled = !busy, onClick = {
+                    busy = true
+                    scope.launch {
+                        try { SyncSettings.disconnect(); showToast("Sync is off. The library stays on this device.") }
+                        finally { busy = false }
+                    }
+                }) { Text("Disconnect") }
+                TextButton(
+                    enabled = !busy,
+                    onClick = { deleting = true },
+                    colors = ButtonDefaults.textButtonColors(contentColor = MaterialTheme.colorScheme.error),
+                ) { Text("Delete synced data") }
+            }
+            if (deleting) DeleteSyncedDataDialog(c, onDismiss = { deleting = false })
+        }
+    }
+    if (setup) WebDavDialog(onDismiss = { setup = false })
+}
+
+/** What a failed connection attempt says. */
+private fun connectError(e: Exception): String = when (e) {
+    is IllegalArgumentException -> e.message ?: "That address isn't usable."
+    is FolderAuthException -> "The server refused that username or password."
+    is SyncWrongPassphraseException -> "That passphrase doesn't open this sync folder."
+    is SyncPassphraseNeededException -> "This sync folder is encrypted. Enter its passphrase."
+    is SyncNotEncryptedException -> "This sync folder was set up without a passphrase. Leave the passphrase empty."
+    is SyncNewerFormatException -> e.message ?: "This sync folder needs a newer version of the app."
+    else -> "Couldn't reach the server" + (e.message?.let { ": $it" } ?: ".")
+}
+
+@Composable
+private fun WebDavDialog(onDismiss: () -> Unit) {
+    val scope = rememberCoroutineScope()
+    var address by remember { mutableStateOf("") }
+    var user by remember { mutableStateOf("") }
+    var password by remember { mutableStateOf("") }
+    var passphrase by remember { mutableStateOf("") }
+    var busy by remember { mutableStateOf(false) }
+    var error by remember { mutableStateOf<String?>(null) }
+
+    @Composable
+    fun field(value: String, label: String, secret: Boolean = false, onChange: (String) -> Unit) =
+        OutlinedTextField(
+            value = value,
+            onValueChange = { onChange(it); error = null },
+            label = { Text(label) },
+            singleLine = true,
+            enabled = !busy,
+            visualTransformation = if (secret) PasswordVisualTransformation() else VisualTransformation.None,
+            modifier = Modifier.fillMaxWidth().padding(top = 8.dp),
+        )
+
+    AlertDialog(
+        onDismissRequest = { if (!busy) onDismiss() },
+        title = { Text("Sync with WebDAV") },
+        text = {
+            Column(Modifier.verticalScroll(rememberScrollState())) {
+                Text(
+                    "The library goes in a NovelScraper folder at this address. On Nextcloud the " +
+                        "address is under Files, Settings, WebDAV; an app password is better than " +
+                        "the account's own.",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+                field(address, "Address") { address = it }
+                field(user, "Username") { user = it }
+                field(password, "Password", secret = true) { password = it }
+                field(passphrase, "Passphrase (optional)", secret = true) { passphrase = it }
+                Text(
+                    "A passphrase encrypts the library before it leaves this device. Every device " +
+                        "needs the same one, and a forgotten passphrase can't be recovered.",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.padding(top = 8.dp),
+                )
+                error?.let {
+                    Text(it, color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodySmall,
+                        modifier = Modifier.padding(top = 8.dp))
+                }
+            }
+        },
+        confirmButton = {
+            TextButton(
+                enabled = !busy && address.isNotBlank() && user.isNotBlank() && password.isNotEmpty(),
+                onClick = {
+                    busy = true
+                    error = null
+                    scope.launch {
+                        try {
+                            SyncSettings.connectWebDav(address, user.trim(), password, passphrase)
+                            showToast("Sync is on.")
+                            onDismiss()
+                        } catch (e: kotlinx.coroutines.CancellationException) {
+                            throw e
+                        } catch (e: Exception) {
+                            error = connectError(e)
+                        } finally {
+                            busy = false
+                        }
+                    }
+                },
+            ) { Text(if (busy) "Connecting…" else "Connect") }
+        },
+        dismissButton = { TextButton(onClick = onDismiss, enabled = !busy) { Text("Cancel") } },
+    )
+}
+
+/** Emptying the sync folder, which every device syncs through. */
+@Composable
+private fun DeleteSyncedDataDialog(c: SyncSettings.Connection, onDismiss: () -> Unit) {
+    val scope = rememberCoroutineScope()
+    var busy by remember { mutableStateOf(false) }
+    var error by remember { mutableStateOf<String?>(null) }
+    AlertDialog(
+        onDismissRequest = { if (!busy) onDismiss() },
+        title = { Text("Delete synced data?") },
+        text = {
+            Column {
+                Text(
+                    "The NovelScraper folder on ${c.where} is emptied, and this device stops syncing.",
+                    style = MaterialTheme.typography.bodyMedium,
+                )
+                Text(
+                    "Every device keeps its own library. A device still connected to this folder " +
+                        "fills it again the next time it syncs.",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.padding(top = 10.dp),
+                )
+                error?.let {
+                    Text(it, color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodySmall,
+                        modifier = Modifier.padding(top = 8.dp))
+                }
+            }
+        },
+        confirmButton = {
+            TextButton(
+                enabled = !busy,
+                colors = ButtonDefaults.textButtonColors(contentColor = MaterialTheme.colorScheme.error),
+                onClick = {
+                    busy = true
+                    scope.launch {
+                        try {
+                            SyncSettings.deleteSyncedData()
+                            showToast("Synced data deleted.")
+                            onDismiss()
+                        } catch (e: kotlinx.coroutines.CancellationException) {
+                            throw e
+                        } catch (e: Exception) {
+                            error = connectError(e)
+                        } finally {
+                            busy = false
+                        }
+                    }
+                },
+            ) { Text(if (busy) "Deleting…" else "Delete") }
+        },
+        dismissButton = { TextButton(onClick = onDismiss, enabled = !busy) { Text("Cancel") } },
+    )
+}
+
 /**
  * Deleting the account for good. The password is asked for again because a
  * session left open is not enough for something irreversible, and the server
@@ -508,7 +707,9 @@ private fun SyncStatus() {
         sync.unsupported ->
             "Not synced: this server is an older build without sync. Update the server, then it will " +
                 "catch up on its own. Nothing is lost meanwhile."
-        sync.error -> "Not synced: can't reach the server. Changes are kept and sent later."
+        sync.problem != null -> "Not synced. " + sync.problem
+        sync.error -> "Not synced: can't reach " + (if (SyncSettings.connected) "the storage" else "the server") +
+            ". Changes are kept and sent later."
         sync.lastSync == 0L -> "Library sync: waiting for the first sync."
         else -> {
             val mins = ((now - sync.lastSync) / 60_000).toInt()

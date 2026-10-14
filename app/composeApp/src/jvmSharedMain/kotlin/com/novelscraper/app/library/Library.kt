@@ -6,6 +6,12 @@ import com.novelscraper.app.extensions.SiteChallengeException
 import com.novelscraper.app.extensions.Extensions
 import com.novelscraper.app.net.Account
 import com.novelscraper.app.platform.Log
+import com.novelscraper.app.sync.FolderAuthException
+import com.novelscraper.app.sync.SyncNewerFormatException
+import com.novelscraper.app.sync.SyncNotEncryptedException
+import com.novelscraper.app.sync.SyncPassphraseNeededException
+import com.novelscraper.app.sync.SyncSettings
+import com.novelscraper.app.sync.SyncWrongPassphraseException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
@@ -137,9 +143,10 @@ object ChapterDownloads {
 /**
  * When the library syncs with the other devices: a moment after a change here
  * (changes in a burst go together), every minute while the app is in use, when
- * it comes back to the foreground, and once more as it leaves. Only while
- * signed in; a failed sync (offline) just waits for the next one, as nothing
- * unsent is lost.
+ * it comes back to the foreground, and once more as it leaves. Only while a
+ * sync folder is connected ([SyncSettings]) or, until accounts go, signed in to
+ * the server; the folder wins when both are. A failed sync (offline) just waits
+ * for the next one, as nothing unsent is lost.
  */
 object LibrarySyncRunner {
     private const val DEBOUNCE_MS = 2_000L
@@ -159,7 +166,12 @@ object LibrarySyncRunner {
         val error: Boolean = false,
         /** The server answered, but has no sync in it: it needs updating. */
         val unsupported: Boolean = false,
+        /** Why the folder can't be synced, when waiting will not fix it. */
+        val problem: String? = null,
     )
+
+    /** Whether there is anywhere to sync to. */
+    val enabled: Boolean get() = SyncSettings.connected || Account.signedIn
 
     /** The app is in use: sync now, then periodically. */
     @Synchronized
@@ -181,6 +193,13 @@ object LibrarySyncRunner {
         scope.launch { runOnce() }
     }
 
+    /** Stop, without a last sync (disconnecting). */
+    @Synchronized
+    fun cancel() {
+        loop?.cancel(); loop = null
+        _state.value = State()
+    }
+
     /** A change was made here: sync shortly. */
     fun soon() {
         if (loop?.isActive == true) wake.trySend(Unit)
@@ -191,10 +210,16 @@ object LibrarySyncRunner {
     suspend fun now(): Boolean = runOnce()
 
     private suspend fun runOnce(): Boolean {
-        if (!Account.signedIn) return false
+        val folder = SyncSettings.folder()
+        if (folder == null && !Account.signedIn) return false
         _state.value = _state.value.copy(syncing = true)
         return try {
-            val ok = Library.store.syncNow()
+            val ok = if (folder != null) {
+                Library.store.syncFolder(folder, SyncSettings.passphrase(), SyncSettings.keys)
+                true
+            } else {
+                Library.store.syncNow()
+            }
             _state.value = State(syncing = false, lastSync = System.currentTimeMillis(), error = false)
             ok
         } catch (e: kotlinx.coroutines.CancellationException) {
@@ -206,8 +231,19 @@ object LibrarySyncRunner {
             false
         } catch (e: Exception) {
             Log.d("Sync", "sync failed: ${e.message}")
-            _state.value = _state.value.copy(syncing = false, error = true, unsupported = false)
+            _state.value = _state.value.copy(syncing = false, error = true, unsupported = false, problem = problem(e))
             false
         }
+    }
+
+    /** What to tell the reader about a failure that won't pass by itself. */
+    private fun problem(e: Exception): String? = when (e) {
+        is FolderAuthException -> "The storage no longer accepts the saved sign-in. Disconnect and connect again."
+        is SyncPassphraseNeededException, is SyncWrongPassphraseException ->
+            "The sync folder's passphrase has changed. Disconnect and connect again with the new one."
+        is SyncNotEncryptedException ->
+            "The sync folder is no longer encrypted. Disconnect and connect again without a passphrase."
+        is SyncNewerFormatException -> "Another device set up the sync folder with a newer version of the app. Update this one."
+        else -> null
     }
 }

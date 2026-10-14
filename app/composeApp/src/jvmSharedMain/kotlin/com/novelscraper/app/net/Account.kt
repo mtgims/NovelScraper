@@ -5,6 +5,7 @@ import com.novelscraper.app.library.Library
 import com.novelscraper.app.library.LibrarySyncRunner
 import com.novelscraper.app.platform.KeyValueStore
 import com.novelscraper.app.platform.settingsStore
+import com.novelscraper.app.sync.SyncSettings
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
@@ -68,14 +69,14 @@ object Account {
      * confirm the session and start syncing.
      */
     fun onForeground() {
-        if (!signedIn) return
+        if (!LibrarySyncRunner.enabled) return
         LibrarySyncRunner.start()
-        scope.launch { check() }
+        if (signedIn) scope.launch { check() }
     }
 
     /** The app left the foreground (Android): send what changed here. */
     fun onBackground() {
-        if (signedIn) LibrarySyncRunner.stop()
+        if (LibrarySyncRunner.enabled) LibrarySyncRunner.stop()
     }
 
     /** A sign-in or registration succeeded. */
@@ -110,9 +111,13 @@ object Account {
     }
 
     private fun forget() {
-        LibrarySyncRunner.stop()
-        // The next account syncs from scratch; this one's records aren't its.
-        scope.launch { runCatching { Library.store.resetSync() } }
+        // With a sync folder connected, the records are the folder's as much as
+        // the account's, and they stay.
+        if (!SyncSettings.connected) {
+            LibrarySyncRunner.stop()
+            // The next account syncs from scratch; this one's records aren't its.
+            scope.launch { runCatching { Library.store.resetSync() } }
+        }
         Net.cookieJar.clear()
         prefs.remove(KEY_USER)
         _state.value = State.SignedOut
