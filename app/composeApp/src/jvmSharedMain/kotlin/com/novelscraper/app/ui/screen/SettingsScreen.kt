@@ -66,10 +66,7 @@ import com.novelscraper.app.net.detail
 import com.novelscraper.app.platform.showToast
 import com.novelscraper.app.net.Account
 import com.novelscraper.app.net.Net
-import com.novelscraper.app.platform.openInBrowser
 import com.novelscraper.app.sync.FolderAuthException
-import com.novelscraper.app.sync.OAuthDeniedException
-import com.novelscraper.app.sync.OAuthTimeoutException
 import com.novelscraper.app.sync.SyncNewerFormatException
 import com.novelscraper.app.sync.SyncNotEncryptedException
 import com.novelscraper.app.sync.SyncPassphraseNeededException
@@ -198,7 +195,6 @@ object SettingsHooks {
 private fun FolderSyncSection() {
     val conn by SyncSettings.state.collectAsState()
     var setup by remember { mutableStateOf(false) }
-    var google by remember { mutableStateOf(false) }
     var deleting by remember { mutableStateOf(false) }
     var busy by remember { mutableStateOf(false) }
     val scope = rememberCoroutineScope()
@@ -211,17 +207,9 @@ private fun FolderSyncSection() {
                     "Nothing goes anywhere else.",
                 style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
-            Row(Modifier.padding(top = 16.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                if (SyncSettings.googleAvailable) {
-                    Button(onClick = { google = true }) { Text("Google Drive") }
-                    OutlinedButton(onClick = { setup = true }) { Text("WebDAV") }
-                } else {
-                    Button(onClick = { setup = true }) { Text("Set up WebDAV") }
-                }
-            }
+            Button(onClick = { setup = true }, modifier = Modifier.padding(top = 16.dp)) { Text("Set up WebDAV") }
             Text(
-                (if (SyncSettings.googleAvailable) "Google Drive keeps it in a hidden folder of the app's own. " else "") +
-                    "WebDAV: Nextcloud, ownCloud, Koofr, a NAS, or any other WebDAV storage.",
+                "Nextcloud, ownCloud, Koofr, a NAS, or any other WebDAV storage.",
                 style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant,
                 modifier = Modifier.padding(top = 8.dp),
             )
@@ -253,7 +241,6 @@ private fun FolderSyncSection() {
         }
     }
     if (setup) WebDavDialog(onDismiss = { setup = false })
-    if (google) GoogleDriveDialog(onDismiss = { google = false })
 }
 
 /** What a failed connection attempt says. */
@@ -264,8 +251,6 @@ private fun connectError(e: Exception): String = when (e) {
     is SyncPassphraseNeededException -> "This sync folder is encrypted. Enter its passphrase."
     is SyncNotEncryptedException -> "This sync folder was set up without a passphrase. Leave the passphrase empty."
     is SyncNewerFormatException -> e.message ?: "This sync folder needs a newer version of the app."
-    is OAuthDeniedException -> "The sign-in was cancelled."
-    is OAuthTimeoutException -> "Signing in took too long. Try again."
     else -> "Couldn't reach the server" + (e.message?.let { ": $it" } ?: ".")
 }
 
@@ -343,81 +328,6 @@ private fun WebDavDialog(onDismiss: () -> Unit) {
             ) { Text(if (busy) "Connecting…" else "Connect") }
         },
         dismissButton = { TextButton(onClick = onDismiss, enabled = !busy) { Text("Cancel") } },
-    )
-}
-
-@Composable
-private fun GoogleDriveDialog(onDismiss: () -> Unit) {
-    val scope = rememberCoroutineScope()
-    var passphrase by remember { mutableStateOf("") }
-    var job by remember { mutableStateOf<kotlinx.coroutines.Job?>(null) }
-    var error by remember { mutableStateOf<String?>(null) }
-    val busy = job != null
-
-    AlertDialog(
-        onDismissRequest = { if (!busy) onDismiss() },
-        title = { Text("Sync with Google Drive") },
-        text = {
-            Column(Modifier.verticalScroll(rememberScrollState())) {
-                Text(
-                    "Google asks, in the browser, to let NovelScraper keep a hidden folder of its " +
-                        "own in your Drive. It can't see anything else there.",
-                    style = MaterialTheme.typography.bodyMedium,
-                )
-                OutlinedTextField(
-                    value = passphrase,
-                    onValueChange = { passphrase = it; error = null },
-                    label = { Text("Passphrase (optional)") },
-                    singleLine = true,
-                    enabled = !busy,
-                    visualTransformation = PasswordVisualTransformation(),
-                    modifier = Modifier.fillMaxWidth().padding(top = 12.dp),
-                )
-                Text(
-                    "A passphrase encrypts the library before it leaves this device. Every device " +
-                        "needs the same one, and a forgotten passphrase can't be recovered.",
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    modifier = Modifier.padding(top = 8.dp),
-                )
-                if (busy) {
-                    Text(
-                        "Finish signing in in the browser, then come back here.",
-                        style = MaterialTheme.typography.bodyMedium,
-                        modifier = Modifier.padding(top = 12.dp),
-                    )
-                }
-                error?.let {
-                    Text(it, color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodySmall,
-                        modifier = Modifier.padding(top = 8.dp))
-                }
-            }
-        },
-        confirmButton = {
-            TextButton(
-                enabled = !busy,
-                onClick = {
-                    error = null
-                    job = scope.launch {
-                        try {
-                            SyncSettings.connectGoogle(passphrase, ::openInBrowser)
-                            showToast("Sync is on.")
-                            onDismiss()
-                        } catch (e: kotlinx.coroutines.CancellationException) {
-                            throw e
-                        } catch (e: Exception) {
-                            error = connectError(e)
-                        } finally {
-                            job = null
-                        }
-                    }
-                },
-            ) { Text(if (busy) "Waiting for Google…" else "Sign in with Google") }
-        },
-        // While waiting, Cancel stops the wait; otherwise it closes the dialog.
-        dismissButton = {
-            TextButton(onClick = { job?.cancel() ?: onDismiss() }) { Text("Cancel") }
-        },
     )
 }
 

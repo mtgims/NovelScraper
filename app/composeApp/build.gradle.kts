@@ -63,34 +63,6 @@ val sherpaNativeWindows = tasks.register<DownloadFile>("sherpaNativeWindows") {
 val buildingOnWindows = System.getProperty("os.name").startsWith("Windows", ignoreCase = true)
 val sherpaNative = if (buildingOnWindows) sherpaNativeWindows else sherpaNativeLinux
 
-// OAuth client ids for the storage that sync can go through (sync/OAuth.kt),
-// from gradle properties: googleClientId and googleClientSecret. Installed
-// apps cannot keep a secret, and Google says as much of a desktop client's, so
-// these are public; a fork registers its own. Empty leaves that storage out.
-abstract class SyncClients : DefaultTask() {
-    @get:Input abstract val values: MapProperty<String, String>
-    @get:OutputDirectory abstract val dir: DirectoryProperty
-
-    @TaskAction
-    fun write() {
-        val out = dir.get().asFile.resolve("com/novelscraper/app/sync").apply { mkdirs() }
-        val fields = values.get().entries.sortedBy { it.key }.joinToString("\n") { (k, v) ->
-            "    const val $k = \"${v.replace("\\", "\\\\").replace("\"", "\\\"").replace("\$", "\\\$")}\""
-        }
-        out.resolve("SyncClients.kt").writeText(
-            "package com.novelscraper.app.sync\n\n" +
-                "/** Generated from gradle properties by the syncClients task. */\n" +
-                "internal object SyncClients {\n$fields\n}\n"
-        )
-    }
-}
-
-val syncClients = tasks.register<SyncClients>("syncClients") {
-    values.put("GOOGLE_CLIENT_ID", providers.gradleProperty("googleClientId").orElse(""))
-    values.put("GOOGLE_CLIENT_SECRET", providers.gradleProperty("googleClientSecret").orElse(""))
-    dir.set(layout.buildDirectory.dir("generated/syncClients"))
-}
-
 // The desktop app uses the same font files as Android, copied at build time.
 val desktopFonts = tasks.register<Sync>("desktopFonts") {
     from("src/androidMain/res/font") { include("*.ttf"); into("font") }
@@ -146,7 +118,6 @@ kotlin {
 
     sourceSets {
         getByName("jvmSharedMain") {
-            kotlin.srcDir(syncClients.map { it.dir })
             dependencies {
                 implementation("org.jetbrains.compose.runtime:runtime:1.12.0")
                 implementation("org.jetbrains.compose.foundation:foundation:1.12.0")
@@ -246,8 +217,6 @@ kotlin {
         getByName("desktopTest") {
             dependencies {
                 implementation(kotlin("test"))
-                // A stand-in for Google's endpoints (GoogleDriveFolderTest).
-                implementation("com.squareup.okhttp3:mockwebserver:4.12.0")
             }
         }
         getByName("androidHostTest") {
