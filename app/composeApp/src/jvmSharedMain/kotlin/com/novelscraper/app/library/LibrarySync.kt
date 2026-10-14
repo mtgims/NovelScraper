@@ -175,6 +175,18 @@ internal class SyncRecords(
     fun enroll() {
         device()
         if (q.state().executeAsOne().enrolled != 0L) return
+        fillGaps()
+        q.setEnrolled(1)
+    }
+
+    /**
+     * Records, at the enrollment clock, for whatever in the library has none:
+     * what [enroll] does, without its once-only guard. A record already here
+     * keeps its own clock, so this only ever adds. Run on a device's first
+     * sync with a folder, so the folder starts from the whole library even
+     * where an old migration left part of it without records.
+     */
+    fun fillGaps() {
         shelves.selectAll().executeAsList().forEach { c ->
             val key = c.sync_key ?: return@forEach
             emit(Kind.COLLECTION, key, CollectionRec.serializer(), CollectionRec(c.name, c.sort_order), ENROLL_TS)
@@ -183,7 +195,6 @@ internal class SyncRecords(
             books.selectById(id).executeAsOneOrNull()?.let { emitSnapshot(it, ENROLL_TS) }
         }
         installedSources().forEach { (id, repo) -> emitSource(id, repo, true, ENROLL_TS) }
-        q.setEnrolled(1)
     }
 
     // --- incoming --------------------------------------------------------------------

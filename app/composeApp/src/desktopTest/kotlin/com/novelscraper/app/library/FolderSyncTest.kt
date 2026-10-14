@@ -180,6 +180,31 @@ class FolderSyncTest {
         assertEquals(before, a.id, "reconnecting is not mistaken for a copied library")
     }
 
+    /** As the 0.47.0 migration left some libraries: a category with no sync
+     *  record on a device long since enrolled. Its first sync with a folder
+     *  sends it anyway. */
+    @Test
+    fun aCategoryWithoutARecordReachesTheFolder() = runBlocking<Unit> {
+        val file = Files.createTempFile("gap", ".db").toFile()
+        try {
+            val a = Device(folder, file = file)
+            a.lib.createCollection("Lost")
+            a.lib.syncDevice()   // enrolled: the record exists, then goes as the migration's did
+            a.lib.sync.enroll()
+            DriverManager.getConnection("jdbc:sqlite:${file.absolutePath}").use { c ->
+                c.createStatement().use {
+                    it.executeUpdate("DELETE FROM sync_meta WHERE kind = 'collection'")
+                    it.executeUpdate("DELETE FROM sync_pending WHERE kind = 'collection'")
+                }
+            }
+            a.sync()
+            b.sync()
+            assertEquals(listOf("Lost"), b.lib.collectionsFlow().first().map { it.name })
+        } finally {
+            file.delete()
+        }
+    }
+
     @Test
     fun aBatchVanishingMidReadIsReadNextTime() = runBlocking<Unit> {
         addNovel(a); a.sync()

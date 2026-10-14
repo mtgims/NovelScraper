@@ -49,7 +49,11 @@ internal class FolderSync(
         val listing = folder.list()
         val codec = SyncCodec(openManifest(listing))
         val files = listing.mapNotNull { f -> SyncFiles.parse(f.name)?.let { Entry(it, f) } }
-        tx.run { records.enroll() }
+        tx.run {
+            records.enroll()
+            // First sync with this folder: it starts from the whole library.
+            if (records.snapSeq() == 0L) records.fillGaps()
+        }
         val renamed = takeNewIdIfCloned(codec, files)
         val (me, snapSeq) = tx.run { records.device() to records.snapSeq() }
         val own = files.filter { it.batch.device == me }
