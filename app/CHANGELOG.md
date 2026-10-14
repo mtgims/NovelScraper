@@ -3,6 +3,47 @@
 Newest first.
 
 
+## 1.1.0, 2026-10-14 · `versionCode 101`
+
+Sync no longer needs a server, or an account. Pair your devices once with a sync
+code, and they keep each other up to date whenever they are on the same Wi-Fi;
+apart, each carries on by itself. The old sync server is switched off on
+21 October, and everything on it is deleted with it.
+
+### Sync between your own devices
+- **Same-Wi-Fi sync.** Settings, Sync, Start syncing on one device shows a sync
+  code; enter it on the others. Whenever two of them are on the same network
+  with the app open, they find each other and swap what changed: your novels,
+  what you have read, categories, ratings and where you stopped. When the same
+  thing changed on both, the newer change wins.
+- **Nothing leaves your network.** What the devices send each other is
+  encrypted with a key made from the code, and the code itself is never sent.
+- **A change travels through any device in between**, so a phone and a tablet
+  that never meet still end up in step once each has met the computer.
+- **A mistyped code is refused** rather than pairing with nothing, and case,
+  spaces and lookalike letters (O for 0, I and L for 1) are forgiven.
+- **Add a device by its address** when a network keeps devices from finding
+  each other on their own.
+- **On Linux, a firewall that would keep the other devices out is spotted**, and
+  Settings shows the one command that lets them in from your network only.
+- **Sync through WebDAV** instead, for anyone with Nextcloud, a NAS or similar,
+  with an optional passphrase that encrypts the library before it leaves the
+  device.
+
+### Server sync is ending
+- **The sync server is switched off on 21 October**, and what it holds is
+  deleted. Your library stays on your devices. Until you set up the new sync, a
+  notice at start says so, with a button to set it up and one to stop showing
+  it.
+- **New accounts can no longer be made.**
+
+### Fixed
+- **Some categories never reached your other devices**: those the 0.47.0 update
+  gave new keys when novels moved off the server. Setting up the new sync sends
+  them, which is also why a few duplicate categories may now appear on your
+  other devices; delete the extra ones and the deletion syncs too.
+
+
 ## 1.0.0, 2026-10-13 · `versionCode 100`
 
 The first stable release. Most of what changed here is not visible: sources are

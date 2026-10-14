@@ -11,6 +11,26 @@ since moved to a repository of their own; this one holds the apps.
 
 ---
 
+## 2026-10-14
+
+- **1.1.0: devices sync with each other, with no server.** A sync code pairs a
+  library's devices; on the same Wi-Fi they find each other by broadcast, prove
+  to each other that they hold the code, and copy each other's sync files,
+  which were sealed with a key derived from it before they were ever written.
+  Apart, each works on its own, and the newer change wins when they meet. A
+  change travels through any device in between. WebDAV is the alternative for
+  anyone with a server of their own.
+
+- **Server sync ends on 21 October.** Registration is closed, and 1.1.0 tells
+  anyone still syncing through an account, at start, with the date. Google Drive
+  sync and a sync relay were both built or begun along the way and dropped: the
+  first needs a sign-in and a review with Google, the second a server of the
+  project's own again.
+
+- **Categories that never synced now do.** The 0.47.0 migration gave some new
+  keys after the device had sent its library, so they never got a record. A
+  device's first sync with a folder fills in whatever has none.
+
 ## 2026-10-13
 
 - **1.0.0, and sources are kept apart.** A source is third-party code running
