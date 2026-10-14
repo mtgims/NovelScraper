@@ -88,6 +88,8 @@ import com.novelscraper.app.ui.theme.THEMES
 import com.novelscraper.app.ui.theme.ThemeController
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.flow.first
+import androidx.compose.runtime.snapshotFlow
 import kotlinx.coroutines.withContext
 import androidx.compose.runtime.produceState
 import androidx.compose.foundation.text.selection.SelectionContainer
@@ -102,6 +104,14 @@ fun SettingsScreen(onLogout: () -> Unit) {
     val fontScale by ReaderPrefs.fontScale.collectAsState()
 
     val scroll = rememberScrollState()
+    // Sent here to set sync up (the server sync notice): go down to it.
+    LaunchedEffect(Unit) {
+        if (SettingsHooks.jumpToSync) {
+            SettingsHooks.jumpToSync = false
+            snapshotFlow { scroll.maxValue }.first { it > 0 && it != Int.MAX_VALUE }
+            scroll.animateScrollTo(scroll.maxValue)
+        }
+    }
     Box(Modifier.fillMaxSize()) {
       ContentWidth(Modifier.statusBarsPadding().verticalScroll(scroll)) {
       Column(
@@ -190,6 +200,8 @@ fun SettingsScreen(onLogout: () -> Unit) {
  *  (the desktop's GPU narration). */
 object SettingsHooks {
     var narration: (@Composable () -> Unit)? = null
+    /** Set before opening Settings to land on the Sync section. */
+    var jumpToSync = false
 }
 
 /**

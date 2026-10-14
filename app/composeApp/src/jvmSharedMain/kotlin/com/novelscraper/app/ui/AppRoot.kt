@@ -41,6 +41,7 @@ import com.novelscraper.app.ui.browse.ExtensionsScreen
 import com.novelscraper.app.ui.browse.SourceScreen
 import com.novelscraper.app.ui.components.PillNavBar
 import com.novelscraper.app.ui.components.NavRail
+import com.novelscraper.app.ui.components.ServerSyncNotice
 import com.novelscraper.app.ui.components.SiteCheckPrompt
 import com.novelscraper.app.ui.components.isTopLevelRoute
 import com.novelscraper.app.ui.screen.BookScreen
@@ -48,6 +49,7 @@ import com.novelscraper.app.ui.screen.LibraryScreen
 import com.novelscraper.app.ui.screen.LoginScreen
 import com.novelscraper.app.ui.screen.ReaderScreen
 import com.novelscraper.app.ui.screen.RegisterScreen
+import com.novelscraper.app.ui.screen.SettingsHooks
 import com.novelscraper.app.ui.screen.SettingsScreen
 import com.novelscraper.app.ui.screen.StatsScreen
 
@@ -199,6 +201,9 @@ private fun MainApp() {
 
                 // A source asking for a browser check can come from any screen.
                 SiteCheckPrompt()
+
+                // Server sync is going: say so, once a launch, until set aside.
+                ServerSyncNotice(onSetUp = { SettingsHooks.jumpToSync = true; go(nav, route, "settings") })
 
                 if (!wide && isTopLevelRoute(route)) {
                     PillNavBar(
