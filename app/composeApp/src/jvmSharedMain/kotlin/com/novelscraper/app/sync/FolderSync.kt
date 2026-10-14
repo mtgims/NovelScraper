@@ -40,6 +40,8 @@ internal class FolderSync(
     private val folder: SyncFolder,
     private val passphrase: CharArray?,
     private val keys: KeyCache,
+    /** A sync code's key ([PairKeys]), in place of a passphrase. */
+    private val codeKey: SecretKey? = null,
 ) {
     private class Entry(val batch: BatchName, val file: RemoteFile)
 
@@ -66,7 +68,7 @@ internal class FolderSync(
     private suspend fun openManifest(listing: List<RemoteFile>): SecretKey? {
         var manifests = listing.filter { it.name == SyncFiles.MANIFEST }
         if (manifests.isEmpty()) {
-            val (m, _) = SyncCodec.newManifest(passphrase)
+            val (m, _) = SyncCodec.newManifest(passphrase, codeKey)
             folder.write(SyncFiles.MANIFEST, SyncCodec.manifestJson(m))
             // Read back rather than trust what was written: another device may
             // have set the folder up in the same moment, and every device has to
@@ -78,7 +80,7 @@ internal class FolderSync(
         val first = manifests.minByOrNull { it.id } ?: throw IOException("the sync folder has no manifest")
         val bytes = folder.read(first.name) ?: throw IOException("the sync folder's manifest vanished")
         val m = SyncCodec.parseManifest(bytes) ?: throw IOException("the sync folder's manifest is damaged")
-        return SyncCodec.keyFor(m, passphrase, keys)
+        return SyncCodec.keyFor(m, passphrase, keys, codeKey)
     }
 
     // --- one database, two devices -----------------------------------------------

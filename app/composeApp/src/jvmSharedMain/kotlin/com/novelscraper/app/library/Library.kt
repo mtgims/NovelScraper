@@ -143,9 +143,10 @@ object ChapterDownloads {
 /**
  * When the library syncs with the other devices: a moment after a change here
  * (changes in a burst go together), every minute while the app is in use, when
- * it comes back to the foreground, and once more as it leaves. Only while a
- * sync folder is connected ([SyncSettings]) or, until accounts go, signed in to
- * the server; the folder wins when both are. A failed sync (offline) just waits
+ * it comes back to the foreground, and once more as it leaves; with same-Wi-Fi
+ * sync, also whenever another device brought something. Only while sync is set
+ * up ([SyncSettings]) or, until accounts go, signed in to the server; the
+ * former wins when both are. A failed sync (offline) just waits
  * for the next one, as nothing unsent is lost.
  */
 object LibrarySyncRunner {
@@ -178,6 +179,9 @@ object LibrarySyncRunner {
     fun start() {
         if (loop?.isActive == true) { wake.trySend(Unit); return }
         loop = scope.launch {
+            // Same Wi-Fi: listen for the other devices while the app is in use.
+            runCatching { SyncSettings.startLan(onReceived = ::soon) }
+                .onFailure { Log.w("Sync", "same-Wi-Fi sync didn't start: ${it.message}") }
             while (true) {
                 runOnce()
                 withTimeoutOrNull(PERIOD_MS) { wake.receive() }
@@ -190,13 +194,17 @@ object LibrarySyncRunner {
     @Synchronized
     fun stop() {
         loop?.cancel(); loop = null
-        scope.launch { runOnce() }
+        scope.launch {
+            runOnce()
+            SyncSettings.stopLan()
+        }
     }
 
     /** Stop, without a last sync (disconnecting). */
     @Synchronized
     fun cancel() {
         loop?.cancel(); loop = null
+        SyncSettings.stopLan()
         _state.value = State()
     }
 
@@ -215,7 +223,10 @@ object LibrarySyncRunner {
         _state.value = _state.value.copy(syncing = true)
         return try {
             val ok = if (folder != null) {
-                Library.store.syncFolder(folder, SyncSettings.passphrase(), SyncSettings.keys)
+                Library.store.syncFolder(folder, SyncSettings.passphrase(), SyncSettings.keys, SyncSettings.codeKey())
+                // Same Wi-Fi: the folder is this device's own; now hand what
+                // changed to the devices around, and take theirs.
+                SyncSettings.lanExchange()
                 true
             } else {
                 Library.store.syncNow()

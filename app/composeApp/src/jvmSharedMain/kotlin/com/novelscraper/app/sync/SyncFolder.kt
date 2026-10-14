@@ -1,9 +1,14 @@
 package com.novelscraper.app.sync
 
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
+import okhttp3.HttpUrl
+import java.net.InetAddress
+
 /**
- * A folder in the user's own storage that the library syncs through (Google
- * Drive's app folder, Dropbox's, OneDrive's, a WebDAV directory). Flat: names
- * only, no subfolders, so one [list] sees everything.
+ * A folder the library syncs through: a WebDAV directory, or this device's own
+ * folder that same-Wi-Fi sync copies between the devices ([LocalFolder]).
+ * Flat: names only, no subfolders, so one [list] sees everything.
  *
  * Every device writes only files named with its own id ([SyncFiles]), so no two
  * devices ever write the same file and storage without locks is enough.
@@ -58,5 +63,21 @@ internal object SyncFiles {
             SNAP -> BatchName(device, seq.toLong(), true)
             else -> null
         }
+    }
+}
+
+/**
+ * Whether a password or token may go to this address: https anywhere, plain
+ * http only to this machine or the local network, where a home server often
+ * has no certificate and nothing crosses the internet. Resolves the name, so it
+ * runs off the main thread.
+ */
+suspend fun safeForSecrets(url: HttpUrl): Boolean {
+    if (url.isHttps) return true
+    return withContext(Dispatchers.IO) {
+        runCatching { InetAddress.getAllByName(url.host) }.getOrNull()
+            ?.all { it.isLoopbackAddress || it.isSiteLocalAddress || it.isLinkLocalAddress ||
+                // IPv6 unique local (fc00::/7)
+                (it.address.size == 16 && (it.address[0].toInt() and 0xfe) == 0xfc) } == true
     }
 }

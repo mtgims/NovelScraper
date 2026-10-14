@@ -543,12 +543,19 @@ class LibraryStore(
      * reached, and one of the Sync*Exceptions when its passphrase stands in the
      * way.
      */
-    internal suspend fun syncFolder(folder: SyncFolder, passphrase: CharArray?, keys: KeyCache) =
-        serverMutex.withLock {
-            FolderSync(sync, object : SyncTx {
-                override suspend fun <T> run(block: () -> T): T = io { db.transactionWithResult { block() } }
-            }, folder, passphrase, keys).run()
-        }
+    internal suspend fun syncFolder(
+        folder: SyncFolder,
+        passphrase: CharArray?,
+        keys: KeyCache,
+        codeKey: javax.crypto.SecretKey? = null,
+    ) = serverMutex.withLock {
+        FolderSync(sync, object : SyncTx {
+            override suspend fun <T> run(block: () -> T): T = io { db.transactionWithResult { block() } }
+        }, folder, passphrase, keys, codeKey).run()
+    }
+
+    /** This device's sync id, which same-Wi-Fi sync introduces it by. */
+    internal suspend fun syncDevice(): String = io { db.transactionWithResult { sync.device() } }
 
     /** Changes here not yet accepted by the server. */
     suspend fun pendingSyncCount(): Long = io { sync.pendingCount() }

@@ -98,6 +98,22 @@ actual fun appFilesDir(): File = appContext.filesDir
 
 actual fun appCacheDir(): File = appContext.cacheDir
 
+actual val deviceName: String
+    get() = android.os.Build.MODEL.takeIf { it.isNotBlank() } ?: "Android phone"
+
+private val multicastLock by lazy {
+    (appContext.applicationContext.getSystemService(android.content.Context.WIFI_SERVICE)
+        as android.net.wifi.WifiManager)
+        .createMulticastLock("novelscraper-sync").apply { setReferenceCounted(false) }
+}
+
+/** Android lets a local app's sockets be reached on the Wi-Fi as they are. */
+actual fun firewallHint(ports: Pair<Int, Int>): String? = null
+
+actual fun hearLocalNetwork(on: Boolean) {
+    runCatching { if (on) multicastLock.acquire() else if (multicastLock.isHeld) multicastLock.release() }
+}
+
 actual fun htmlToPlain(html: String): String =
     HtmlCompat.fromHtml(html, HtmlCompat.FROM_HTML_MODE_COMPACT).toString()
 

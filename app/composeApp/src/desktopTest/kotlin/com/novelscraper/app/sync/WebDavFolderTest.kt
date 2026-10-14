@@ -24,11 +24,11 @@ class WebDavFolderTest {
 
     @Test
     fun aPasswordGoesOverPlainHttpOnlyOnTheLocalNetwork() = runBlocking {
-        assertTrue(WebDavFolder.safeToSignIn("https://cloud.example.org/".toHttpUrl()))
-        assertTrue(WebDavFolder.safeToSignIn("http://127.0.0.1:8080/".toHttpUrl()))
-        assertTrue(WebDavFolder.safeToSignIn("http://192.168.1.20/".toHttpUrl()))
-        assertTrue(WebDavFolder.safeToSignIn("http://[fd00::5]/".toHttpUrl()))
-        assertFalse(WebDavFolder.safeToSignIn("http://8.8.8.8/".toHttpUrl()))
+        assertTrue(safeForSecrets("https://cloud.example.org/".toHttpUrl()))
+        assertTrue(safeForSecrets("http://127.0.0.1:8080/".toHttpUrl()))
+        assertTrue(safeForSecrets("http://192.168.1.20/".toHttpUrl()))
+        assertTrue(safeForSecrets("http://[fd00::5]/".toHttpUrl()))
+        assertFalse(safeForSecrets("http://8.8.8.8/".toHttpUrl()))
     }
 
     /** As Nextcloud answers: the directory, a subdirectory, files by path. */

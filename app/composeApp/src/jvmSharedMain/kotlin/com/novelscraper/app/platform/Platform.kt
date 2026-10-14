@@ -81,6 +81,20 @@ expect fun appFilesDir(): File
 /** Private scratch space the system may clear. */
 expect fun appCacheDir(): File
 
+/** What people call this device: a phone's model, a computer's name. Shown to
+ *  the other devices it syncs with. */
+expect val deviceName: String
+
+/** Same-Wi-Fi sync is listening for the other devices' broadcasts: on Android
+ *  the Wi-Fi chip must be told to let them in, which costs battery, so only
+ *  while [on]. */
+expect fun hearLocalNetwork(on: Boolean)
+
+/** When this device's firewall would keep the others out (a Linux desktop
+ *  with ufw or firewalld running): the command that lets them in from the
+ *  local network only. Null when there is nothing to do. */
+expect fun firewallHint(ports: Pair<Int, Int>): String?
+
 /**
  * Chapter HTML to plain text, one paragraph per line, with U+FFFC standing in for
  * each <img>. The reader's sentence highlighting and the narrator both split this

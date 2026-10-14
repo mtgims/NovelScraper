@@ -12,7 +12,6 @@ import okhttp3.RequestBody.Companion.toRequestBody
 import okhttp3.Response
 import org.w3c.dom.Element
 import java.io.IOException
-import java.net.InetAddress
 import java.net.URLDecoder
 import javax.xml.parsers.DocumentBuilderFactory
 
@@ -116,21 +115,6 @@ class WebDavFolder(
             // Already pointing at the directory (a second device given the full path).
             if (base.pathSegments.lastOrNull { it.isNotEmpty() } != DIRECTORY) b.addPathSegment(DIRECTORY)
             return b.addPathSegment("").build()
-        }
-
-        /**
-         * Whether Basic sign-in may go to this address: https anywhere, plain http
-         * only to this machine or the local network. Resolves the name, so it
-         * runs off the main thread.
-         */
-        suspend fun safeToSignIn(url: HttpUrl): Boolean {
-            if (url.isHttps) return true
-            return withContext(Dispatchers.IO) {
-                runCatching { InetAddress.getAllByName(url.host) }.getOrNull()
-                    ?.all { it.isLoopbackAddress || it.isSiteLocalAddress || it.isLinkLocalAddress ||
-                        // IPv6 unique local (fc00::/7)
-                        (it.address.size == 16 && (it.address[0].toInt() and 0xfe) == 0xfc) } == true
-            }
         }
 
         /**

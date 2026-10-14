@@ -48,6 +48,53 @@ actual fun appFilesDir(): File = DesktopDirs.data
 
 actual fun appCacheDir(): File = DesktopDirs.cache
 
+actual val deviceName: String by lazy {
+    System.getenv("COMPUTERNAME")?.takeIf { it.isNotBlank() }
+        ?: runCatching { java.io.File("/etc/hostname").readText().trim() }.getOrNull()?.takeIf { it.isNotBlank() }
+        ?: runCatching { java.net.InetAddress.getLocalHost().hostName }.getOrNull()
+        ?: "Computer"
+}
+
+/** A computer's network card lets broadcasts in as it is. */
+actual fun hearLocalNetwork(on: Boolean) {}
+
+/**
+ * Windows asks the person itself the first time the app listens, so only
+ * Linux needs telling. Asked of systemd, which needs no privileges; the rule
+ * is limited to the network this computer is on.
+ */
+actual fun firewallHint(ports: Pair<Int, Int>): String? {
+    if (System.getProperty("os.name").startsWith("Windows", ignoreCase = true)) return null
+    fun active(unit: String) = runCatching {
+        val p = ProcessBuilder("systemctl", "is-active", unit).redirectErrorStream(true).start()
+        p.inputStream.bufferedReader().readText().trim() == "active" && p.waitFor() == 0
+    }.getOrDefault(false)
+    val net = localNetwork() ?: "192.168.0.0/16"
+    val (udp, tcp) = ports
+    return when {
+        active("ufw") ->
+            "sudo ufw allow from $net to any port $udp proto udp && sudo ufw allow from $net to any port $tcp proto tcp"
+        active("firewalld") ->
+            "sudo firewall-cmd --permanent --add-rich-rule='rule family=ipv4 source address=$net port port=$udp protocol=udp accept' " +
+                "--add-rich-rule='rule family=ipv4 source address=$net port port=$tcp protocol=tcp accept' && sudo firewall-cmd --reload"
+        else -> null
+    }
+}
+
+/** The local network this computer is on, as 192.168.0.0/24. */
+private fun localNetwork(): String? = runCatching {
+    java.net.NetworkInterface.getNetworkInterfaces().toList()
+        .filter { it.isUp && !it.isLoopback && !it.isVirtual }
+        .flatMap { it.interfaceAddresses }
+        .firstOrNull { it.address is java.net.Inet4Address && it.address.isSiteLocalAddress && it.networkPrefixLength in 8..30 }
+        ?.let { a ->
+            val bits = a.networkPrefixLength.toInt()
+            val ip = a.address.address.fold(0L) { acc, b -> (acc shl 8) or (b.toLong() and 0xff) }
+            val masked = ip and (0xffffffffL shl (32 - bits)) and 0xffffffffL
+            "${masked shr 24 and 255}.${masked shr 16 and 255}.${masked shr 8 and 255}.${masked and 255}/$bits"
+        }
+}.getOrNull()
+
 actual fun htmlToPlain(html: String): String = HtmlPlainText.convert(html)
 
 actual fun encodeRouteArg(value: String): String =

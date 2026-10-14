@@ -4,23 +4,30 @@ import com.novelscraper.app.library.Library
 import com.novelscraper.app.library.LibrarySyncRunner
 import com.novelscraper.app.net.Net
 import com.novelscraper.app.platform.KeyValueStore
+import com.novelscraper.app.platform.appFilesDir
+import com.novelscraper.app.platform.deviceName
+import com.novelscraper.app.platform.hearLocalNetwork
 import com.novelscraper.app.platform.settingsStore
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import okhttp3.CookieJar
+import java.io.File
 
 /**
- * Where the library syncs: a folder in the user's own storage ([SyncFolder]),
- * and how to reach it. Optional, like the server account it replaces; nothing
- * else in the app needs it.
+ * Where the library syncs: straight between the devices on the same Wi-Fi,
+ * paired by a sync code ([LanSync]), or through a WebDAV folder of the
+ * reader's own. Optional, like the server account it replaces; nothing else in
+ * the app needs it.
  *
- * The sign-in and the passphrase are kept in this app's private settings, as
- * the server session was, so a sync can run every minute without asking.
+ * The code, or the WebDAV sign-in and passphrase, are kept in this app's
+ * private settings, as the server session was, so a sync can run without
+ * asking.
  */
 object SyncSettings {
 
     enum class Provider(val id: String, val label: String) {
+        LAN("lan", "Same Wi-Fi"),
         WEBDAV("webdav", "WebDAV"),
     }
 
@@ -36,6 +43,14 @@ object SyncSettings {
     /** Spares deriving the passphrase's key on every sync. */
     internal val keys = KeyCache()
 
+    /** Same-Wi-Fi sync, while it is the connection. */
+    private val _lan = MutableStateFlow<LanSync?>(null)
+    val lan: StateFlow<LanSync?> = _lan.asStateFlow()
+    private var pairKeys: Pair<SyncCode, PairKeys>? = null
+
+    /** The sync folder same-Wi-Fi sync works from, on this device's disk. */
+    private val localFolder by lazy { LocalFolder(File(appFilesDir(), "sync-folder")) }
+
     fun init() {
         prefs = settingsStore("sync")
         _state.value = load()
@@ -44,6 +59,7 @@ object SyncSettings {
     private fun load(): Connection? {
         val p = Provider.entries.firstOrNull { it.id == prefs.getString(KEY_PROVIDER, null) } ?: return null
         return when (p) {
+            Provider.LAN -> if (code() == null) null else Connection(p, "Devices with this sync code", encrypted = true)
             Provider.WEBDAV -> {
                 val url = prefs.getString(KEY_DAV_URL, null) ?: return null
                 val user = prefs.getString(KEY_DAV_USER, null).orEmpty()
@@ -55,6 +71,7 @@ object SyncSettings {
 
     /** The connected folder, or null. */
     fun folder(): SyncFolder? = when (_state.value?.provider) {
+        Provider.LAN -> localFolder
         Provider.WEBDAV -> WebDavFolder(
             prefs.getString(KEY_DAV_URL, null).orEmpty(),
             prefs.getString(KEY_DAV_USER, null).orEmpty(),
@@ -66,6 +83,64 @@ object SyncSettings {
 
     fun passphrase(): CharArray? = prefs.getString(KEY_PASSPHRASE, null)?.takeIf { it.isNotEmpty() }?.toCharArray()
 
+    /** The sync code's key, which stands in for a passphrase between paired devices. */
+    internal fun codeKey() = if (_state.value?.provider == Provider.LAN) code()?.let { keysOf(it).key } else null
+
+    /** This library's sync code, to show so another device can pair. */
+    fun code(): SyncCode? = prefs.getString(KEY_CODE, null)?.let { runCatching { SyncCode.parse(it) }.getOrNull() }
+
+    private fun keysOf(code: SyncCode): PairKeys =
+        pairKeys?.takeIf { it.first == code }?.second ?: PairKeys(code).also { pairKeys = code to it }
+
+    // --- same Wi-Fi ----------------------------------------------------------------
+
+    /**
+     * Sync with the devices on the same Wi-Fi that hold [code]: a new one
+     * ([SyncCode.generate]) to start, or another device's to pair with it. The
+     * library goes into this device's sync folder at once, and to the others
+     * whenever they meet.
+     */
+    suspend fun connectLan(code: SyncCode) {
+        Library.store.syncFolder(localFolder, null, keys, keysOf(code).key)
+        prefs.putString(KEY_CODE, code.toString())
+        connected(Provider.LAN, passphrase = "")
+    }
+
+    /** Start finding and meeting the other devices ([onReceived]: something new arrived). */
+    suspend fun startLan(onReceived: () -> Unit) {
+        if (_state.value?.provider != Provider.LAN) return
+        val code = code() ?: return
+        val lan = _lan.value ?: LanSync(
+            localFolder, keysOf(code), Library.store.syncDevice(), deviceName, onReceived,
+            manualPeers = { prefs.getStringSet(KEY_PEERS).orEmpty().toList() },
+        ).also { _lan.value = it }
+        lan.device = Library.store.syncDevice()
+        hearLocalNetwork(true)
+        lan.start()
+    }
+
+    fun stopLan() {
+        _lan.value?.stop()
+        hearLocalNetwork(false)
+    }
+
+    /** After a sync here: hand what changed to the devices around. */
+    suspend fun lanExchange() {
+        val lan = _lan.value ?: return
+        lan.device = Library.store.syncDevice()
+        lan.exchangeAll()
+    }
+
+    /** A device given by address, for networks that keep devices from hearing
+     *  each other's broadcasts. Throws IllegalArgumentException for a bad one. */
+    fun addPeer(address: String) {
+        requireNotNull(LanSync.splitAddress(address)) { "Write it as the other device shows it, like 192.168.1.20:47812." }
+        prefs.putStringSet(KEY_PEERS, prefs.getStringSet(KEY_PEERS).orEmpty() + address.trim())
+        LibrarySyncRunner.soon()
+    }
+
+    // --- WebDAV --------------------------------------------------------------------
+
     /**
      * Connect to a WebDAV folder, proving it first with a full sync: a wrong
      * password, a wrong passphrase or an unreachable server throws, and nothing
@@ -73,16 +148,21 @@ object SyncSettings {
      */
     suspend fun connectWebDav(address: String, user: String, password: String, passphrase: String) {
         val url = WebDavFolder.folderUrl(address)
-        require(WebDavFolder.safeToSignIn(url)) {
+        require(safeForSecrets(url)) {
             "Use an https address. Plain http is only allowed to a server on this network."
         }
         val folder = WebDavFolder(url.toString(), user, password, client())
-        val secret = passphrase.ifEmpty { null }?.toCharArray()
-        Library.store.syncFolder(folder, secret, keys)
-        prefs.putString(KEY_PROVIDER, Provider.WEBDAV.id)
+        Library.store.syncFolder(folder, passphrase.ifEmpty { null }?.toCharArray(), keys)
         prefs.putString(KEY_DAV_URL, url.toString())
         prefs.putString(KEY_DAV_USER, user)
         prefs.putString(KEY_DAV_PASSWORD, password)
+        connected(Provider.WEBDAV, passphrase)
+    }
+
+    // --- either ----------------------------------------------------------------------
+
+    private fun connected(provider: Provider, passphrase: String) {
+        prefs.putString(KEY_PROVIDER, provider.id)
         if (passphrase.isEmpty()) prefs.remove(KEY_PASSPHRASE) else prefs.putString(KEY_PASSPHRASE, passphrase)
         _state.value = load()
         LibrarySyncRunner.start()
@@ -90,7 +170,7 @@ object SyncSettings {
 
     /**
      * Stop syncing here. The library on this device stays; its sync records go,
-     * so connecting to another folder later starts clean.
+     * so connecting again later starts clean.
      */
     suspend fun disconnect() {
         LibrarySyncRunner.cancel()
@@ -99,9 +179,9 @@ object SyncSettings {
     }
 
     /**
-     * Delete every file in the folder, then disconnect. The other devices keep
-     * their libraries, and stop syncing with this folder's contents: what they
-     * write afterwards starts it again.
+     * WebDAV: delete every file in the folder, then disconnect. The other
+     * devices keep their libraries, and stop syncing with this folder's
+     * contents: what they write afterwards starts it again.
      */
     suspend fun deleteSyncedData() {
         val folder = folder() ?: return
@@ -112,7 +192,12 @@ object SyncSettings {
     }
 
     private fun forget() {
-        listOf(KEY_PROVIDER, KEY_DAV_URL, KEY_DAV_USER, KEY_DAV_PASSWORD, KEY_PASSPHRASE).forEach(prefs::remove)
+        stopLan()
+        _lan.value = null
+        localFolder.clear()
+        listOf(KEY_PROVIDER, KEY_CODE, KEY_PEERS, KEY_DAV_URL, KEY_DAV_USER, KEY_DAV_PASSWORD, KEY_PASSPHRASE)
+            .forEach(prefs::remove)
+        pairKeys = null
         _state.value = null
     }
 
@@ -120,6 +205,8 @@ object SyncSettings {
     private fun client() = Net.client.newBuilder().cookieJar(CookieJar.NO_COOKIES).build()
 
     private const val KEY_PROVIDER = "provider"
+    private const val KEY_CODE = "lan_code"
+    private const val KEY_PEERS = "lan_peers"
     private const val KEY_DAV_URL = "webdav_url"
     private const val KEY_DAV_USER = "webdav_user"
     private const val KEY_DAV_PASSWORD = "webdav_password"

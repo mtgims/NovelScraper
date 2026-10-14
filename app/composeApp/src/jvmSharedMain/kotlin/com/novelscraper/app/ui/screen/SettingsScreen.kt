@@ -59,6 +59,9 @@ import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import com.novelscraper.app.ui.components.ColumnScrollbar
 import androidx.compose.ui.text.input.PasswordVisualTransformation
+import androidx.compose.ui.text.font.FontFamily
+import androidx.compose.ui.text.AnnotatedString
+import androidx.compose.ui.platform.LocalClipboardManager
 import androidx.compose.ui.text.input.VisualTransformation
 import androidx.compose.material3.ButtonDefaults
 import retrofit2.HttpException
@@ -70,6 +73,10 @@ import com.novelscraper.app.sync.FolderAuthException
 import com.novelscraper.app.sync.SyncNewerFormatException
 import com.novelscraper.app.sync.SyncNotEncryptedException
 import com.novelscraper.app.sync.SyncPassphraseNeededException
+import com.novelscraper.app.platform.firewallHint
+import com.novelscraper.app.sync.LanSync
+import com.novelscraper.app.sync.SyncCode
+import com.novelscraper.app.sync.SyncCodeException
 import com.novelscraper.app.sync.SyncSettings
 import com.novelscraper.app.sync.SyncWrongPassphraseException
 import com.novelscraper.app.platform.hasSystemTts
@@ -81,6 +88,9 @@ import com.novelscraper.app.ui.theme.THEMES
 import com.novelscraper.app.ui.theme.ThemeController
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
+import androidx.compose.runtime.produceState
+import androidx.compose.foundation.text.selection.SelectionContainer
 
 @Composable
 fun SettingsScreen(onLogout: () -> Unit) {
@@ -188,13 +198,17 @@ object SettingsHooks {
  * mirrored back to Compose state.
  */
 /**
- * Sync through the reader's own storage: what it is and a way to set it up, or
- * where it goes and how it is doing.
+ * Sync: between the devices on the same Wi-Fi, paired by a sync code, or
+ * through a WebDAV folder. What it is and a way to set it up, or how it is
+ * doing.
  */
 @Composable
 private fun FolderSyncSection() {
     val conn by SyncSettings.state.collectAsState()
-    var setup by remember { mutableStateOf(false) }
+    var webdav by remember { mutableStateOf(false) }
+    var joining by remember { mutableStateOf(false) }
+    var showCode by remember { mutableStateOf(false) }
+    var addPeer by remember { mutableStateOf(false) }
     var deleting by remember { mutableStateOf(false) }
     var busy by remember { mutableStateOf(false) }
     val scope = rememberCoroutineScope()
@@ -202,45 +216,249 @@ private fun FolderSyncSection() {
     when (val c = conn) {
         null -> {
             Text(
-                "Optional. Keeps the library in step across devices through storage you already " +
-                    "have: the novels, what has been read, categories and where reading left off. " +
-                    "Nothing goes anywhere else.",
+                "Optional. Keeps the library in step between your devices whenever they are on the " +
+                    "same Wi-Fi: the novels, what has been read, categories and where reading left " +
+                    "off. Nothing leaves your network, and each device carries on by itself when apart.",
                 style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
-            Button(onClick = { setup = true }, modifier = Modifier.padding(top = 16.dp)) { Text("Set up WebDAV") }
-            Text(
-                "Nextcloud, ownCloud, Koofr, a NAS, or any other WebDAV storage.",
-                style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant,
-                modifier = Modifier.padding(top = 8.dp),
-            )
+            Row(Modifier.padding(top = 16.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                Button(enabled = !busy, onClick = {
+                    busy = true
+                    scope.launch {
+                        try {
+                            SyncSettings.connectLan(SyncCode.generate())
+                            showCode = true
+                        } catch (e: kotlinx.coroutines.CancellationException) {
+                            throw e
+                        } catch (e: Exception) {
+                            showToast("Couldn't start syncing: ${e.message}")
+                        } finally {
+                            busy = false
+                        }
+                    }
+                }) { Text("Start syncing") }
+                OutlinedButton(enabled = !busy, onClick = { joining = true }) { Text("Enter a sync code") }
+            }
+            TextButton(onClick = { webdav = true }, modifier = Modifier.padding(top = 4.dp)) {
+                Text("Or sync through WebDAV (Nextcloud, a NAS)")
+            }
         }
         else -> {
             Text(c.provider.label, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
             Text(c.where + if (c.encrypted) " · encrypted" else "", style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant)
-            SyncStatus()
-            Row(
+            if (c.provider == SyncSettings.Provider.LAN) LanStatus() else SyncStatus()
+            FlowRow(
                 Modifier.padding(top = 16.dp),
                 horizontalArrangement = Arrangement.spacedBy(8.dp),
-                verticalAlignment = Alignment.CenterVertically,
+                verticalArrangement = Arrangement.spacedBy(8.dp),
             ) {
-                Button(enabled = !busy, onClick = {
+                if (c.provider == SyncSettings.Provider.LAN) {
+                    Button(onClick = { showCode = true }) { Text("Show sync code") }
+                    OutlinedButton(onClick = { addPeer = true }) { Text("Add a device by address") }
+                }
+                OutlinedButton(enabled = !busy, onClick = {
                     busy = true
                     scope.launch {
                         try { SyncSettings.disconnect(); showToast("Sync is off. The library stays on this device.") }
                         finally { busy = false }
                     }
                 }) { Text("Disconnect") }
-                TextButton(
-                    enabled = !busy,
-                    onClick = { deleting = true },
-                    colors = ButtonDefaults.textButtonColors(contentColor = MaterialTheme.colorScheme.error),
-                ) { Text("Delete synced data") }
+                if (c.provider == SyncSettings.Provider.WEBDAV) {
+                    TextButton(
+                        enabled = !busy,
+                        onClick = { deleting = true },
+                        colors = ButtonDefaults.textButtonColors(contentColor = MaterialTheme.colorScheme.error),
+                    ) { Text("Delete synced data") }
+                }
             }
             if (deleting) DeleteSyncedDataDialog(c, onDismiss = { deleting = false })
         }
     }
-    if (setup) WebDavDialog(onDismiss = { setup = false })
+    if (webdav) WebDavDialog(onDismiss = { webdav = false })
+    if (joining) JoinDialog(onDismiss = { joining = false })
+    if (showCode) SyncCodeDialog(onDismiss = { showCode = false })
+    if (addPeer) AddPeerDialog(onDismiss = { addPeer = false })
+}
+
+/** Same Wi-Fi: which devices this one has met, and how to be found. */
+@Composable
+private fun LanStatus() {
+    val lan by SyncSettings.lan.collectAsState()
+    val state = lan?.state?.collectAsState()?.value
+    val sync by LibrarySyncRunner.state.collectAsState()
+    var now by remember { mutableStateOf(System.currentTimeMillis()) }
+    LaunchedEffect(Unit) {
+        while (true) { now = System.currentTimeMillis(); kotlinx.coroutines.delay(15_000) }
+    }
+    val met = state?.peers.orEmpty().filter { it.lastSync > 0 }
+    Column(Modifier.padding(top = 12.dp)) {
+        when {
+            sync.problem != null -> Text("Not synced. " + sync.problem, style = MaterialTheme.typography.bodyMedium,
+                color = MaterialTheme.colorScheme.error)
+            met.isEmpty() -> {
+                Text(
+                    "Looking for your other devices on this Wi-Fi. Open NovelScraper on them to sync.",
+                    style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+                val hint by produceState<String?>(null) {
+                    value = withContext(Dispatchers.IO) { firewallHint(LanSync.DISCOVERY_PORT to LanSync.SERVER_PORT) }
+                }
+                hint?.let { cmd ->
+                    Text(
+                        "This computer's firewall keeps the other devices out. To let them in from this " +
+                            "network only, run in a terminal:",
+                        style = MaterialTheme.typography.bodySmall,
+                        modifier = Modifier.padding(top = 8.dp),
+                    )
+                    SelectionContainer {
+                        Text(cmd, style = MaterialTheme.typography.bodySmall.copy(fontFamily = FontFamily.Monospace),
+                            modifier = Modifier.padding(top = 4.dp))
+                    }
+                }
+            }
+            else -> met.forEach { p ->
+                Text("Synced with ${p.name} ${ago(now, p.lastSync)}.", style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant)
+            }
+        }
+        state?.addresses?.takeIf { it.isNotEmpty() }?.let { addresses ->
+            Text("This device: ${addresses.joinToString(", ")}", style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.padding(top = 6.dp))
+        }
+    }
+}
+
+private fun ago(now: Long, then: Long): String = when (val mins = ((now - then) / 60_000).toInt()) {
+    0 -> "just now"
+    1 -> "a minute ago"
+    in 2..59 -> "$mins minutes ago"
+    else -> "${mins / 60} h ago"
+}
+
+@Composable
+private fun SyncCodeDialog(onDismiss: () -> Unit) {
+    val code = remember { SyncSettings.code()?.toString().orEmpty() }
+    val clipboard = LocalClipboardManager.current
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("Sync code") },
+        text = {
+            Column {
+                Text(
+                    code,
+                    style = MaterialTheme.typography.titleLarge.copy(fontFamily = FontFamily.Monospace),
+                    modifier = Modifier.padding(vertical = 8.dp),
+                )
+                Text(
+                    "On the other device: Settings, Sync, Enter a sync code. Then keep both on the same " +
+                        "Wi-Fi with NovelScraper open, and they find each other.",
+                    style = MaterialTheme.typography.bodyMedium,
+                )
+                Text(
+                    "Anyone with this code can sync with your library, so keep it to yourself.",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.padding(top = 10.dp),
+                )
+            }
+        },
+        confirmButton = { TextButton(onClick = onDismiss) { Text("Done") } },
+        dismissButton = {
+            TextButton(onClick = { clipboard.setText(AnnotatedString(code)); showToast("Copied.") }) { Text("Copy") }
+        },
+    )
+}
+
+@Composable
+private fun JoinDialog(onDismiss: () -> Unit) {
+    val scope = rememberCoroutineScope()
+    var text by remember { mutableStateOf("") }
+    var busy by remember { mutableStateOf(false) }
+    var error by remember { mutableStateOf<String?>(null) }
+    AlertDialog(
+        onDismissRequest = { if (!busy) onDismiss() },
+        title = { Text("Enter a sync code") },
+        text = {
+            Column {
+                Text(
+                    "The code another device shows under Settings, Sync, Show sync code.",
+                    style = MaterialTheme.typography.bodyMedium,
+                )
+                OutlinedTextField(
+                    value = text,
+                    onValueChange = { text = it; error = null },
+                    label = { Text("Sync code") },
+                    singleLine = true,
+                    enabled = !busy,
+                    isError = error != null,
+                    modifier = Modifier.fillMaxWidth().padding(top = 12.dp),
+                )
+                error?.let {
+                    Text(it, color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodySmall,
+                        modifier = Modifier.padding(top = 8.dp))
+                }
+            }
+        },
+        confirmButton = {
+            TextButton(enabled = !busy && text.isNotBlank(), onClick = {
+                val code = try { SyncCode.parse(text) } catch (e: SyncCodeException) { error = e.message; return@TextButton }
+                busy = true
+                scope.launch {
+                    try {
+                        SyncSettings.connectLan(code)
+                        showToast("Paired. The devices sync whenever they're on the same Wi-Fi.")
+                        onDismiss()
+                    } catch (e: kotlinx.coroutines.CancellationException) {
+                        throw e
+                    } catch (e: Exception) {
+                        error = "Couldn't start syncing: ${e.message}"
+                    } finally {
+                        busy = false
+                    }
+                }
+            }) { Text(if (busy) "Pairing…" else "Pair") }
+        },
+        dismissButton = { TextButton(onClick = onDismiss, enabled = !busy) { Text("Cancel") } },
+    )
+}
+
+/** For networks that keep devices from hearing each other's broadcasts. */
+@Composable
+private fun AddPeerDialog(onDismiss: () -> Unit) {
+    var text by remember { mutableStateOf("") }
+    var error by remember { mutableStateOf<String?>(null) }
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("Add a device by address") },
+        text = {
+            Column {
+                Text(
+                    "Only needed if the devices don't find each other by themselves, which some " +
+                        "networks prevent. The other device shows its address here, under Sync.",
+                    style = MaterialTheme.typography.bodyMedium,
+                )
+                OutlinedTextField(
+                    value = text,
+                    onValueChange = { text = it; error = null },
+                    label = { Text("Address, like 192.168.1.20:47812") },
+                    singleLine = true,
+                    isError = error != null,
+                    modifier = Modifier.fillMaxWidth().padding(top = 12.dp),
+                )
+                error?.let {
+                    Text(it, color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodySmall,
+                        modifier = Modifier.padding(top = 8.dp))
+                }
+            }
+        },
+        confirmButton = {
+            TextButton(enabled = text.isNotBlank(), onClick = {
+                try { SyncSettings.addPeer(text); onDismiss() } catch (e: IllegalArgumentException) { error = e.message }
+            }) { Text("Add") }
+        },
+        dismissButton = { TextButton(onClick = onDismiss) { Text("Cancel") } },
+    )
 }
 
 /** What a failed connection attempt says. */

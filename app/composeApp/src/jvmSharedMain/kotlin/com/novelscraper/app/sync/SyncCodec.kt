@@ -50,13 +50,16 @@ private data class Header(val v: Int, val device: String, val seq: Long, val w: 
  */
 @Serializable
 internal data class Manifest(val v: Int = FORMAT, val enc: Encryption? = null) {
-    /** PBKDF2-HMAC-SHA256 parameters, and [check]: a known text encrypted with
+    /** PBKDF2-HMAC-SHA256 parameters (or [CODE]: the key comes from a sync
+     *  code, and [iter] and [salt] are unused), and [check]: a known text encrypted with
      *  the key, so a wrong passphrase is caught before any record is touched. */
     @Serializable
     data class Encryption(val kdf: String = KDF, val iter: Int, val salt: String, val check: String)
 
     companion object {
         const val KDF = "pbkdf2-sha256"
+        /** The folder's key is derived from a sync code ([PairKeys]). */
+        const val CODE = "sync-code"
     }
 }
 
@@ -131,7 +134,11 @@ internal class SyncCodec(private val key: SecretKey?) {
 
         /** A new folder's manifest, locked with [passphrase] if one is given,
          *  and the key that goes with it. */
-        fun newManifest(passphrase: CharArray?): Pair<Manifest, SecretKey?> {
+        fun newManifest(passphrase: CharArray?, codeKey: SecretKey? = null): Pair<Manifest, SecretKey?> {
+            if (codeKey != null) {
+                val enc = Manifest.Encryption(kdf = Manifest.CODE, iter = 0, salt = "", check = b64(seal(codeKey, CHECK)))
+                return Manifest(enc = enc) to codeKey
+            }
             if (passphrase == null || passphrase.isEmpty()) return Manifest() to null
             val salt = ByteArray(16).also(random::nextBytes)
             val key = derive(passphrase, salt, ITERATIONS)
@@ -146,9 +153,17 @@ internal class SyncCodec(private val key: SecretKey?) {
          * Throws one of the Sync*Exceptions when this device can't use the folder
          * as it stands; [keys] spares re-deriving on every sync.
          */
-        fun keyFor(m: Manifest, passphrase: CharArray?, keys: KeyCache): SecretKey? {
+        fun keyFor(m: Manifest, passphrase: CharArray?, keys: KeyCache, codeKey: SecretKey? = null): SecretKey? {
             if (m.v > FORMAT) throw SyncNewerFormatException()
             val enc = m.enc
+            if (codeKey != null || enc?.kdf == Manifest.CODE) {
+                // A sync code's folder: the code is the only way in, and the
+                // code is how the folder was found, so a mismatch means damage.
+                if (codeKey == null || enc?.kdf != Manifest.CODE) throw SyncWrongPassphraseException()
+                val ok = runCatching { open(codeKey, unb64(enc.check)!!).contentEquals(CHECK) }.getOrDefault(false)
+                if (!ok) throw SyncWrongPassphraseException()
+                return codeKey
+            }
             val given = passphrase != null && passphrase.isNotEmpty()
             if (enc == null) {
                 if (given) throw SyncNotEncryptedException()
