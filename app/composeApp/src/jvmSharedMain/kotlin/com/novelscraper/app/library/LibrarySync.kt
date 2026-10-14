@@ -321,6 +321,30 @@ internal class SyncRecords(
     fun pendingCount(): Long = q.pendingCount().executeAsOne()
     fun reset() = q.reset()
 
+    // --- folder sync (FolderSync) ------------------------------------------------------
+
+    /** Every record this device knows, whoever wrote it: replayed anywhere, it
+     *  rebuilds this library, because last-writer-wins ignores what is older. */
+    fun snapshot(): List<SyncChange> =
+        q.allMeta().executeAsList().map { SyncChange(it.kind, it.key, it.value_, it.ts, it.device) }
+
+    /** The last batch read from each other device. */
+    fun peerCursors(): Map<String, Long> = q.peers().executeAsList().associate { it.device to it.seq }
+    fun setPeerCursor(device: String, seq: Long) = q.setPeer(device, seq)
+
+    fun outSeq(): Long { device(); return q.state().executeAsOne().out_seq }
+    fun setOutSeq(seq: Long) = q.setOutSeq(seq)
+    fun snapSeq(): Long { device(); return q.state().executeAsOne().snap_seq }
+    fun setSnapSeq(seq: Long) = q.setSnapSeq(seq)
+
+    /** Another copy of this database writes under this id: take a new one. */
+    fun newDevice(): String {
+        device()
+        val id = UUID.randomUUID().toString()
+        q.setDevice(id)
+        return id
+    }
+
     companion object {
         /** Enrollment's clock: above the server's seed (1), below any real change. */
         const val ENROLL_TS = 2L

@@ -19,13 +19,23 @@ CREATE TABLE sync_pending (
 );
 
 -- One row: this device's id, the server's cursor, the hybrid clock, and
--- whether this device's library was sent in full once (enrolled).
+-- whether this device's library was sent in full once (enrolled). For folder
+-- sync (FolderSync): out_seq numbers the last batch this device wrote, snap_seq
+-- the batch its last snapshot covers.
 CREATE TABLE sync_state (
     id INTEGER PRIMARY KEY CHECK (id = 1),
     device TEXT NOT NULL,
     cursor INTEGER NOT NULL DEFAULT 0,
     clock INTEGER NOT NULL DEFAULT 0,
-    enrolled INTEGER NOT NULL DEFAULT 0
+    enrolled INTEGER NOT NULL DEFAULT 0,
+    out_seq INTEGER NOT NULL DEFAULT 0,
+    snap_seq INTEGER NOT NULL DEFAULT 0
+);
+
+-- Folder sync: the last batch read from each other device.
+CREATE TABLE sync_peer (
+    device TEXT NOT NULL PRIMARY KEY,
+    seq INTEGER NOT NULL
 );
 
 state:
@@ -43,12 +53,34 @@ UPDATE sync_state SET clock = ? WHERE id = 1;
 setEnrolled:
 UPDATE sync_state SET enrolled = ? WHERE id = 1;
 
--- Another account: start over (the device id stays).
+setOutSeq:
+UPDATE sync_state SET out_seq = ? WHERE id = 1;
+
+setSnapSeq:
+UPDATE sync_state SET snap_seq = ? WHERE id = 1;
+
+-- Another copy of this database is writing under the same id (a restored
+-- backup): this one takes a new id and numbers its batches from the start.
+setDevice:
+UPDATE sync_state SET device = ?, out_seq = 0, snap_seq = 0 WHERE id = 1;
+
+-- Another account or folder: start over (the device id stays).
 reset {
-    UPDATE sync_state SET cursor = 0, enrolled = 0 WHERE id = 1;
+    UPDATE sync_state SET cursor = 0, enrolled = 0, out_seq = 0, snap_seq = 0 WHERE id = 1;
     DELETE FROM sync_meta;
     DELETE FROM sync_pending;
+    DELETE FROM sync_peer;
 }
+
+peers:
+SELECT * FROM sync_peer;
+
+setPeer:
+INSERT OR REPLACE INTO sync_peer (device, seq) VALUES (?, ?);
+
+-- Every record this device knows: a snapshot, for folder sync.
+allMeta:
+SELECT * FROM sync_meta;
 
 meta:
 SELECT * FROM sync_meta WHERE kind = ? AND key = ?;

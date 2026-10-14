@@ -73,6 +73,31 @@ class LibraryMigrationTest {
         assertTrue(server.records.values.all { it.c.ts == LibrarySyncEnrollTs }, "enrolled at the enrollment clock")
         file.delete()
     }
+
+    /** A 1.0 library (schema 4) gains folder sync's state and keeps its records,
+     *  so the first snapshot it writes carries everything the server gave it. */
+    @Test
+    fun aVersionFourLibraryKeepsItsRecordsForFolderSync() = runBlocking<Unit> {
+        val file = Files.createTempFile("library-v4", ".db").toFile()
+        File("src/jvmSharedMain/sqldelight/databases/4.db").copyTo(file, overwrite = true)
+        DriverManager.getConnection("jdbc:sqlite:${file.absolutePath}").use { c ->
+            c.createStatement().use { s ->
+                s.executeUpdate("INSERT INTO sync_state (id, device, cursor, clock, enrolled) VALUES (1, 'dev-a', 42, 900, 1)")
+                s.executeUpdate("INSERT INTO sync_meta (kind, key, value, ts, device) VALUES ('rating', 'src:rr\tfiction/5', '{\"rating\":4}', 800, 'dev-b')")
+                s.execute("PRAGMA user_version = 4")
+            }
+        }
+
+        val lib = LibraryStore(jdbcLibraryDriver(file), NoSource, SyncOnly(LibraryStoreTest.FakeSync()))
+        assertEquals("dev-a", lib.sync.device())
+        assertEquals(0L, lib.sync.outSeq())
+        assertEquals(0L, lib.sync.snapSeq())
+        assertTrue(lib.sync.peerCursors().isEmpty())
+        val snap = lib.sync.snapshot().single()
+        assertEquals(listOf("rating", "src:rr\tfiction/5", "dev-b"), listOf(snap.kind, snap.key, snap.device))
+        assertEquals(800L, snap.ts)
+        file.delete()
+    }
 }
 
 private const val LibrarySyncEnrollTs = 2L
