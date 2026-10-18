@@ -79,6 +79,18 @@ object ReaderPrefs {
     private val _ttsSkipJunk = MutableStateFlow(true)
     val ttsSkipJunk: StateFlow<Boolean> = _ttsSkipJunk.asStateFlow()
 
+    // Expressive reading (a desktop beta): dialogue in a second voice, pauses
+    // and pacing that follow the text. The dialogue voices are -1 for "pick one
+    // to go with the narrator".
+    private val _ttsExpressive = MutableStateFlow(false)
+    val ttsExpressive: StateFlow<Boolean> = _ttsExpressive.asStateFlow()
+
+    private val _kokoroDialogueSpeaker = MutableStateFlow(-1)
+    val kokoroDialogueSpeaker: StateFlow<Int> = _kokoroDialogueSpeaker.asStateFlow()
+
+    private val _supertonicDialogueSpeaker = MutableStateFlow(-1)
+    val supertonicDialogueSpeaker: StateFlow<Int> = _supertonicDialogueSpeaker.asStateFlow()
+
     private val _ttsJunkPatterns = MutableStateFlow<List<String>>(emptyList())
     val ttsJunkPatterns: StateFlow<List<String>> = _ttsJunkPatterns.asStateFlow()
 
@@ -97,6 +109,9 @@ object ReaderPrefs {
         _piperVoice.value = prefs.getString("piper_voice", "en_US-amy-medium") ?: "en_US-amy-medium"
         _ttsAutoNext.value = prefs.getBoolean("tts_auto_next", true)
         _ttsSkipJunk.value = prefs.getBoolean("tts_skip_junk", true)
+        _ttsExpressive.value = prefs.getBoolean("tts_expressive", false)
+        _kokoroDialogueSpeaker.value = prefs.getInt("kokoro_dialogue_speaker", -1)
+        _supertonicDialogueSpeaker.value = prefs.getInt("supertonic_dialogue_speaker", -1)
         _ttsJunkPatterns.value = prefs.getString("tts_junk_patterns", null)
             ?.let { runCatching { json.decodeFromString(ListSerializer(String.serializer()), it) }.getOrNull() }
             .orEmpty()
@@ -108,6 +123,24 @@ object ReaderPrefs {
     fun setTtsSkipJunk(on: Boolean) {
         _ttsSkipJunk.value = on
         prefs.putBoolean("tts_skip_junk", on)
+    }
+
+    fun setTtsExpressive(on: Boolean) {
+        _ttsExpressive.value = on
+        prefs.putBoolean("tts_expressive", on)
+    }
+
+    /** -1 picks one to go with the narrator. */
+    fun setKokoroDialogueSpeaker(id: Int) {
+        val v = id.coerceAtLeast(-1)
+        _kokoroDialogueSpeaker.value = v
+        prefs.putInt("kokoro_dialogue_speaker", v)
+    }
+
+    fun setSupertonicDialogueSpeaker(id: Int) {
+        val v = id.coerceAtLeast(-1)
+        _supertonicDialogueSpeaker.value = v
+        prefs.putInt("supertonic_dialogue_speaker", v)
     }
 
     /** The reader's own lines to pass over (matched anywhere in a sentence). */

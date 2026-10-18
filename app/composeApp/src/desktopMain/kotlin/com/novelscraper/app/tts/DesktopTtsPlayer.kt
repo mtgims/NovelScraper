@@ -17,6 +17,7 @@ private val narrator = NeuralNarrator(
     openSink = System.getenv("NOVELSCRAPER_AUDIO_FILE")?.takeIf { it.isNotBlank() }
         ?.let { path -> { rate: Int -> WavFileSink(File(path), rate) } }
         ?: ::JavaSoundSink,
+    director = ExpressiveReading,
 )
 
 /**

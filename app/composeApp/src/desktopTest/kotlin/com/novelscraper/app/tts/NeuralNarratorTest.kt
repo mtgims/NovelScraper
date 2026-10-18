@@ -8,6 +8,7 @@ import kotlin.test.BeforeTest
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFalse
+import kotlin.test.assertNull
 import kotlin.test.assertTrue
 
 /** The narrator's playback logic with a fake voice (each sentence's audio carries
@@ -26,6 +27,7 @@ class NeuralNarratorTest {
         override fun prepare(modelId: String) = problem
         override val sampleRate = 1000
         override fun generate(text: String, speaker: Int, speed: Float): FloatArray {
+            calls.add(Triple(text, speaker, speed))
             val id = Regex("S(\\d+)").find(text)!!.groupValues[1].toFloat()
             return FloatArray(100) { id / 100f }
         }
@@ -47,6 +49,27 @@ class NeuralNarratorTest {
         override fun close() { closed = true }
     }
 
+    private val calls = CopyOnWriteArrayList<Triple<String, Int, Float>>()
+
+    /** Directs every sentence: the word "said" onwards is narration, the rest
+     *  dialogue; a 500 ms pause after each. */
+    private val director = object : NarrationDirector {
+        @Volatile override var enabled = true
+        var ends: BooleanArray? = null
+        override fun direct(spoken: List<String?>, paragraphEnd: BooleanArray): List<Direction?> {
+            ends = paragraphEnd
+            return spoken.map { t ->
+                t?.let {
+                    val cut = it.indexOf(" said")
+                    val pieces = if (cut < 0) listOf(Piece(it, dialogue = true, speedFactor = 2f))
+                    else listOf(Piece(it.substring(0, cut), true), Piece(it.substring(cut + 1), false))
+                    Direction(pieces, pauseAfterMs = 500)
+                }
+            }
+        }
+        override fun dialogueSpeaker(engine: String, speaker: Int) = speaker + 7
+    }
+
     private val sinks = CopyOnWriteArrayList<Sink>()
     private val marked = CopyOnWriteArrayList<Int>()
     private var holdNext = false
@@ -55,6 +78,14 @@ class NeuralNarratorTest {
         voice = voice,
         fetchChapter = { _, p -> chapter(p) },
         markRead = { _, p -> marked.add(p) },
+    )
+
+    private fun directedNarrator(sink: PcmSink) = NeuralNarrator(
+        openSink = { sink },
+        voice = voice,
+        fetchChapter = { _, p -> chapter(p) },
+        markRead = { _, p -> marked.add(p) },
+        director = director,
     )
 
     private fun eventually(what: String, cond: () -> Boolean) {
@@ -68,6 +99,7 @@ class NeuralNarratorTest {
     @BeforeTest fun prefs() {
         ReaderPrefs.init()
         ReaderPrefs.setTtsEngine(ReaderPrefs.ENGINE_PIPER)
+        ReaderPrefs.setTtsRate(1f)
         ReaderPrefs.setTtsAutoNext(true)
         ReaderPrefs.setTtsSkipJunk(true)
         ReaderPrefs.setTtsJunkPatterns(emptyList())
@@ -151,5 +183,45 @@ class NeuralNarratorTest {
         Thread.sleep(200)
         assertTrue(sinks.isEmpty(), "no audio output was opened")
         assertTrue(marked.isEmpty(), "nothing was heard, so nothing was marked read")
+    }
+
+    @Test fun aDirectedSentenceIsStillOneWriteWithItsPieceVoicesAndPause() {
+        ReaderPrefs.setTtsAutoNext(false)
+        val sink = SizedSink()
+        val directed = directedNarrator(sink)
+        try {
+            directed.play(5, 1, "B", 0)
+            eventually("the chapter to finish") { sink.sizes.size == 3 && !TtsController.state.value.active }
+        } finally { directed.stop() }
+        // Chapter 1 is "S10 one. S11 two." then "S12 three." in its own paragraph.
+        assertEquals(listOf(false, true, true), director.ends!!.toList())
+        // 100 frames of voice + 500 ms of silence at 1000 Hz, one write per sentence.
+        assertEquals(listOf(600, 600, 600), sink.sizes.toList())
+        val speaker = ReaderPrefs.speakerFor(ReaderPrefs.ENGINE_PIPER)
+        assertTrue(calls.all { it.second == speaker + 7 }, "dialogue in the dialogue voice")
+        assertTrue(calls.all { it.third == 2f }, "the piece's speed on top of the reader's")
+    }
+
+    @Test fun switchedOffItReadsAsBefore() {
+        director.enabled = false
+        ReaderPrefs.setTtsAutoNext(false)
+        val sink = SizedSink()
+        val directed = directedNarrator(sink)
+        try {
+            directed.play(5, 1, "B", 0)
+            eventually("the chapter to finish") { sink.sizes.size == 3 && !TtsController.state.value.active }
+        } finally { directed.stop() }
+        assertNull(director.ends, "never asked")
+        assertEquals(listOf(100, 100, 100), sink.sizes.toList())
+        assertTrue(calls.all { it.third == 1f })
+    }
+
+    /** Records how long each write was. */
+    private class SizedSink : PcmSink {
+        val sizes = CopyOnWriteArrayList<Int>()
+        private var written = 0L
+        override fun write(pcm: FloatArray) { sizes.add(pcm.size); written += pcm.size }
+        override val framesPlayed: Long get() = written
+        override fun close() {}
     }
 }

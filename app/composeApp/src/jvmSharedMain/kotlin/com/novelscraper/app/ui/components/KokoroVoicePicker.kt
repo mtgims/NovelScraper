@@ -30,7 +30,13 @@ import com.novelscraper.app.ui.theme.Kicker
  * nationality headers (English first). Replaces the raw "#n" stepper.
  */
 @Composable
-fun KokoroVoicePicker(currentId: Int, onPick: (Int) -> Unit) {
+fun KokoroVoicePicker(
+    currentId: Int,
+    label: String = "Voice",
+    /** When set, an "Automatic" entry (id -1) is offered, shown as this. */
+    automatic: String? = null,
+    onPick: (Int) -> Unit,
+) {
     var open by remember { mutableStateOf(false) }
 
     Box {
@@ -38,10 +44,10 @@ fun KokoroVoicePicker(currentId: Int, onPick: (Int) -> Unit) {
             Modifier.fillMaxWidth().clickable { open = true }.padding(vertical = 8.dp),
             verticalAlignment = Alignment.CenterVertically,
         ) {
-            Text("Voice", style = MaterialTheme.typography.labelMedium,
+            Text(label, style = MaterialTheme.typography.labelMedium,
                 color = MaterialTheme.colorScheme.onSurfaceVariant)
             Text(
-                KokoroVoices.describe(currentId),
+                if (automatic != null && currentId < 0) automatic else KokoroVoices.describe(currentId),
                 style = MaterialTheme.typography.bodyMedium,
                 modifier = Modifier.weight(1f).padding(start = 10.dp),
             )
@@ -53,6 +59,16 @@ fun KokoroVoicePicker(currentId: Int, onPick: (Int) -> Unit) {
             onDismissRequest = { open = false },
             modifier = Modifier.heightIn(max = 420.dp),
         ) {
+            if (automatic != null) {
+                DropdownMenuItem(
+                    text = { Text("Automatic") },
+                    onClick = { onPick(-1); open = false },
+                    trailingIcon = if (currentId < 0) {
+                        { Icon(Icons.Filled.Check, contentDescription = null,
+                            tint = MaterialTheme.colorScheme.primary) }
+                    } else null,
+                )
+            }
             KokoroVoices.groups.forEach { (section, voices) ->
                 Text(
                     "${section.uppercase()} · ${voices.size}",
@@ -77,7 +93,13 @@ fun KokoroVoicePicker(currentId: Int, onPick: (Int) -> Unit) {
 
 /** Supertonic's ten voices, the same dropdown as Kokoro's. */
 @Composable
-fun SupertonicVoicePicker(currentId: Int, onPick: (Int) -> Unit) {
+fun SupertonicVoicePicker(
+    currentId: Int,
+    label: String = "Voice",
+    /** When set, an "Automatic" entry (id -1) is offered, shown as this. */
+    automatic: String? = null,
+    onPick: (Int) -> Unit,
+) {
     var open by remember { mutableStateOf(false) }
     val voices = com.novelscraper.app.tts.TtsModels.SUPERTONIC_VOICES
 
@@ -86,10 +108,10 @@ fun SupertonicVoicePicker(currentId: Int, onPick: (Int) -> Unit) {
             Modifier.fillMaxWidth().clickable { open = true }.padding(vertical = 8.dp),
             verticalAlignment = Alignment.CenterVertically,
         ) {
-            Text("Voice", style = MaterialTheme.typography.labelMedium,
+            Text(label, style = MaterialTheme.typography.labelMedium,
                 color = MaterialTheme.colorScheme.onSurfaceVariant)
             Text(
-                voices.getOrElse(currentId) { voices.first() },
+                if (automatic != null && currentId < 0) automatic else voices.getOrElse(currentId) { voices.first() },
                 style = MaterialTheme.typography.bodyMedium,
                 modifier = Modifier.weight(1f).padding(start = 10.dp),
             )
@@ -101,6 +123,16 @@ fun SupertonicVoicePicker(currentId: Int, onPick: (Int) -> Unit) {
             onDismissRequest = { open = false },
             modifier = Modifier.heightIn(max = 420.dp),
         ) {
+            if (automatic != null) {
+                DropdownMenuItem(
+                    text = { Text("Automatic") },
+                    onClick = { onPick(-1); open = false },
+                    trailingIcon = if (currentId < 0) {
+                        { Icon(Icons.Filled.Check, contentDescription = null,
+                            tint = MaterialTheme.colorScheme.primary) }
+                    } else null,
+                )
+            }
             voices.forEachIndexed { id, name ->
                 DropdownMenuItem(
                     text = { Text(name) },

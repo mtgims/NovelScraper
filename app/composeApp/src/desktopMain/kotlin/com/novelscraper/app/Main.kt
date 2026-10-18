@@ -98,6 +98,7 @@ fun main(args: Array<String>) {
     initApp()
     com.novelscraper.app.ui.screen.SettingsHooks.narration = {
         com.novelscraper.app.ui.components.GpuAccelerationSetting()
+        com.novelscraper.app.ui.components.ExpressiveReadingSetting()
     }
     // Settings are saved in the background; make sure pending saves land however
     // the app exits (window close, logout, SIGTERM).

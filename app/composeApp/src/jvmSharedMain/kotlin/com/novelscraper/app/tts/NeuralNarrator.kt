@@ -79,6 +79,8 @@ class NeuralNarrator(
         { b, p -> Library.store.chapter(b, p) },
     private val markRead: suspend (bookId: Int, position: Int) -> Unit =
         { b, p -> Library.store.markOpened(b, p) },
+    /** Expressive reading (desktop only); null reads every sentence plainly. */
+    private val director: NarrationDirector? = null,
 ) : TtsController.Player {
 
     private val state = Dispatchers.Default.limitedParallelism(1)
@@ -91,6 +93,8 @@ class NeuralNarrator(
         val sentences: List<String>,
         /** Per sentence: what to say, or null to pass over it. */
         val spoken: List<String?>,
+        /** Per sentence, how to say it; null when not directed. */
+        val directions: List<Direction?>?,
         val hasPrev: Boolean,
         val hasNext: Boolean,
     ) {
@@ -196,7 +200,9 @@ class NeuralNarrator(
                 for (i in start until chapter.sentences.size) {
                     if (!isActive) return@launch
                     val text = chapter.spoken.getOrNull(i) ?: continue   // passed over
-                    queue.send(Triple(chapter, i, voice.generate(text, speaker(), speed())))
+                    val direction = chapter.directions?.getOrNull(i)
+                    val pcm = if (direction != null) directed(direction) else voice.generate(text, speaker(), speed())
+                    queue.send(Triple(chapter, i, pcm))
                 }
                 // The chapter is synthesized; roll into the next one while it plays.
                 val more = chapter.hasNext && ReaderPrefs.ttsAutoNext.value && !SleepTimer.stopAtChapterEnd
@@ -284,10 +290,22 @@ class NeuralNarrator(
             return null
         }
         val plain = Sentences.plain(chapter.content)
-        val sentences = Sentences.ranges(plain).map { plain.substring(it.first, it.last + 1) }
+        val ranges = Sentences.ranges(plain)
+        val sentences = ranges.map { plain.substring(it.first, it.last + 1) }
+        val spoken = NarrationText.spokenLines(sentences)
+        val directions = director?.takeIf { it.enabled }?.let { d ->
+            // A sentence ends its paragraph when only spaces lie between it and
+            // a line break (or the end of the text).
+            val paragraphEnd = BooleanArray(ranges.size) { i ->
+                var j = ranges[i].last + 1
+                while (j < plain.length && plain[j] != '\n' && plain[j].isWhitespace()) j++
+                j >= plain.length || plain[j] == '\n'
+            }
+            d.direct(spoken, paragraphEnd)
+        }
         val loaded = Loaded(
             position = position, title = chapter.title, sentences = sentences,
-            spoken = NarrationText.spokenLines(sentences),
+            spoken = spoken, directions = directions,
             hasPrev = chapter.has_prev, hasNext = chapter.has_next,
         )
         // Nothing to say (an empty chapter, or all of it passed over): move on.
@@ -306,6 +324,21 @@ class NeuralNarrator(
     }
 
     private fun speed() = ReaderPrefs.ttsRate.value.coerceIn(0.5f, 2.5f)
+
+    /** One directed sentence: each piece in its voice, then the pause. */
+    private fun directed(direction: Direction): FloatArray {
+        val narrator = speaker()
+        val dialogue = director?.dialogueSpeaker(engine, narrator) ?: narrator
+        val rate = speed()
+        val parts = direction.pieces.map { p ->
+            voice.generate(p.text, if (p.dialogue) dialogue else narrator, (rate * p.speedFactor).coerceIn(0.5f, 2.5f))
+        }
+        val pause = (direction.pauseAfterMs / rate * voice.sampleRate / 1000).toInt().coerceAtLeast(0)
+        val out = FloatArray(parts.sumOf { it.size } + pause)
+        var at = 0
+        for (p in parts) { p.copyInto(out, at); at += p.size }
+        return out
+    }
 
     private fun resumeNow() {
         val c = current ?: return

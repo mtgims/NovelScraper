@@ -57,6 +57,70 @@ class LiveKokoroTest {
         KokoroEngine.release()
     }
 
+    /**
+     * The same passage read plainly and with expressive reading, through the
+     * real narrator, to listen to side by side: with `-PliveTtsOut=<file.wav>`
+     * they land at `<file>-plain.wav` and `<file>-expressive.wav`.
+     */
+    @Test
+    fun readsDialogueExpressively() {
+        if (System.getProperty("live.tts") != "true") return
+        if (!TtsModels.isModelReady(TtsModels.KOKORO)) return println("no Kokoro model: run speaksASentence first")
+        com.novelscraper.app.data.ReaderPrefs.init()
+        val prefs = com.novelscraper.app.data.ReaderPrefs
+        prefs.setTtsEngine(prefs.ENGINE_KOKORO)
+        prefs.setKokoroSpeaker(KokoroVoices.all.first { it.code == "af_heart" }.id)
+        prefs.setKokoroDialogueSpeaker(-1)
+        prefs.setTtsRate(1f)
+        prefs.setTtsAutoNext(false)
+        val passage = "<p>The rain had not let up since noon. Klein stood at the window, watching the lamps.</p>" +
+            "<p>\"You're late,\" said a voice behind him. \"Again.\"</p>" +
+            "<p>He didn't turn around. \"The roads were flooded.</p>" +
+            "<p>\"They always are,\" she said. \"Sit down!\"</p><p>***</p>" +
+            "<p>Morning came slowly, grey and cold, and the city woke to the sound of bells...</p>"
+        val chapter = com.novelscraper.app.data.ChapterRead(
+            position = 1, number = "1", title = "Test", content = passage, has_prev = false, has_next = false,
+        )
+        val out = System.getProperty("live.tts.out")?.takeIf { it.isNotBlank() }?.removeSuffix(".wav")
+        for (on in listOf(false, true)) {
+            prefs.setTtsExpressive(on)
+            val pcm = java.io.ByteArrayOutputStream()
+            var done = false
+            var frames = 0L
+            val narrator = NeuralNarrator(
+                openSink = {
+                    object : PcmSink {
+                        override fun write(pcm0: FloatArray) {
+                            val b = ByteBuffer.allocate(pcm0.size * 4).order(ByteOrder.LITTLE_ENDIAN)
+                            pcm0.forEach { b.putFloat(it) }
+                            synchronized(pcm) { pcm.write(b.array()) }
+                            frames += pcm0.size
+                        }
+                        override val framesPlayed get() = frames
+                        override fun close() { done = true }
+                    }
+                },
+                fetchChapter = { _, _ -> chapter },
+                markRead = { _, _ -> },
+                director = ExpressiveReading,
+            )
+            val t0 = System.currentTimeMillis()
+            narrator.play(1, 1, "Test", 0)
+            Thread.sleep(500)
+            while (TtsController.state.value.active && System.currentTimeMillis() - t0 < 180_000) Thread.sleep(50)
+            narrator.stop()
+            val bytes = synchronized(pcm) { pcm.toByteArray() }
+            val floats = FloatArray(bytes.size / 4)
+            ByteBuffer.wrap(bytes).order(ByteOrder.LITTLE_ENDIAN).asFloatBuffer().get(floats)
+            val name = if (on) "expressive" else "plain"
+            println("$name: ${"%.1f".format(floats.size.toDouble() / KokoroEngine.sampleRate)}s of audio")
+            out?.let { writeWav(File("$it-$name.wav"), floats, KokoroEngine.sampleRate); println("written to $it-$name.wav") }
+            assertTrue(floats.isNotEmpty(), "nothing came out")
+        }
+        prefs.setTtsExpressive(false)
+        KokoroEngine.release()
+    }
+
     private fun writeWav(file: File, pcm: FloatArray, rate: Int) {
         val data = ByteArray(pcm.size * 2)
         val buf = ByteBuffer.wrap(data).order(ByteOrder.LITTLE_ENDIAN)
