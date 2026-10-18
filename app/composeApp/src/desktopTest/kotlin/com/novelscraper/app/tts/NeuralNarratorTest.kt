@@ -224,4 +224,16 @@ class NeuralNarratorTest {
         override val framesPlayed: Long get() = written
         override fun close() {}
     }
+
+    @Test fun theStartOfAWordIsCutFromItsVoicedPart() {
+        // 100 ms of silence, 1 s of voice, 100 ms of silence, at 1000 Hz.
+        val pcm = FloatArray(1200) { if (it in 100 until 1100) 0.5f else 0f }
+        val cut = onsetOf(pcm, 0.17f, 1000)
+        assertEquals(170, cut.size, "17% of the voice, the silence before it skipped")
+        assertEquals(0.5f, cut[0])
+        assertEquals(0f, cut.last(), "faded out, so the cut doesn't click")
+        assertEquals(70, onsetOf(pcm, 0.01f, 1000).size, "never shorter than 70 ms")
+        assertEquals(250, onsetOf(pcm, 0.9f, 1000).size, "never longer than 250 ms")
+        assertEquals(0, onsetOf(FloatArray(500), 0.5f, 1000).size, "silence has no start")
+    }
 }

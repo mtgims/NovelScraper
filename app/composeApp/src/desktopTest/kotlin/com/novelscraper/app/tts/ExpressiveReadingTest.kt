@@ -104,4 +104,49 @@ class ExpressiveReadingTest {
         ReaderPrefs.setSupertonicDialogueSpeaker(2)
         assertEquals(2, ExpressiveReading.dialogueSpeaker(ReaderPrefs.ENGINE_SUPERTONIC, 0))
     }
+
+    /** Each beat as "text|pause" or "~text~share|pause" for a cut-off start. */
+    private fun beats(text: String) = ExpressiveReading.beats(text, false, 1f).map {
+        (if (it.onset > 0f) "~${it.text}~${"%.2f".format(it.onset)}" else it.text) + "|" + it.pauseAfterMs
+    }
+
+    @Test fun aStutterIsTheStartOfTheWordItself() {
+        assertEquals(listOf("~Violet~0.17|110", "Violet.|0"), beats("V-Violet."))
+        assertEquals(listOf("~You're~0.50|110", "You're alive.|0"), beats("You-You're alive."))
+        assertEquals(listOf("~Violet~0.17|110", "~Violet~0.17|110", "Violet!|0"), beats("V-V-Violet!"))
+    }
+
+    @Test fun aRepeatedWordIsSaidTwiceWithABeat() {
+        assertEquals(listOf("Violet, that|70", "that hurts.|0"), beats("Violet, that-that hurts."))
+        assertEquals(listOf("I|70", "I|70", "I don't know.|0"), beats("I-I-I don't know."))
+    }
+
+    @Test fun anEllipsisOrDashWithinASentenceIsAPause() {
+        assertEquals(
+            listOf("You need...|350", "you need to lift the beams, please,|0"),
+            beats("You need... you need to lift the beams, please,"),
+        )
+        assertEquals(listOf("I wanted|180", "never mind.|0"), beats("I wanted—never mind."))
+        assertEquals(listOf("Wait…|350", "what?|0"), beats("Wait… what?"))
+        // At the very end it is the sentence's pause, not a beat.
+        assertEquals(listOf("And then...|0"), beats("And then..."))
+    }
+
+    @Test fun hyphenatedWordsAreNotStutters() {
+        assertEquals(listOf("A well-known, re-read, co-op book.|0"), beats("A well-known, re-read, co-op book."))
+    }
+
+    @Test fun yourLinesFromStartToEnd() {
+        val spoken = listOf("\"V-Violet.", "You-You're alive.\"",
+            "\"Violet, that-that hurts. You need... you need to lift the beams, please,\" he said.")
+        val d = ExpressiveReading.direct(spoken, booleanArrayOf(false, true, true))
+        assertEquals(listOf("~Violet~0.17", "Violet."), d[0]!!.pieces.map { p ->
+            if (p.onset > 0f) "~${p.text}~${"%.2f".format(p.onset)}" else p.text })
+        assertEquals(0, d[0]!!.pieces.last().pauseAfterMs, "the sentence's own pause is not doubled")
+        assertEquals(
+            listOf("\"Violet, that", "that hurts. You need...", "you need to lift the beams, please,\"", "he said."),
+            d[2]!!.pieces.map { it.text },
+        )
+        assertEquals(listOf(true, true, true, false), d[2]!!.pieces.map { it.dialogue })
+    }
 }

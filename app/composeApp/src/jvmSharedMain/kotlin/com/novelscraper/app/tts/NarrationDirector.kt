@@ -3,8 +3,19 @@ package com.novelscraper.app.tts
 /** How one sentence is spoken: one or more pieces, then a pause. */
 class Direction(val pieces: List<Piece>, val pauseAfterMs: Int)
 
-/** A stretch of a sentence, in the narrator's voice or the dialogue voice. */
-class Piece(val text: String, val dialogue: Boolean, val speedFactor: Float = 1f)
+/**
+ * A stretch of a sentence, in the narrator's voice or the dialogue voice, and
+ * the silence after it. With [onset] above zero only the start of [text] is
+ * kept, that share of the voiced audio: a stutter ("V-Violet") is the opening
+ * sound of the word itself, which spelling out the letter can't give.
+ */
+data class Piece(
+    val text: String,
+    val dialogue: Boolean,
+    val speedFactor: Float = 1f,
+    val pauseAfterMs: Int = 0,
+    val onset: Float = 0f,
+)
 
 /**
  * Directs the voices narration already has: which stretches of a sentence are

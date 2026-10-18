@@ -330,11 +330,14 @@ class NeuralNarrator(
         val narrator = speaker()
         val dialogue = director?.dialogueSpeaker(engine, narrator) ?: narrator
         val rate = speed()
+        val sr = voice.sampleRate
+        val silence = { ms: Int -> (ms / rate * sr / 1000).toInt().coerceAtLeast(0) }
         val parts = direction.pieces.map { p ->
-            voice.generate(p.text, if (p.dialogue) dialogue else narrator, (rate * p.speedFactor).coerceIn(0.5f, 2.5f))
+            val pcm = voice.generate(p.text, if (p.dialogue) dialogue else narrator, (rate * p.speedFactor).coerceIn(0.5f, 2.5f))
+            val said = if (p.onset > 0f) onsetOf(pcm, p.onset, sr) else pcm
+            said.copyOf(said.size + silence(p.pauseAfterMs))
         }
-        val pause = (direction.pauseAfterMs / rate * voice.sampleRate / 1000).toInt().coerceAtLeast(0)
-        val out = FloatArray(parts.sumOf { it.size } + pause)
+        val out = FloatArray(parts.sumOf { it.size } + silence(direction.pauseAfterMs))
         var at = 0
         for (p in parts) { p.copyInto(out, at); at += p.size }
         return out
@@ -401,4 +404,24 @@ class NeuralNarrator(
         const val TAG = "Narrator"
         const val SEC_PER_CHAR = 0.06f
     }
+}
+
+/**
+ * The opening [share] of the voiced part of [pcm] (the silence a voice leaves
+ * around a word is not counted), between 70 and 250 ms, faded out so the cut
+ * doesn't click.
+ */
+internal fun onsetOf(pcm: FloatArray, share: Float, sampleRate: Int): FloatArray {
+    val loud = 0.02f
+    val first = pcm.indexOfFirst { kotlin.math.abs(it) > loud }
+    if (first < 0) return FloatArray(0)
+    val last = pcm.indexOfLast { kotlin.math.abs(it) > loud }
+    val voiced = last - first + 1
+    val n = (voiced * share).toInt()
+        .coerceIn(sampleRate * 70 / 1000, sampleRate * 250 / 1000)
+        .coerceAtMost(voiced)
+    val out = pcm.copyOfRange(first, first + n)
+    val fade = minOf(n, sampleRate * 12 / 1000)
+    for (i in 0 until fade) out[n - 1 - i] *= i.toFloat() / fade
+    return out
 }

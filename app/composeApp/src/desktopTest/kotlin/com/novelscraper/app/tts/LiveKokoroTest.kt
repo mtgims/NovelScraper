@@ -73,7 +73,9 @@ class LiveKokoroTest {
         prefs.setKokoroDialogueSpeaker(-1)
         prefs.setTtsRate(1f)
         prefs.setTtsAutoNext(false)
-        val passage = "<p>The rain had not let up since noon. Klein stood at the window, watching the lamps.</p>" +
+        val passage = "<p>\"V-Violet. You-You're alive.\"</p>" +
+            "<p>\"Violet, that-that hurts. You need... you need to lift the beams, please,\" he said.</p>" +
+            "<p>The rain had not let up since noon. Klein stood at the window, watching the lamps.</p>" +
             "<p>\"You're late,\" said a voice behind him. \"Again.\"</p>" +
             "<p>He didn't turn around. \"The roads were flooded.</p>" +
             "<p>\"They always are,\" she said. \"Sit down!\"</p><p>***</p>" +
