@@ -104,6 +104,14 @@ fun NovelVoicingDialog(bookId: Int, title: String, onDismiss: () -> Unit) {
                 Note(if (marks.isEmpty()) "None: hyphens and dashes are read as written." else
                     "Only a word that the letters begin counts, so \"well-known\" stays as it is.")
 
+                Heading("Whispers and shouts")
+                FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Choice("On", v.dynamics != false) { v = v.copy(dynamics = null) }
+                    Choice("Off", v.dynamics == false) { v = v.copy(dynamics = false) }
+                }
+                Note("A line the narration says was whispered is read quieter and a little slower; one " +
+                    "shouted, or written in capitals, louder and a little faster.")
+
                 TextButton(
                     modifier = Modifier.padding(top = 10.dp),
                     onClick = {

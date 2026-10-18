@@ -46,6 +46,8 @@ data class NovelVoicing(
     val quotes: Set<Quote>? = null,
     /** null: every mark; empty: no stutters in this novel. */
     val stutters: Set<StutterMark>? = null,
+    /** Whispers quieter, shouts louder; null is on. */
+    val dynamics: Boolean? = null,
 ) {
     val isDefault get() = this == NovelVoicing()
 }

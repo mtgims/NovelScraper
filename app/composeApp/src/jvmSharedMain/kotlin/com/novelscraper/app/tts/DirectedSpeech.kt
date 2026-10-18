@@ -34,7 +34,7 @@ class DirectedSpeech(
             val said = if (p.onset > 0f) Trimmed(onsetOf(raw, p.onset, sr), 0, 0) else trimSilence(raw, sr)
             // A stutter's fragment is too short to say how loud a voice is.
             if (p.onset == 0f) learn(speaker, speechRms(said.pcm, sr))
-            Part(scaled(said.pcm, gainFor(speaker, narrator)), said.lead, said.tail, p.pauseAfterMs)
+            Part(scaled(said.pcm, gainFor(speaker, narrator) * p.gain), said.lead, said.tail, p.pauseAfterMs)
         }
         // The gap after each part, less the pads on either side of it. After the
         // last, the next sentence is assumed to start with a full lead-in.

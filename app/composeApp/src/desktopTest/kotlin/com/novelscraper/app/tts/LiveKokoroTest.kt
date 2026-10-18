@@ -75,6 +75,8 @@ class LiveKokoroTest {
         prefs.setTtsAutoNext(false)
         val passage = "<p>\"V-Violet. You-You're alive.\"</p>" +
             "<p>\"Violet, that-that hurts. You need... you need to lift the beams, please,\" he said.</p>" +
+            "<p>\"Stay here,\" she whispered. \"Don't move.\"</p>" +
+            "<p>\"Get out of my house!\" he shouted.</p><p>\"STOP RIGHT THERE!\"</p>" +
             "<p>The rain had not let up since noon. Klein stood at the window, watching the lamps.</p>" +
             "<p>\"You're late,\" said a voice behind him. \"Again.\"</p>" +
             "<p>He didn't turn around. \"The roads were flooded.</p>" +
@@ -134,6 +136,19 @@ class LiveKokoroTest {
         val n = speechRms(speech.speak(Direction(listOf(Piece(line, false)), 0), prefs.ENGINE_KOKORO, narrator, 1f), sr)
         val d = speechRms(speech.speak(Direction(listOf(Piece(line, true)), 0), prefs.ENGINE_KOKORO, narrator, 1f), sr)
         println("dialogue against narrator: ${db(rawD, rawN)} as given, ${db(d, n)} levelled")
+
+        // A whisper and a shout against the same line said plainly.
+        val plainLine = speechRms(speech.speak(Direction(listOf(Piece(line, true)), 0), prefs.ENGINE_KOKORO, narrator, 1f), sr)
+        for ((name, gain) in listOf("whisper" to ExpressiveReading.WHISPER_GAIN, "shout" to ExpressiveReading.SHOUT_GAIN)) {
+            val r = speechRms(speech.speak(Direction(listOf(Piece(line, true, gain = gain)), 0), prefs.ENGINE_KOKORO, narrator, 1f), sr)
+            println("$name: ${db(r, plainLine)}")
+        }
+
+        // Whether capitals are spelled out: the same words in capitals and in
+        // lower case, and how long each takes to say.
+        for (t in listOf("STOP RIGHT THERE!", "stop right there!", "HELP", "help")) {
+            println("\"$t\": ${"%.2f".format(trimSilence(KokoroEngine.generate(t, narrator, 1f), sr).pcm.size.toDouble() / sr)}s")
+        }
         KokoroEngine.release()
     }
 

@@ -7,7 +7,8 @@ class Direction(val pieces: List<Piece>, val pauseAfterMs: Int)
  * A stretch of a sentence, in the narrator's voice or the dialogue voice, and
  * the silence after it. With [onset] above zero only the start of [text] is
  * kept, that share of the voiced audio: a stutter ("V-Violet") is the opening
- * sound of the word itself, which spelling out the letter can't give.
+ * sound of the word itself, which spelling out the letter can't give. [gain]
+ * makes it quieter or louder than its voice's usual level (a whisper, a shout).
  */
 data class Piece(
     val text: String,
@@ -15,6 +16,7 @@ data class Piece(
     val speedFactor: Float = 1f,
     val pauseAfterMs: Int = 0,
     val onset: Float = 0f,
+    val gain: Float = 1f,
 )
 
 /**

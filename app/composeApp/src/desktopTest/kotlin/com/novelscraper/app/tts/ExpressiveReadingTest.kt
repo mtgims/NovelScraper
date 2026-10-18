@@ -229,5 +229,44 @@ class ExpressiveReadingTest {
         assertEquals(0, VoicingDetector.detect(emptyList()).chapters)
     }
 
+    @Test fun theNarrationSaysHowALineWasSpoken() {
+        assertEquals(ExpressiveReading.Tone.WHISPER, ExpressiveReading.toneOf("she whispered, leaning close"))
+        assertEquals(ExpressiveReading.Tone.WHISPER, ExpressiveReading.toneOf("he said under his breath"))
+        assertEquals(ExpressiveReading.Tone.SHOUT, ExpressiveReading.toneOf("Klein shouted"))
+        assertEquals(ExpressiveReading.Tone.PLAIN, ExpressiveReading.toneOf("by a roaring fire"), "not a verb of speech")
+        assertEquals(ExpressiveReading.Tone.PLAIN, ExpressiveReading.toneOf("he whispered, then yelled"), "both: neither")
+    }
+
+    @Test fun aWhisperIsQuieterAndSlowerInItsParagraphOnly() {
+        val spoken = listOf("\"Stay here,\" she whispered.", "\"Why?\"", "\"Because.\"")
+        val d = ExpressiveReading.direct(spoken, booleanArrayOf(false, true, true))
+        val first = d[0]!!.pieces
+        assertEquals(ExpressiveReading.WHISPER_GAIN, first[0].gain, "the line whispered")
+        assertEquals(ExpressiveReading.WHISPER_SPEED, first[0].speedFactor, 1e-4f)
+        assertEquals(1f, first[1].gain, "the narration keeps its level")
+        assertEquals(ExpressiveReading.WHISPER_GAIN, d[1]!!.pieces[0].gain, "the same paragraph, the same speaker")
+        assertEquals(1f, d[2]!!.pieces[0].gain, "the next paragraph is someone else")
+    }
+
+    @Test fun aLineInCapitalsIsAShout() {
+        val d = ExpressiveReading.direct(listOf("\"STOP RIGHT THERE!\" he said."), booleanArrayOf(true))
+        val line = d[0]!!.pieces[0]
+        assertEquals(ExpressiveReading.SHOUT_GAIN, line.gain)
+        assertEquals("\"STOP RIGHT THERE!\"", line.text, "said as written")
+
+        // An acronym is not a shout, and is left as written.
+        val fbi = ExpressiveReading.direct(listOf("\"The FBI is here.\""), booleanArrayOf(true))[0]!!.pieces[0]
+        assertEquals(1f, fbi.gain)
+        assertEquals("\"The FBI is here.\"", fbi.text)
+    }
+
+    @Test fun whispersAndShoutsCanBeTurnedOff() {
+        val d = ExpressiveReading.direct(
+            listOf("\"STOP!\" she screamed."), booleanArrayOf(true), dynamics = false,
+        )
+        assertEquals(1f, d[0]!!.pieces[0].gain)
+        assertEquals("\"STOP!\"", d[0]!!.pieces[0].text)
+    }
+
     private companion object { const val BOOK = 4242 }
 }

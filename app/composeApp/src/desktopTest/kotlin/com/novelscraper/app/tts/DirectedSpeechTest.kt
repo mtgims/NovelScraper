@@ -110,6 +110,14 @@ class DirectedSpeechTest {
         assertEquals(0.4f, peak(fragment), 1e-3f, "the fragment is raised like its voice")
     }
 
+    @Test fun aPiecesOwnGainIsAppliedOnTopOfItsVoices() {
+        val speech = DirectedSpeech(Voice(mapOf(0 to 0.4f, 1 to 0.4f)), director, 1)
+        val whisper = speech.speak(Direction(listOf(Piece("n", false, gain = 0.5f)), 0), ReaderPrefsEngine, 0, 1f)
+        assertEquals(0.2f, peak(whisper), 1e-4f)
+        val shout = speech.speak(Direction(listOf(Piece("n", false, gain = 3f)), 0), ReaderPrefsEngine, 0, 1f)
+        assertEquals(DirectedSpeech.PEAK, peak(shout), 1e-4f, "a shout never clips")
+    }
+
     @Test fun speechLevelIgnoresThePausesBetweenWords() {
         val words = FloatArray(1000) { if (it < 200 || it in 600 until 800) 0.3f else 0f }
         assertEquals(0.3f, speechRms(words, rate), 1e-4f)

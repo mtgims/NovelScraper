@@ -34,6 +34,47 @@ object ExpressiveReading : NarrationDirector {
     internal const val FASTER = 1.06f   // a short exclamation
     internal const val SLOWER = 0.96f   // a long, descriptive sentence
 
+    // A whisper is quieter and a touch slower, a shout louder and a touch
+    // faster: a level and a pace, not a real whisper, which no voice here can do.
+    internal const val WHISPER_GAIN = 0.6f
+    internal const val WHISPER_SPEED = 0.94f
+    internal const val SHOUT_GAIN = 1.4f
+    internal const val SHOUT_SPEED = 1.05f
+
+    internal enum class Tone { PLAIN, WHISPER, SHOUT }
+
+    // How the narration says a line was spoken. Verb forms only where the word
+    // also describes things ("a roaring fire" is not a shout).
+    private val WHISPERED = Regex(
+        """\b(whisper(ed|s|ing)?|murmur(ed|s|ing)?|mutter(ed|s|ing)?|breathed|breathes|""" +
+            """under (his|her|their|my|your|its) breath|softly|quietly|hushed)\b""",
+        RegexOption.IGNORE_CASE,
+    )
+    private val SHOUTED = Regex(
+        """\b(shout(ed|s|ing)?|yell(ed|s|ing)?|scream(ed|s|ing)?|roared|bellow(ed|s|ing)?|""" +
+            """shriek(ed|s|ing)?|howled|cried out|cries out)\b""",
+        RegexOption.IGNORE_CASE,
+    )
+
+    /** How [narration] says the paragraph's lines were spoken: one cue or the other, not both. */
+    internal fun toneOf(narration: String): Tone {
+        val whisper = WHISPERED.containsMatchIn(narration)
+        val shout = SHOUTED.containsMatchIn(narration)
+        return when {
+            whisper && !shout -> Tone.WHISPER
+            shout && !whisper -> Tone.SHOUT
+            else -> Tone.PLAIN
+        }
+    }
+
+    /** A line in capitals ("STOP RIGHT THERE!"): enough letters that it isn't an
+     *  acronym. Kokoro reads capitals as words (measured: same length either
+     *  way), so the text is left as written. */
+    internal fun isCapsShout(text: String): Boolean {
+        val letters = text.filter { it.isLetter() }
+        return letters.length >= 6 && letters.count { it.isUpperCase() } >= letters.length * 0.8
+    }
+
     private const val QUOTES = "\"“”'‘’「」『』«»"
 
     /** Where a quote is closed by a dash, not a quote mark. */
@@ -45,7 +86,7 @@ object ExpressiveReading : NarrationDirector {
 
     override fun direct(bookId: Int, spoken: List<String?>, paragraphEnd: BooleanArray): List<Direction?> {
         val v = NovelVoicings.get(bookId)
-        return direct(spoken, paragraphEnd, v.quotes ?: Quote.AUTOMATIC, v.stutters ?: ALL_MARKS)
+        return direct(spoken, paragraphEnd, v.quotes ?: Quote.AUTOMATIC, v.stutters ?: ALL_MARKS, v.dynamics ?: true)
     }
 
     private val ALL_MARKS = StutterMark.entries.toSet()
@@ -55,6 +96,7 @@ object ExpressiveReading : NarrationDirector {
         paragraphEnd: BooleanArray,
         quotes: Set<Quote> = Quote.AUTOMATIC,
         stutters: Set<StutterMark> = ALL_MARKS,
+        dynamics: Boolean = true,
     ): List<Direction?> {
         var state = QuoteState()
         val pieces = spoken.mapIndexed { i, text ->
@@ -66,6 +108,18 @@ object ExpressiveReading : NarrationDirector {
             if (paragraphEnd.getOrElse(i) { false }) state = QuoteState()
             out
         }
+        // How each paragraph's lines are spoken, from its narration: one speaker
+        // to a paragraph is the convention, so a cue there is about its lines.
+        val paragraph = IntArray(spoken.size)
+        var current = 0
+        for (i in spoken.indices) {
+            paragraph[i] = current
+            if (paragraphEnd.getOrElse(i) { false }) current++
+        }
+        val tones: Map<Int, Tone> = if (!dynamics) emptyMap() else spoken.indices.groupBy { paragraph[it] }
+            .mapValues { (_, sentences) ->
+                toneOf(sentences.flatMap { pieces[it].orEmpty() }.filter { !it.dialogue }.joinToString(" ") { it.text })
+            }
         return spoken.mapIndexed { i, text ->
             val own = pieces[i] ?: return@mapIndexed null
             if (own.isEmpty()) return@mapIndexed Direction(emptyList(), PAUSE_SCENE)
@@ -76,7 +130,20 @@ object ExpressiveReading : NarrationDirector {
                     if (own.last().dialogue && next?.first()?.dialogue == true) PAUSE_EXCHANGE else PAUSE_PARAGRAPH
                 else -> pauseFor(text)
             }
-            val beats = own.flatMap { beats(it.text, it.dialogue, speed, stutters) }
+            val beats = own.flatMap { p ->
+                val caps = dynamics && p.dialogue && isCapsShout(p.text)
+                val tone = when {
+                    !p.dialogue -> Tone.PLAIN
+                    caps -> Tone.SHOUT
+                    else -> tones[paragraph[i]] ?: Tone.PLAIN
+                }
+                val (gain, pace) = when (tone) {
+                    Tone.WHISPER -> WHISPER_GAIN to WHISPER_SPEED
+                    Tone.SHOUT -> SHOUT_GAIN to SHOUT_SPEED
+                    Tone.PLAIN -> 1f to 1f
+                }
+                beats(p.text, p.dialogue, speed * pace, stutters, gain)
+            }
             // Pieces of one sentence are never run together; the sentence's own
             // pause follows its last piece, not both.
             val joined = beats.dropLast(1).map { it.copy(pauseAfterMs = maxOf(it.pauseAfterMs, PAUSE_JOIN)) }
@@ -121,6 +188,7 @@ object ExpressiveReading : NarrationDirector {
         dialogue: Boolean,
         speed: Float,
         marks: Set<StutterMark> = ALL_MARKS,
+        gain: Float = 1f,
     ): List<Piece> {
         val out = ArrayList<Piece>()
         val rest = StringBuilder()
@@ -130,7 +198,7 @@ object ExpressiveReading : NarrationDirector {
             val t = rest.toString().trim()
             rest.clear()
             when {
-                t.any { it.isLetterOrDigit() } -> out.add(Piece(t, dialogue, speed, pause))
+                t.any { it.isLetterOrDigit() } -> out.add(Piece(t, dialogue, speed, pause, gain = gain))
                 out.isNotEmpty() -> out[out.size - 1] = out.last().let { it.copy(pauseAfterMs = maxOf(it.pauseAfterMs, pause)) }
             }
         }
@@ -151,7 +219,7 @@ object ExpressiveReading : NarrationDirector {
                             say(PAUSE_REPEAT)
                         } else {
                             say(0)
-                            out.add(Piece(word, dialogue, speed, PAUSE_STUTTER, onset = f.length.toFloat() / word.length))
+                            out.add(Piece(word, dialogue, speed, PAUSE_STUTTER, onset = f.length.toFloat() / word.length, gain = gain))
                         }
                     }
                     rest.append(word)
@@ -162,7 +230,7 @@ object ExpressiveReading : NarrationDirector {
         }
         rest.append(text, at, text.length)
         say(0)
-        return out.ifEmpty { listOf(Piece(text.trim(), dialogue, speed)) }
+        return out.ifEmpty { listOf(Piece(text.trim(), dialogue, speed, gain = gain)) }
     }
 
     /** Every fragment begins [word] (or is it), and it isn't a prefix like "re-". */
