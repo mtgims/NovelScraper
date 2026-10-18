@@ -116,6 +116,13 @@ class ExpressiveReadingTest {
         assertEquals(listOf("~Violet~0.17|110", "~Violet~0.17|110", "Violet!|0"), beats("V-V-Violet!"))
     }
 
+    @Test fun aStutterSetWithADashIsAStutterToo() {
+        // As a novel in the library has it: an en dash, and ellipses.
+        assertEquals(listOf("~help~0.25|110", "help…|350", "me…|0"), beats("H–help… me…"))
+        assertEquals(listOf("~Help~0.25|110", "Help me.|0"), beats("H‑Help me."))
+        assertEquals(listOf("I|70", "I don't.|0"), beats("I—I don't."))
+    }
+
     @Test fun aRepeatedWordIsSaidTwiceWithABeat() {
         assertEquals(listOf("Violet, that|70", "that hurts.|0"), beats("Violet, that-that hurts."))
         assertEquals(listOf("I|70", "I|70", "I don't know.|0"), beats("I-I-I don't know."))

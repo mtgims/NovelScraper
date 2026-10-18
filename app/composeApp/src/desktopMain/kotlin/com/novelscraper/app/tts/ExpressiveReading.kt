@@ -58,11 +58,12 @@ object ExpressiveReading : NarrationDirector {
         }
     }
 
-    // A stutter: one to three letters and a hyphen, once or more, before a
+    // A stutter: up to four letters and a hyphen or dash (novels set them as
+    // "H–help" as often as "H-help"), once or more, before a
     // word they begin ("V-Violet", "I-I-I", "that-that"). A trailing "..." or
     // dash with more of the sentence after it. Each is a beat to pause on.
     private val BEAT = Regex(
-        """(?<![\p{L}\p{N}'’-])(?<frags>(?:\p{L}{1,4}-)+)(?<word>\p{L}[\p{L}'’]*)""" +
+        """(?<![\p{L}\p{N}'’\-‐‑–—])(?<frags>(?:\p{L}{1,4}[\-‐‑–—])+)(?<word>\p{L}[\p{L}'’]*)""" +
             """|(?<dots>\.\.\.|…)(?=\s*[\p{L}\p{N}"“'‘])""" +
             """|\s*(?<dash>—|–|--|\s-\s)\s*(?=[\p{L}\p{N}"“'‘])""",
     )
@@ -87,7 +88,7 @@ object ExpressiveReading : NarrationDirector {
         var at = 0
         for (m in BEAT.findAll(text)) {
             val word = m.groups["word"]?.value
-            val frags = m.groups["frags"]?.value?.split('-')?.filter { it.isNotEmpty() }
+            val frags = m.groups["frags"]?.value?.split('-', '‐', '‑', '–', '—')?.filter { it.isNotEmpty() }
             if (word != null && frags != null && !isStutter(frags, word)) continue
             rest.append(text, at, m.range.first)
             at = m.range.last + 1
