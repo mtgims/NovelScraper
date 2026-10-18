@@ -43,4 +43,8 @@ interface NarrationDirector {
 
     /** The speaker for [role] in [bookId] on [engine], where the narrator is [narrator]. */
     fun speakerFor(bookId: Int, engine: String, narrator: Int, role: Role): Int
+
+    /** How words in [bookId] are said, whether or not it is [enabled]: a
+     *  novel's names are not an expressive matter. */
+    fun pronunciations(bookId: Int): List<NarrationText.Term> = emptyList()
 }

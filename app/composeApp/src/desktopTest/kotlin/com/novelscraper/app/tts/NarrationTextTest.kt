@@ -57,4 +57,21 @@ class NarrationTextTest {
             NarrationText.say("part of a word", listOf(Term("art", "ART", wholeWord = false))),
         )
     }
+
+    @Test fun aNovelsOwnWordsComeFirst() {
+        com.novelscraper.app.data.ReaderPrefs.init()
+        val prefs = com.novelscraper.app.data.ReaderPrefs
+        prefs.setTtsSkipJunk(true)
+        prefs.setTtsJunkPatterns(emptyList())
+        prefs.setTtsDictionary(listOf(Term("Baru", "Bah-roo"), Term("qi", "chee")))
+        try {
+            val novel = listOf(Term("baru", "Bar-oo"))
+            assertEquals(listOf("Bar-oo felt chee."), NarrationText.spokenLines(listOf("Baru felt qi."), novel),
+                "the novel's way for its name, the general list for the rest")
+            assertEquals(listOf("Bah-roo felt chee."), NarrationText.spokenLines(listOf("Baru felt qi.")),
+                "without the novel's words, the general list alone")
+        } finally {
+            prefs.setTtsDictionary(emptyList())
+        }
+    }
 }

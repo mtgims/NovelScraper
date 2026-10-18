@@ -18,6 +18,8 @@ object ExpressiveReading : NarrationDirector {
     override fun enabled(bookId: Int): Boolean =
         NovelVoicings.get(bookId).enabled ?: ReaderPrefs.ttsExpressive.value
 
+    override fun pronunciations(bookId: Int): List<NarrationText.Term> = NovelVoicings.terms(bookId)
+
     // Pauses, in milliseconds at 1x, voice to voice: the voice's own silence is
     // trimmed (DirectedSpeech), so these are the whole gap. Read plainly, Kokoro
     // leaves about 160 ms between sentences and 50 ms at a comma.

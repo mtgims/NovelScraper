@@ -171,7 +171,7 @@ fun BookScreen(
                             onClick = { menuOpen = false; vm.removeDownloads() },
                         )
                         if (BookHooks.narration != null) DropdownMenuItem(
-                            text = { Text("Expressive reading") },
+                            text = { Text("Narration") },
                             onClick = { menuOpen = false; showNarration = true },
                         )
                         DropdownMenuItem(

@@ -298,7 +298,7 @@ class NeuralNarrator(
         val plain = Sentences.plain(chapter.content)
         val ranges = Sentences.ranges(plain)
         val sentences = ranges.map { plain.substring(it.first, it.last + 1) }
-        val spoken = NarrationText.spokenLines(sentences)
+        val spoken = NarrationText.spokenLines(sentences, director?.pronunciations(bookId).orEmpty())
         val directions = director?.takeIf { it.enabled(bookId) }?.let { d ->
             // A sentence ends its paragraph when only spaces lie between it and
             // a line break (or the end of the text).

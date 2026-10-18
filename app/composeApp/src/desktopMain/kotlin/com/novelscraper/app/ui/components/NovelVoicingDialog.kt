@@ -1,15 +1,22 @@
 package com.novelscraper.app.ui.components
 
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ExperimentalLayoutApi
 import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Close
 import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.AssistChip
 import androidx.compose.material3.FilterChip
+import androidx.compose.material3.Icon
+import androidx.compose.material3.InputChip
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
@@ -26,6 +33,7 @@ import com.novelscraper.app.data.ReaderPrefs
 import com.novelscraper.app.library.Library
 import com.novelscraper.app.tts.ExpressiveReading
 import com.novelscraper.app.tts.KokoroVoices
+import com.novelscraper.app.tts.NarrationText
 import com.novelscraper.app.tts.NovelVoicing
 import com.novelscraper.app.tts.NovelVoicings
 import com.novelscraper.app.tts.Quote
@@ -34,6 +42,7 @@ import com.novelscraper.app.tts.SystemMark
 import com.novelscraper.app.tts.TtsController
 import com.novelscraper.app.tts.TtsModels
 import com.novelscraper.app.tts.VoicingDetector
+import com.novelscraper.app.ui.screen.TermPrompt
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
@@ -42,28 +51,30 @@ import kotlinx.coroutines.withContext
 private const val DETECT_CHAPTERS = 40
 
 /**
- * A novel's own expressive reading: on or off, the dialogue voice, and what the
- * novel uses to mark dialogue and stutters. Anything left alone follows
- * Settings, Narration.
+ * A novel's own narration: its expressive reading (on or off, the voices, what
+ * it uses to mark dialogue, stutters and system messages) and how its words are
+ * said. Anything left alone follows Settings, Narration.
  */
 @OptIn(ExperimentalLayoutApi::class)
 @Composable
 fun NovelVoicingDialog(bookId: Int, title: String, onDismiss: () -> Unit) {
     var v by remember(bookId) { mutableStateOf(NovelVoicings.get(bookId)) }
     var found by remember(bookId) { mutableStateOf<String?>(null) }
+    var terms by remember(bookId) { mutableStateOf(NovelVoicings.terms(bookId)) }
+    var editing by remember(bookId) { mutableStateOf<NarrationText.Term?>(null) }
     val scope = rememberCoroutineScope()
     val engine by ReaderPrefs.ttsEngine.collectAsState()
     val generalOn by ReaderPrefs.ttsExpressive.collectAsState()
 
     AlertDialog(
         onDismissRequest = onDismiss,
-        title = { Text("Expressive reading") },
+        title = { Text("Narration") },
         text = {
             Column(Modifier.verticalScroll(rememberScrollState())) {
                 Text(title, style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant)
 
-                Heading("For this novel")
+                Heading("Expressive reading in this novel")
                 FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                     Choice("As in Settings (${if (generalOn) "on" else "off"})", v.enabled == null) {
                         v = v.copy(enabled = null)
@@ -150,11 +161,28 @@ fun NovelVoicingDialog(bookId: Int, title: String, onDismiss: () -> Unit) {
                     },
                 ) { Text("Detect from stored chapters") }
                 found?.let { Note(it) }
+
+                Heading("Pronunciation in this novel")
+                FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    terms.forEach { t ->
+                        InputChip(
+                            selected = false,
+                            onClick = { editing = t },
+                            label = { Text("${t.from} → ${t.to}") },
+                            trailingIcon = {
+                                Icon(Icons.Filled.Close, "Remove", Modifier.size(16.dp).clickable { terms = terms - t })
+                            },
+                        )
+                    }
+                    AssistChip(onClick = { editing = NarrationText.Term("", "") }, label = { Text("Add a word") })
+                }
+                Note("Said this way in this novel only, before the general list in Settings. Reset leaves these alone.")
             }
         },
         confirmButton = {
             TextButton(onClick = {
                 NovelVoicings.set(bookId, v)
+                NovelVoicings.setTerms(bookId, terms)
                 TtsController.applySettings()
                 onDismiss()
             }) { Text("Save") }
@@ -168,6 +196,17 @@ fun NovelVoicingDialog(bookId: Int, title: String, onDismiss: () -> Unit) {
             }
         },
     )
+
+    editing?.let { old ->
+        TermPrompt(
+            term = old,
+            onDone = { t ->
+                terms = terms.filter { it.from != old.from && !it.from.equals(t.from, ignoreCase = true) } + t
+                editing = null
+            },
+            onDismiss = { editing = null },
+        )
+    }
 }
 
 @Composable

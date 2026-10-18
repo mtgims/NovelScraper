@@ -1057,8 +1057,9 @@ private fun TextPrompt(
     )
 }
 
+/** Asks how a word should be said; also used for a novel's own words (desktop). */
 @Composable
-private fun TermPrompt(
+internal fun TermPrompt(
     term: NarrationText.Term,
     onDone: (NarrationText.Term) -> Unit,
     onDismiss: () -> Unit,

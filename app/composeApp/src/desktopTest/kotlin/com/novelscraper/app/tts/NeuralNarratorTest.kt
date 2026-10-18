@@ -55,7 +55,9 @@ class NeuralNarratorTest {
      *  dialogue; a 500 ms pause after each. */
     private val director = object : NarrationDirector {
         @Volatile var on = true
+        @Volatile var words: List<NarrationText.Term> = emptyList()
         override fun enabled(bookId: Int) = on
+        override fun pronunciations(bookId: Int) = words
         var ends: BooleanArray? = null
         override fun direct(bookId: Int, spoken: List<String?>, paragraphEnd: BooleanArray): List<Direction?> {
             ends = paragraphEnd
@@ -217,6 +219,20 @@ class NeuralNarratorTest {
         assertNull(director.ends, "never asked")
         assertEquals(listOf(100, 100, 100), sink.sizes.toList())
         assertTrue(calls.all { it.third == 1f })
+    }
+
+    @Test fun aNovelsOwnWordsAreSaidEvenWithExpressiveReadingOff() {
+        director.on = false
+        director.words = listOf(NarrationText.Term("one", "uno"))
+        ReaderPrefs.setTtsAutoNext(false)
+        val sink = SizedSink()
+        val directed = directedNarrator(sink)
+        try {
+            directed.play(5, 1, "B", 0)
+            eventually("the chapter to finish") { sink.sizes.size == 3 && !TtsController.state.value.active }
+        } finally { directed.stop() }
+        assertEquals("S10 uno.", calls.first().first)
+        assertEquals(listOf(100, 100, 100), sink.sizes.toList(), "otherwise read plainly")
     }
 
     /** Records how long each write was. */

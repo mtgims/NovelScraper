@@ -34,11 +34,17 @@ object NarrationText {
     @kotlinx.serialization.Serializable
     data class Term(val from: String, val to: String, val wholeWord: Boolean = true)
 
-    /** The spoken text for each sentence; null where narration passes over it. */
-    fun spokenLines(sentences: List<String>): List<String?> {
+    /**
+     * The spoken text for each sentence; null where narration passes over it.
+     * [novelTerms] are the novel's own words: they come before the general
+     * dictionary, and a word in both is said the novel's way.
+     */
+    fun spokenLines(sentences: List<String>, novelTerms: List<Term> = emptyList()): List<String?> {
         val skipJunk = ReaderPrefs.ttsSkipJunk.value
         val extra = ReaderPrefs.ttsJunkPatterns.value
-        val terms = ReaderPrefs.ttsDictionary.value
+        val terms = novelTerms + ReaderPrefs.ttsDictionary.value.filter { g ->
+            novelTerms.none { it.from.trim().equals(g.from.trim(), ignoreCase = true) }
+        }
         return sentences.map { s ->
             if (skipJunk && isJunk(s, extra)) null else say(s, terms).takeIf { it.isNotBlank() }
         }

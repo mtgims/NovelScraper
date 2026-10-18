@@ -3,6 +3,7 @@ package com.novelscraper.app.tts
 import com.novelscraper.app.platform.KeyValueStore
 import com.novelscraper.app.platform.settingsStore
 import kotlinx.serialization.Serializable
+import kotlinx.serialization.builtins.ListSerializer
 import kotlinx.serialization.json.Json
 
 /** How a novel marks its dialogue. */
@@ -84,6 +85,28 @@ object NovelVoicings {
     }
 
     private fun key(bookId: Int) = "book_$bookId"
+
+    // A novel's own pronunciations, kept apart from the rest so resetting its
+    // expressive reading never takes its word list with it.
+    private val terms = HashMap<Int, List<NarrationText.Term>>()
+    private val termList = ListSerializer(NarrationText.Term.serializer())
+
+    fun terms(bookId: Int): List<NarrationText.Term> = synchronized(cache) {
+        terms.getOrPut(bookId) {
+            store.getString(termsKey(bookId), null)
+                ?.let { runCatching { json.decodeFromString(termList, it) }.getOrNull() }
+                .orEmpty()
+        }
+    }
+
+    fun setTerms(bookId: Int, list: List<NarrationText.Term>) = synchronized(cache) {
+        val clean = list.filter { it.from.isNotBlank() }.distinctBy { it.from.trim().lowercase() }
+        terms[bookId] = clean
+        if (clean.isEmpty()) store.remove(termsKey(bookId))
+        else store.putString(termsKey(bookId), json.encodeToString(termList, clean))
+    }
+
+    private fun termsKey(bookId: Int) = "terms_$bookId"
 }
 
 /**

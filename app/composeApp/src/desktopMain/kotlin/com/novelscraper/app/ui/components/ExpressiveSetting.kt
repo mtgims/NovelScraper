@@ -37,7 +37,7 @@ fun ExpressiveReadingSetting() {
             Text("Expressive reading (beta)", style = MaterialTheme.typography.bodyMedium)
             Text("Quoted speech in a second voice, with pauses and pacing that follow the text. " +
                 "It doesn't add emotion: the voices can't be told how to feel. This is the default; " +
-                "a novel's own page (⋮, Expressive reading) can change it for that novel.",
+                "a novel's own page (⋮, Narration) can change it for that novel.",
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant)
         }

@@ -20,6 +20,7 @@ class ExpressiveReadingTest {
         ReaderPrefs.init()
         ReaderPrefs.setTtsExpressive(false)
         NovelVoicings.set(BOOK, NovelVoicing())
+        NovelVoicings.setTerms(BOOK, emptyList())
         ReaderPrefs.setKokoroDialogueSpeaker(-1)
         ReaderPrefs.setSupertonicDialogueSpeaker(-1)
     }
@@ -322,6 +323,16 @@ class ExpressiveReadingTest {
         assertEquals(setOf(SystemMark.SQUARE), VoicingDetector.detect(litrpg).suggestedSystem)
         val tagged = listOf("<p>[Progression Fantasy, LitRPG]</p><p>He grinned.</p>")
         assertNull(VoicingDetector.detect(tagged).suggestedSystem, "one tag is not a novel's messages")
+    }
+
+    @Test fun aNovelsWordsOutliveAResetOfItsReading() {
+        val words = listOf(NarrationText.Term("Baru", "Bar-oo"), NarrationText.Term("baru", "duplicate"))
+        NovelVoicings.setTerms(BOOK, words)
+        assertEquals(listOf(NarrationText.Term("Baru", "Bar-oo")), ExpressiveReading.pronunciations(BOOK), "one per word")
+        NovelVoicings.set(BOOK, NovelVoicing(enabled = true))
+        NovelVoicings.set(BOOK, NovelVoicing())
+        assertEquals(1, ExpressiveReading.pronunciations(BOOK).size, "reset leaves the words alone")
+        assertEquals(emptyList(), ExpressiveReading.pronunciations(BOOK + 1), "another novel has none")
     }
 
     private companion object { const val BOOK = 4242 }
