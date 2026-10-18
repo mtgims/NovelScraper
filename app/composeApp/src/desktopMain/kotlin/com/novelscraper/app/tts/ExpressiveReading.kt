@@ -75,7 +75,7 @@ object ExpressiveReading : NarrationDirector {
         return letters.length >= 6 && letters.count { it.isUpperCase() } >= letters.length * 0.8
     }
 
-    private const val QUOTES = "\"“”'‘’「」『』«»"
+    private const val QUOTES = "\"“”'‘’「」『』«»]】"
 
     /** Where a quote is closed by a dash, not a quote mark. */
     private const val BY_DASH = '—'
@@ -86,7 +86,10 @@ object ExpressiveReading : NarrationDirector {
 
     override fun direct(bookId: Int, spoken: List<String?>, paragraphEnd: BooleanArray): List<Direction?> {
         val v = NovelVoicings.get(bookId)
-        return direct(spoken, paragraphEnd, v.quotes ?: Quote.AUTOMATIC, v.stutters ?: ALL_MARKS, v.dynamics ?: true)
+        return direct(
+            spoken, paragraphEnd, v.quotes ?: Quote.AUTOMATIC, v.stutters ?: ALL_MARKS, v.dynamics ?: true,
+            v.system.orEmpty(),
+        )
     }
 
     private val ALL_MARKS = StutterMark.entries.toSet()
@@ -97,13 +100,14 @@ object ExpressiveReading : NarrationDirector {
         quotes: Set<Quote> = Quote.AUTOMATIC,
         stutters: Set<StutterMark> = ALL_MARKS,
         dynamics: Boolean = true,
+        system: Set<SystemMark> = emptySet(),
     ): List<Direction?> {
         var state = QuoteState()
         val pieces = spoken.mapIndexed { i, text ->
             val paragraphStart = i == 0 || paragraphEnd.getOrElse(i - 1) { false }
             val out = text?.let { t ->
                 if (t.none { it.isLetterOrDigit() }) emptyList()
-                else split(t, state, quotes, paragraphStart).also { (_, after) -> state = after }.first
+                else split(t, state, quotes, paragraphStart, system).also { (_, after) -> state = after }.first
             }
             if (paragraphEnd.getOrElse(i) { false }) state = QuoteState()
             out
@@ -118,7 +122,7 @@ object ExpressiveReading : NarrationDirector {
         }
         val tones: Map<Int, Tone> = if (!dynamics) emptyMap() else spoken.indices.groupBy { paragraph[it] }
             .mapValues { (_, sentences) ->
-                toneOf(sentences.flatMap { pieces[it].orEmpty() }.filter { !it.dialogue }.joinToString(" ") { it.text })
+                toneOf(sentences.flatMap { pieces[it].orEmpty() }.filter { it.role == Role.NARRATOR }.joinToString(" ") { it.text })
             }
         return spoken.mapIndexed { i, text ->
             val own = pieces[i] ?: return@mapIndexed null
@@ -127,13 +131,16 @@ object ExpressiveReading : NarrationDirector {
             val next = (i + 1 until spoken.size).firstNotNullOfOrNull { pieces[it]?.takeIf { p -> p.isNotEmpty() } }
             val pause = when {
                 paragraphEnd.getOrElse(i) { false } ->
-                    if (own.last().dialogue && next?.first()?.dialogue == true) PAUSE_EXCHANGE else PAUSE_PARAGRAPH
+                    if (own.last().role == Role.DIALOGUE && next?.first()?.role == Role.DIALOGUE) PAUSE_EXCHANGE
+                    else PAUSE_PARAGRAPH
                 else -> pauseFor(text)
             }
             val beats = own.flatMap { p ->
-                val caps = dynamics && p.dialogue && isCapsShout(p.text)
+                // Only characters whisper and shout; a system message in
+                // capitals is how such messages are written.
+                val caps = dynamics && p.role == Role.DIALOGUE && isCapsShout(p.text)
                 val tone = when {
-                    !p.dialogue -> Tone.PLAIN
+                    p.role != Role.DIALOGUE -> Tone.PLAIN
                     caps -> Tone.SHOUT
                     else -> tones[paragraph[i]] ?: Tone.PLAIN
                 }
@@ -142,7 +149,7 @@ object ExpressiveReading : NarrationDirector {
                     Tone.SHOUT -> SHOUT_GAIN to SHOUT_SPEED
                     Tone.PLAIN -> 1f to 1f
                 }
-                beats(p.text, p.dialogue, speed * pace, stutters, gain)
+                beats(p.text, p.role, speed * pace, stutters, gain)
             }
             // Pieces of one sentence are never run together; the sentence's own
             // pause follows its last piece, not both.
@@ -185,7 +192,7 @@ object ExpressiveReading : NarrationDirector {
     /** [text] cut at its stutters, ellipses and dashes, a pause after each. */
     internal fun beats(
         text: String,
-        dialogue: Boolean,
+        role: Role,
         speed: Float,
         marks: Set<StutterMark> = ALL_MARKS,
         gain: Float = 1f,
@@ -198,7 +205,7 @@ object ExpressiveReading : NarrationDirector {
             val t = rest.toString().trim()
             rest.clear()
             when {
-                t.any { it.isLetterOrDigit() } -> out.add(Piece(t, dialogue, speed, pause, gain = gain))
+                t.any { it.isLetterOrDigit() } -> out.add(Piece(t, role, speed, pause, gain = gain))
                 out.isNotEmpty() -> out[out.size - 1] = out.last().let { it.copy(pauseAfterMs = maxOf(it.pauseAfterMs, pause)) }
             }
         }
@@ -219,7 +226,7 @@ object ExpressiveReading : NarrationDirector {
                             say(PAUSE_REPEAT)
                         } else {
                             say(0)
-                            out.add(Piece(word, dialogue, speed, PAUSE_STUTTER, onset = f.length.toFloat() / word.length, gain = gain))
+                            out.add(Piece(word, role, speed, PAUSE_STUTTER, onset = f.length.toFloat() / word.length, gain = gain))
                         }
                     }
                     rest.append(word)
@@ -230,7 +237,7 @@ object ExpressiveReading : NarrationDirector {
         }
         rest.append(text, at, text.length)
         say(0)
-        return out.ifEmpty { listOf(Piece(text.trim(), dialogue, speed, gain = gain)) }
+        return out.ifEmpty { listOf(Piece(text.trim(), role, speed, gain = gain)) }
     }
 
     /** Every fragment begins [word] (or is it), and it isn't a prefix like "re-". */
@@ -249,6 +256,7 @@ object ExpressiveReading : NarrationDirector {
         state: QuoteState = QuoteState(),
         quotes: Set<Quote> = Quote.AUTOMATIC,
         paragraphStart: Boolean = false,
+        system: Set<SystemMark> = emptySet(),
     ): Pair<List<Piece>, QuoteState> {
         val out = ArrayList<Piece>()
         var closer = state.closer
@@ -257,7 +265,7 @@ object ExpressiveReading : NarrationDirector {
         val run = StringBuilder()
         fun flush() {
             val t = run.toString().trim()
-            if (t.isNotEmpty()) out.add(Piece(t, closer != null))
+            if (t.isNotEmpty()) out.add(Piece(t, roleOf(closer)))
             run.clear()
         }
         for (k in text.indices) {
@@ -279,7 +287,7 @@ object ExpressiveReading : NarrationDirector {
                     else -> { run.append(c); flush(); closer = null }
                 }
             } else {
-                val opens = opener(c, before, after, quotes, dashParagraph)
+                val opens = opener(c, before, after, quotes, dashParagraph, system)
                 if (opens != null) { flush(); closer = opens }
                 run.append(c)
             }
@@ -288,9 +296,24 @@ object ExpressiveReading : NarrationDirector {
         return merge(out) to QuoteState(closer, dashParagraph)
     }
 
-    /** The mark that will close a quote [c] opens here, or null if it opens none. */
-    private fun opener(c: Char, before: Char?, after: Char?, quotes: Set<Quote>, dashParagraph: Boolean): Char? {
+    /** Who speaks inside a stretch that [closer] will close: a bracket holds a system message. */
+    private fun roleOf(closer: Char?): Role = when {
+        closer == null -> Role.NARRATOR
+        SystemMark.entries.any { it.close == closer } -> Role.SYSTEM
+        else -> Role.DIALOGUE
+    }
+
+    /** The mark that will close a quote (or a system message) [c] opens here, or null if it opens none. */
+    private fun opener(
+        c: Char,
+        before: Char?,
+        after: Char?,
+        quotes: Set<Quote>,
+        dashParagraph: Boolean,
+        system: Set<SystemMark>,
+    ): Char? {
         val wordStart = before == null || !before.isLetterOrDigit()
+        system.firstOrNull { it.open == c }?.let { return it.close }
         return when {
             c == '"' && Quote.DOUBLE_STRAIGHT in quotes -> '"'
             c == '“' && Quote.DOUBLE_CURLY in quotes -> '”'
@@ -315,16 +338,16 @@ object ExpressiveReading : NarrationDirector {
             val text = if (carry.isEmpty()) p.text else "$carry ${p.text}"
             if (p.text.count { it.isLetter() } < 2) {
                 val last = out.lastOrNull()
-                if (last != null) out[out.size - 1] = Piece("${last.text} ${p.text}", last.dialogue)
+                if (last != null) out[out.size - 1] = Piece("${last.text} ${p.text}", last.role)
                 else carry = text
                 continue
             }
             carry = ""
             val last = out.lastOrNull()
-            if (last != null && last.dialogue == p.dialogue) out[out.size - 1] = Piece("${last.text} $text", p.dialogue)
-            else out.add(Piece(text, p.dialogue))
+            if (last != null && last.role == p.role) out[out.size - 1] = Piece("${last.text} $text", p.role)
+            else out.add(Piece(text, p.role))
         }
-        if (carry.isNotEmpty()) out.add(Piece(carry, pieces.last().dialogue))
+        if (carry.isNotEmpty()) out.add(Piece(carry, pieces.last().role))
         return out
     }
 
@@ -354,16 +377,57 @@ object ExpressiveReading : NarrationDirector {
         "British English" to mapOf("Female" to "bf_emma", "Male" to "bm_george"),
     )
 
-    /** The novel's own dialogue voice, else the general one, else one picked to go with the narrator. */
-    override fun dialogueSpeaker(bookId: Int, engine: String, speaker: Int): Int {
+    /**
+     * Dialogue: the novel's own voice, else the general one, else one picked to
+     * go with the narrator. A system message: the novel's own, else one apart
+     * from both. Piper has one voice per model, so everything is the narrator.
+     */
+    override fun speakerFor(bookId: Int, engine: String, narrator: Int, role: Role): Int {
+        if (role == Role.NARRATOR) return narrator
         val v = NovelVoicings.get(bookId)
+        val dialogue = dialogueVoice(v, engine, narrator)
+        if (role == Role.DIALOGUE) return dialogue
         return when (engine) {
-            ReaderPrefs.ENGINE_KOKORO -> (v.kokoroDialogue ?: ReaderPrefs.kokoroDialogueSpeaker.value)
-                .takeIf { KokoroVoices.voice(it) != null } ?: kokoroPartner(speaker)
-            ReaderPrefs.ENGINE_SUPERTONIC -> (v.supertonicDialogue ?: ReaderPrefs.supertonicDialogueSpeaker.value)
-                .takeIf { it in TtsModels.SUPERTONIC_VOICES.indices } ?: supertonicPartner(speaker)
-            else -> speaker   // Piper has one voice per model
+            ReaderPrefs.ENGINE_KOKORO -> v.kokoroSystem?.takeIf { KokoroVoices.voice(it) != null }
+                ?: kokoroSystemVoice(narrator, dialogue)
+            ReaderPrefs.ENGINE_SUPERTONIC -> v.supertonicSystem?.takeIf { it in TtsModels.SUPERTONIC_VOICES.indices }
+                ?: supertonicSystemVoice(narrator)
+            else -> narrator
         }
+    }
+
+    /** The dialogue voice for [v] (a novel's settings, saved or not) on [engine]. */
+    internal fun dialogueVoice(v: NovelVoicing, engine: String, narrator: Int): Int = when (engine) {
+        ReaderPrefs.ENGINE_KOKORO -> (v.kokoroDialogue ?: ReaderPrefs.kokoroDialogueSpeaker.value)
+            .takeIf { KokoroVoices.voice(it) != null } ?: kokoroPartner(narrator)
+        ReaderPrefs.ENGINE_SUPERTONIC -> (v.supertonicDialogue ?: ReaderPrefs.supertonicDialogueSpeaker.value)
+            .takeIf { it in TtsModels.SUPERTONIC_VOICES.indices } ?: supertonicPartner(narrator)
+        else -> narrator
+    }
+
+    // Voices for system messages, best first, per accent: distinct from the
+    // usual narrator picks.
+    private val SYSTEM_PREFERRED = mapOf(
+        "American English" to listOf("af_nicole", "af_bella", "am_puck", "am_fenrir", "af_sarah"),
+        "British English" to listOf("bf_isabella", "bm_fable", "bm_george", "bf_emma"),
+    )
+
+    /** A system voice in the narrator's language that is neither the narrator nor [dialogue]. */
+    internal fun kokoroSystemVoice(narrator: Int, dialogue: Int): Int {
+        val me = KokoroVoices.voice(narrator) ?: return narrator
+        val taken = setOf(narrator, dialogue)
+        val preferred = SYSTEM_PREFERRED[me.language].orEmpty()
+            .mapNotNull { code -> KokoroVoices.all.firstOrNull { it.code == code } }
+        return (preferred.firstOrNull { it.id !in taken }
+            ?: KokoroVoices.all.firstOrNull { it.language == me.language && it.id !in taken })?.id ?: narrator
+    }
+
+    /** Two voices along from the narrator, in its own block of five (female, male). */
+    internal fun supertonicSystemVoice(narrator: Int): Int {
+        val n = TtsModels.SUPERTONIC_VOICES.size
+        if (narrator !in 0 until n) return narrator
+        val block = n / 2
+        return narrator / block * block + (narrator % block + 2) % block
     }
 
     /** A voice of the other gender in the narrator's language, else another of the same. */

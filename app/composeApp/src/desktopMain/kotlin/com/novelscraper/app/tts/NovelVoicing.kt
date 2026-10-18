@@ -25,6 +25,12 @@ enum class Quote(val label: String) {
     }
 }
 
+/** How a novel marks a LitRPG system message ("[Skill acquired: Stealth]"). */
+enum class SystemMark(val label: String, val open: Char, val close: Char) {
+    SQUARE("[System]", '[', ']'),
+    LENTICULAR("【System】", '【', '】'),
+}
+
 /** What a novel puts between a stutter and the word: "V-Violet", "V–Violet", "V—Violet". */
 enum class StutterMark(val label: String, val chars: String) {
     HYPHEN("V-Violet", "-‐‑"),
@@ -48,6 +54,11 @@ data class NovelVoicing(
     val stutters: Set<StutterMark>? = null,
     /** Whispers quieter, shouts louder; null is on. */
     val dynamics: Boolean? = null,
+    /** null: no system messages. Off unless chosen: brackets also hold author
+     *  notes and tags ("[Progression Fantasy, LitRPG]"). */
+    val system: Set<SystemMark>? = null,
+    val kokoroSystem: Int? = null,
+    val supertonicSystem: Int? = null,
 ) {
     val isDefault get() = this == NovelVoicing()
 }
@@ -84,8 +95,14 @@ object VoicingDetector {
     class Found(
         val quotes: Map<Quote, Int>,
         val stutters: Map<StutterMark, Int>,
+        val system: Map<SystemMark, Int>,
         val chapters: Int,
     ) {
+        /** The system marks seen often enough to be a novel's messages rather
+         *  than the odd note; null (none) otherwise. */
+        val suggestedSystem: Set<SystemMark>?
+            get() = system.filterValues { it >= 10 }.keys.ifEmpty { null }
+
         /** The dialogue marks worth turning on: every one seen a few times, single
          *  quotes and dashes only where they outnumber double quotes (a novel in
          *  double quotes still uses single ones for a quote within a quote). */
@@ -112,13 +129,15 @@ object VoicingDetector {
     fun detect(htmls: List<String>): Found {
         val quotes = HashMap<Quote, Int>()
         val stutters = HashMap<StutterMark, Int>()
+        val system = HashMap<SystemMark, Int>()
         for (html in htmls) {
             // Paragraph breaks become lines, so a dash paragraph can be told.
             val text = unescape(html.replace(Regex("(?i)</p>|<br\\s*/?>"), "\n").replace(TAG, ""))
             for (q in Quote.entries) quotes.merge(q, count(text, q), Int::plus)
             for (m in StutterMark.entries) stutters.merge(m, ExpressiveReading.countStutters(text, setOf(m)), Int::plus)
+            for (m in SystemMark.entries) system.merge(m, countBracketed(text, m), Int::plus)
         }
-        return Found(quotes.filterValues { it > 0 }, stutters, htmls.size)
+        return Found(quotes.filterValues { it > 0 }, stutters, system.filterValues { it > 0 }, htmls.size)
     }
 
     // A quote opens where a word starts: after a space, a line or a bracket.
@@ -132,6 +151,14 @@ object VoicingDetector {
         Quote.GUILLEMETS -> text.count { it == '«' }
         Quote.DASH -> Regex("""(?m)^\s*[—–]\s*\p{L}""").findAll(text).count()
     }
+
+    /** Bracketed stretches on one line, of a sensible length. */
+    private val BRACKETED = mapOf(
+        SystemMark.SQUARE to Regex("""\[[^\[\]\n]{1,300}]"""),
+        SystemMark.LENTICULAR to Regex("""【[^【】\n]{1,300}】"""),
+    )
+
+    private fun countBracketed(text: String, m: SystemMark): Int = BRACKETED.getValue(m).findAll(text).count()
 
     private fun unescape(s: String) = ENTITY.replace(s) { m ->
         val e = m.groupValues[1]

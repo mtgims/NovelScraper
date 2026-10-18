@@ -29,7 +29,8 @@ class DirectedSpeechTest {
     private val director = object : NarrationDirector {
         override fun enabled(bookId: Int) = true
         override fun direct(bookId: Int, spoken: List<String?>, paragraphEnd: BooleanArray) = emptyList<Direction?>()
-        override fun dialogueSpeaker(bookId: Int, engine: String, speaker: Int) = 1
+        override fun speakerFor(bookId: Int, engine: String, narrator: Int, role: Role) =
+            if (role == Role.NARRATOR) narrator else 1
     }
 
     @Test fun trimmingKeepsThePadsAndFadesTheCuts() {
@@ -56,7 +57,7 @@ class DirectedSpeechTest {
         val voice = Voice(mapOf(0 to 0.5f, 1 to 0.5f))
         val speech = DirectedSpeech(voice, director, 1)
         val out = speech.speak(
-            Direction(listOf(Piece("one", false, pauseAfterMs = 300), Piece("two", false)), pauseAfterMs = 500),
+            Direction(listOf(Piece("one", Role.NARRATOR, pauseAfterMs = 300), Piece("two", Role.NARRATOR)), pauseAfterMs = 500),
             ReaderPrefsEngine, narrator = 0, rate = 1f,
         )
         // Piece one: 15 + 100 + 40. Gap to two: 300 less its tail and two's lead-in.
@@ -66,7 +67,7 @@ class DirectedSpeechTest {
         assertEquals(300, silentRun(out, from = 15 + 100), "voice one ends, then exactly 300 ms before voice two")
 
         // At twice the speed a pause is half as long (the pads are not).
-        val fast = speech.speak(Direction(listOf(Piece("one", false)), pauseAfterMs = 500),
+        val fast = speech.speak(Direction(listOf(Piece("one", Role.NARRATOR)), pauseAfterMs = 500),
             ReaderPrefsEngine, narrator = 0, rate = 2f)
         assertEquals(155 + (250 - 40 - 15), fast.size)
 
@@ -77,8 +78,8 @@ class DirectedSpeechTest {
     @Test fun aQuieterVoiceIsBroughtToTheNarratorsLevel() {
         val voice = Voice(mapOf(0 to 0.4f, 1 to 0.2f))
         val speech = DirectedSpeech(voice, director, 1)
-        val narration = speech.speak(Direction(listOf(Piece("n", false)), 0), ReaderPrefsEngine, 0, 1f)
-        val dialogue = speech.speak(Direction(listOf(Piece("d", true)), 0), ReaderPrefsEngine, 0, 1f)
+        val narration = speech.speak(Direction(listOf(Piece("n", Role.NARRATOR)), 0), ReaderPrefsEngine, 0, 1f)
+        val dialogue = speech.speak(Direction(listOf(Piece("d", Role.DIALOGUE)), 0), ReaderPrefsEngine, 0, 1f)
         assertEquals(0.4f, peak(narration), 1e-4f, "the narrator is left as it is")
         assertEquals(0.4f, peak(dialogue), 1e-4f, "the dialogue voice is raised to match")
     }
@@ -86,14 +87,14 @@ class DirectedSpeechTest {
     @Test fun gainIsBoundedAndNeverClips() {
         // Ten times quieter: raised by at most 2x.
         val quiet = DirectedSpeech(Voice(mapOf(0 to 0.5f, 1 to 0.05f)), director, 1)
-        quiet.speak(Direction(listOf(Piece("n", false)), 0), ReaderPrefsEngine, 0, 1f)
-        val d = quiet.speak(Direction(listOf(Piece("d", true)), 0), ReaderPrefsEngine, 0, 1f)
+        quiet.speak(Direction(listOf(Piece("n", Role.NARRATOR)), 0), ReaderPrefsEngine, 0, 1f)
+        val d = quiet.speak(Direction(listOf(Piece("d", Role.DIALOGUE)), 0), ReaderPrefsEngine, 0, 1f)
         assertEquals(0.1f, peak(d), 1e-4f)
 
         // A loud narrator against a quiet voice near full scale: held under the peak.
         val loud = DirectedSpeech(Voice(mapOf(0 to 0.9f, 1 to 0.6f)), director, 1)
-        loud.speak(Direction(listOf(Piece("n", false)), 0), ReaderPrefsEngine, 0, 1f)
-        val held = loud.speak(Direction(listOf(Piece("d", true)), 0), ReaderPrefsEngine, 0, 1f)
+        loud.speak(Direction(listOf(Piece("n", Role.NARRATOR)), 0), ReaderPrefsEngine, 0, 1f)
+        val held = loud.speak(Direction(listOf(Piece("d", Role.DIALOGUE)), 0), ReaderPrefsEngine, 0, 1f)
         assertTrue(peak(held) <= DirectedSpeech.PEAK + 1e-6f, "peak ${peak(held)}")
         assertTrue(peak(held) > 0.6f, "still raised as far as it can go")
     }
@@ -101,10 +102,10 @@ class DirectedSpeechTest {
     @Test fun aStuttersFragmentGetsItsVoicesGainButTeachesNothing() {
         val voice = Voice(mapOf(0 to 0.4f, 1 to 0.2f))
         val speech = DirectedSpeech(voice, director, 1)
-        speech.speak(Direction(listOf(Piece("n", false)), 0), ReaderPrefsEngine, 0, 1f)
-        speech.speak(Direction(listOf(Piece("d", true)), 0), ReaderPrefsEngine, 0, 1f)
+        speech.speak(Direction(listOf(Piece("n", Role.NARRATOR)), 0), ReaderPrefsEngine, 0, 1f)
+        speech.speak(Direction(listOf(Piece("d", Role.DIALOGUE)), 0), ReaderPrefsEngine, 0, 1f)
         val fragment = speech.speak(
-            Direction(listOf(Piece("Violet", true, pauseAfterMs = 170, onset = 0.5f)), 0),
+            Direction(listOf(Piece("Violet", Role.DIALOGUE, pauseAfterMs = 170, onset = 0.5f)), 0),
             ReaderPrefsEngine, 0, 1f,
         )
         assertEquals(0.4f, peak(fragment), 1e-3f, "the fragment is raised like its voice")
@@ -112,9 +113,9 @@ class DirectedSpeechTest {
 
     @Test fun aPiecesOwnGainIsAppliedOnTopOfItsVoices() {
         val speech = DirectedSpeech(Voice(mapOf(0 to 0.4f, 1 to 0.4f)), director, 1)
-        val whisper = speech.speak(Direction(listOf(Piece("n", false, gain = 0.5f)), 0), ReaderPrefsEngine, 0, 1f)
+        val whisper = speech.speak(Direction(listOf(Piece("n", Role.NARRATOR, gain = 0.5f)), 0), ReaderPrefsEngine, 0, 1f)
         assertEquals(0.2f, peak(whisper), 1e-4f)
-        val shout = speech.speak(Direction(listOf(Piece("n", false, gain = 3f)), 0), ReaderPrefsEngine, 0, 1f)
+        val shout = speech.speak(Direction(listOf(Piece("n", Role.NARRATOR, gain = 3f)), 0), ReaderPrefsEngine, 0, 1f)
         assertEquals(DirectedSpeech.PEAK, peak(shout), 1e-4f, "a shout never clips")
     }
 

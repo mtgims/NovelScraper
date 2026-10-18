@@ -62,13 +62,14 @@ class NeuralNarratorTest {
             return spoken.map { t ->
                 t?.let {
                     val cut = it.indexOf(" said")
-                    val pieces = if (cut < 0) listOf(Piece(it, dialogue = true, speedFactor = 2f))
-                    else listOf(Piece(it.substring(0, cut), true), Piece(it.substring(cut + 1), false))
+                    val pieces = if (cut < 0) listOf(Piece(it, Role.DIALOGUE, speedFactor = 2f))
+                    else listOf(Piece(it.substring(0, cut), Role.DIALOGUE), Piece(it.substring(cut + 1), Role.NARRATOR))
                     Direction(pieces, pauseAfterMs = 500)
                 }
             }
         }
-        override fun dialogueSpeaker(bookId: Int, engine: String, speaker: Int) = speaker + 7
+        override fun speakerFor(bookId: Int, engine: String, narrator: Int, role: Role) =
+            if (role == Role.NARRATOR) narrator else narrator + 7
     }
 
     private val sinks = CopyOnWriteArrayList<Sink>()

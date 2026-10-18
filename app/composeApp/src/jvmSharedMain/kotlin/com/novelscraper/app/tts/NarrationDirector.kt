@@ -3,16 +3,18 @@ package com.novelscraper.app.tts
 /** How one sentence is spoken: one or more pieces, then a pause. */
 class Direction(val pieces: List<Piece>, val pauseAfterMs: Int)
 
+/** Who speaks a piece: the narrator, a character, or a LitRPG system message. */
+enum class Role { NARRATOR, DIALOGUE, SYSTEM }
+
 /**
- * A stretch of a sentence, in the narrator's voice or the dialogue voice, and
- * the silence after it. With [onset] above zero only the start of [text] is
+ * A stretch of a sentence, in the voice of its [role], and the silence after it. With [onset] above zero only the start of [text] is
  * kept, that share of the voiced audio: a stutter ("V-Violet") is the opening
  * sound of the word itself, which spelling out the letter can't give. [gain]
  * makes it quieter or louder than its voice's usual level (a whisper, a shout).
  */
 data class Piece(
     val text: String,
-    val dialogue: Boolean,
+    val role: Role,
     val speedFactor: Float = 1f,
     val pauseAfterMs: Int = 0,
     val onset: Float = 0f,
@@ -39,6 +41,6 @@ interface NarrationDirector {
      */
     fun direct(bookId: Int, spoken: List<String?>, paragraphEnd: BooleanArray): List<Direction?>
 
-    /** The dialogue speaker to pair with the narrator's [speaker] on [engine], in [bookId]. */
-    fun dialogueSpeaker(bookId: Int, engine: String, speaker: Int): Int
+    /** The speaker for [role] in [bookId] on [engine], where the narrator is [narrator]. */
+    fun speakerFor(bookId: Int, engine: String, narrator: Int, role: Role): Int
 }

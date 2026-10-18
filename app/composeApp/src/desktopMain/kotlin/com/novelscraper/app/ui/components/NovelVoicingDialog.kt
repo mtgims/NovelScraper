@@ -30,6 +30,7 @@ import com.novelscraper.app.tts.NovelVoicing
 import com.novelscraper.app.tts.NovelVoicings
 import com.novelscraper.app.tts.Quote
 import com.novelscraper.app.tts.StutterMark
+import com.novelscraper.app.tts.SystemMark
 import com.novelscraper.app.tts.TtsController
 import com.novelscraper.app.tts.TtsModels
 import com.novelscraper.app.tts.VoicingDetector
@@ -112,6 +113,21 @@ fun NovelVoicingDialog(bookId: Int, title: String, onDismiss: () -> Unit) {
                 Note("A line the narration says was whispered is read quieter and a little slower; one " +
                     "shouted, or written in capitals, louder and a little faster.")
 
+                Heading("System messages are marked with")
+                val system = v.system.orEmpty()
+                FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    SystemMark.entries.forEach { m ->
+                        Choice(m.label, m in system) {
+                            val next = if (m in system) system - m else system + m
+                            v = v.copy(system = next.ifEmpty { null })
+                        }
+                    }
+                }
+                Note(if (system.isEmpty()) "None. Pick one for a LitRPG novel whose messages are in brackets; " +
+                    "it's off unless picked, since brackets also hold author notes."
+                    else "Read in a voice of their own.")
+                if (system.isNotEmpty()) SystemVoice(engine, v) { v = it }
+
                 TextButton(
                     modifier = Modifier.padding(top = 10.dp),
                     onClick = {
@@ -124,7 +140,11 @@ fun NovelVoicingDialog(bookId: Int, title: String, onDismiss: () -> Unit) {
                                 found = "No chapters are stored yet. Open or download a few, then try again."
                                 return@launch
                             }
-                            v = v.copy(quotes = result.suggestedQuotes, stutters = result.suggestedStutters)
+                            v = v.copy(
+                                quotes = result.suggestedQuotes,
+                                stutters = result.suggestedStutters,
+                                system = result.suggestedSystem,
+                            )
                             found = summary(result)
                         }
                     },
@@ -181,14 +201,43 @@ private fun DialogueVoice(engine: String, v: NovelVoicing, onChange: (NovelVoici
     }
 }
 
+@Composable
+private fun SystemVoice(engine: String, v: NovelVoicing, onChange: (NovelVoicing) -> Unit) {
+    when (engine) {
+        ReaderPrefs.ENGINE_KOKORO -> {
+            val narrator by ReaderPrefs.kokoroSpeaker.collectAsState()
+            val auto = ExpressiveReading.kokoroSystemVoice(narrator, ExpressiveReading.dialogueVoice(v, engine, narrator))
+            KokoroVoicePicker(
+                currentId = v.kokoroSystem ?: -1,
+                label = "System voice",
+                automatic = "Automatic · " + KokoroVoices.describe(auto),
+            ) { onChange(v.copy(kokoroSystem = it.takeIf { id -> id >= 0 })) }
+        }
+        ReaderPrefs.ENGINE_SUPERTONIC -> {
+            val narrator by ReaderPrefs.supertonicSpeaker.collectAsState()
+            val voices = TtsModels.SUPERTONIC_VOICES
+            SupertonicVoicePicker(
+                currentId = v.supertonicSystem ?: -1,
+                label = "System voice",
+                automatic = "Automatic · " + voices.getOrElse(ExpressiveReading.supertonicSystemVoice(narrator)) { "" },
+            ) { onChange(v.copy(supertonicSystem = it.takeIf { id -> id >= 0 })) }
+        }
+        ReaderPrefs.ENGINE_PIPER -> Note("Piper has one voice per model, so system messages keep the narrator's voice.")
+        else -> {}
+    }
+}
+
 /** "From 40 chapters: “…” 1,203 · ‘…’ 12. Stutters: V–Violet 9." */
 private fun summary(found: VoicingDetector.Found): String {
     val quotes = found.quotes.entries.sortedByDescending { it.value }
         .joinToString(" · ") { (q, n) -> "${q.label} ${"%,d".format(n)}" }.ifEmpty { "no quote marks" }
     val stutters = found.stutters.filterValues { it > 0 }.entries.sortedByDescending { it.value }
         .joinToString(" · ") { (m, n) -> "${m.label} $n" }.ifEmpty { "none found, so all marks stay on" }
+    val system = found.system.entries.sortedByDescending { it.value }
+        .joinToString(" · ") { (m, n) -> "${m.label} $n" }.ifEmpty { "none" }
     val chapters = found.chapters
-    return "From $chapters stored chapter${if (chapters == 1) "" else "s"}: $quotes. Stutters: $stutters."
+    return "From $chapters stored chapter${if (chapters == 1) "" else "s"}: $quotes. Stutters: $stutters. " +
+        "Bracketed: $system."
 }
 
 @Composable

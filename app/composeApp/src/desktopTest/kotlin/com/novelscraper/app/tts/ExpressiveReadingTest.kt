@@ -26,7 +26,7 @@ class ExpressiveReadingTest {
 
     /** Each piece as "D:text" or "N:text". */
     private fun shape(text: String, quoted: Boolean = false) =
-        ExpressiveReading.split(text, ExpressiveReading.QuoteState(if (quoted) '"' else null)).first.map { (if (it.dialogue) "D:" else "N:") + it.text }
+        ExpressiveReading.split(text, ExpressiveReading.QuoteState(if (quoted) '"' else null)).first.map { (if (it.role == Role.DIALOGUE) "D:" else "N:") + it.text }
 
     @Test fun cutsASentenceAtItsQuotes() {
         assertEquals(listOf("D:\"Run,\"", "N:he said,", "D:\"now.\""), shape("\"Run,\" he said, \"now.\""))
@@ -49,13 +49,13 @@ class ExpressiveReadingTest {
         val spoken = listOf("\"Hello.", "How are you?\" she asked.", "Silence.", "He left.")
         val ends = booleanArrayOf(false, false, true, true)
         val d = ExpressiveReading.direct(spoken, ends)
-        assertEquals(listOf(true), d[0]!!.pieces.map { it.dialogue })
-        assertEquals(listOf(true, false), d[1]!!.pieces.map { it.dialogue })
-        assertEquals(listOf(false), d[2]!!.pieces.map { it.dialogue })
+        assertEquals(listOf(true), d[0]!!.pieces.map { it.role == Role.DIALOGUE })
+        assertEquals(listOf(true, false), d[1]!!.pieces.map { it.role == Role.DIALOGUE })
+        assertEquals(listOf(false), d[2]!!.pieces.map { it.role == Role.DIALOGUE })
 
         // An unclosed quote is forgotten at the paragraph's end.
         val open = ExpressiveReading.direct(listOf("\"I went on and on.", "He sat."), booleanArrayOf(true, true))
-        assertEquals(listOf(false), open[1]!!.pieces.map { it.dialogue })
+        assertEquals(listOf(false), open[1]!!.pieces.map { it.role == Role.DIALOGUE })
     }
 
     @Test fun pausesFollowTheText() {
@@ -97,18 +97,18 @@ class ExpressiveReadingTest {
 
         assertEquals(5, ExpressiveReading.supertonicPartner(0))
         assertEquals(1, ExpressiveReading.supertonicPartner(6))
-        assertEquals(3, ExpressiveReading.dialogueSpeaker(BOOK, ReaderPrefs.ENGINE_PIPER, 3))
+        assertEquals(3, ExpressiveReading.speakerFor(BOOK, ReaderPrefs.ENGINE_PIPER, 3, Role.DIALOGUE))
     }
 
     @Test fun theReadersChoiceWins() {
         ReaderPrefs.setKokoroDialogueSpeaker(KokoroVoices.all.first { it.code == "bm_fable" }.id)
-        assertEquals("bm_fable", KokoroVoices.voice(ExpressiveReading.dialogueSpeaker(BOOK, ReaderPrefs.ENGINE_KOKORO, 0))!!.code)
+        assertEquals("bm_fable", KokoroVoices.voice(ExpressiveReading.speakerFor(BOOK, ReaderPrefs.ENGINE_KOKORO, 0, Role.DIALOGUE))!!.code)
         ReaderPrefs.setSupertonicDialogueSpeaker(2)
-        assertEquals(2, ExpressiveReading.dialogueSpeaker(BOOK, ReaderPrefs.ENGINE_SUPERTONIC, 0))
+        assertEquals(2, ExpressiveReading.speakerFor(BOOK, ReaderPrefs.ENGINE_SUPERTONIC, 0, Role.DIALOGUE))
     }
 
     /** Each beat as "text|pause" or "~text~share|pause" for a cut-off start. */
-    private fun beats(text: String) = ExpressiveReading.beats(text, false, 1f).map {
+    private fun beats(text: String) = ExpressiveReading.beats(text, Role.NARRATOR, 1f).map {
         (if (it.onset > 0f) "~${it.text}~${"%.2f".format(it.onset)}" else it.text) + "|" + it.pauseAfterMs
     }
 
@@ -156,13 +156,13 @@ class ExpressiveReadingTest {
             listOf("\"Violet, that", "that hurts. You need...", "you need to lift the beams, please,\"", "he said."),
             d[2]!!.pieces.map { it.text },
         )
-        assertEquals(listOf(true, true, true, false), d[2]!!.pieces.map { it.dialogue })
+        assertEquals(listOf(true, true, true, false), d[2]!!.pieces.map { it.role == Role.DIALOGUE })
     }
 
     /** Each piece as "D:text" or "N:text", with the novel's [quotes]. */
     private fun marked(text: String, vararg quotes: Quote, paragraphStart: Boolean = true) =
         ExpressiveReading.split(text, quotes = quotes.toSet(), paragraphStart = paragraphStart).first
-            .map { (if (it.dialogue) "D:" else "N:") + it.text }
+            .map { (if (it.role == Role.DIALOGUE) "D:" else "N:") + it.text }
 
     @Test fun singleQuotesWhenTheNovelSpeaksInThem() {
         assertEquals(listOf("D:‘Don’t go,’", "N:she said."), marked("‘Don’t go,’ she said.", Quote.SINGLE_CURLY))
@@ -187,10 +187,10 @@ class ExpressiveReadingTest {
     @Test fun onlyTheNovelsStutterMarksAreStutters() {
         val hyphenOnly = setOf(StutterMark.HYPHEN)
         assertEquals(listOf("~Violet~0.17|170", "Violet.|0"),
-            ExpressiveReading.beats("V-Violet.", false, 1f, hyphenOnly).map(::show))
+            ExpressiveReading.beats("V-Violet.", Role.NARRATOR, 1f, hyphenOnly).map(::show))
         assertEquals(listOf("V|300", "Violet.|0"),
-            ExpressiveReading.beats("V–Violet.", false, 1f, hyphenOnly).map(::show), "an en dash is only a dash here")
-        assertEquals(listOf("V-Violet.|0"), ExpressiveReading.beats("V-Violet.", false, 1f, emptySet()).map(::show))
+            ExpressiveReading.beats("V–Violet.", Role.NARRATOR, 1f, hyphenOnly).map(::show), "an en dash is only a dash here")
+        assertEquals(listOf("V-Violet.|0"), ExpressiveReading.beats("V-Violet.", Role.NARRATOR, 1f, emptySet()).map(::show))
     }
 
     private fun show(p: Piece) =
@@ -205,9 +205,9 @@ class ExpressiveReadingTest {
         NovelVoicings.set(BOOK, NovelVoicing(enabled = false, kokoroDialogue = fable, quotes = setOf(Quote.SINGLE_CURLY)))
         assertEquals(false, ExpressiveReading.enabled(BOOK), "off for this novel")
         assertEquals(true, ExpressiveReading.enabled(BOOK + 1), "others still follow the switch")
-        assertEquals(fable, ExpressiveReading.dialogueSpeaker(BOOK, ReaderPrefs.ENGINE_KOKORO, 0))
+        assertEquals(fable, ExpressiveReading.speakerFor(BOOK, ReaderPrefs.ENGINE_KOKORO, 0, Role.DIALOGUE))
         val d = ExpressiveReading.direct(BOOK, listOf("‘Run,’ she said."), booleanArrayOf(true))
-        assertEquals(listOf(true, false), d[0]!!.pieces.map { it.dialogue }, "the novel's own quote marks")
+        assertEquals(listOf(true, false), d[0]!!.pieces.map { it.role == Role.DIALOGUE }, "the novel's own quote marks")
 
         NovelVoicings.set(BOOK, NovelVoicing())
         assertEquals(true, ExpressiveReading.enabled(BOOK), "reset: back to the general switch")
@@ -266,6 +266,62 @@ class ExpressiveReadingTest {
         )
         assertEquals(1f, d[0]!!.pieces[0].gain)
         assertEquals("\"STOP!\"", d[0]!!.pieces[0].text)
+    }
+
+    /** Each piece as "N:", "D:" or "S:" and its text, with system messages in square brackets. */
+    private fun roles(text: String, system: Set<SystemMark> = setOf(SystemMark.SQUARE)) =
+        ExpressiveReading.split(text, system = system).first.map { it.role.name.first() + ":" + it.text }
+
+    @Test fun aSystemMessageIsItsOwnVoice() {
+        assertEquals(listOf("S:[Skill acquired: Stealth]", "N:He grinned."), roles("[Skill acquired: Stealth] He grinned."))
+        assertEquals(listOf("S:【Level up】", "N:he read."), roles("【Level up】 he read.", setOf(SystemMark.LENTICULAR)))
+        // Quotes inside a message are part of it.
+        assertEquals(listOf("S:[Quest: \"Find the key\"]", "N:appeared."), roles("[Quest: \"Find the key\"] appeared."))
+        // Off unless the novel picks it: brackets are only brackets.
+        assertEquals(listOf("N:[Skill acquired: Stealth] He grinned."), roles("[Skill acquired: Stealth] He grinned.", emptySet()))
+    }
+
+    @Test fun aSystemMessageRunsAcrossSentencesToTheParagraphsEnd() {
+        val spoken = listOf("[Level up.", "Strength +1.]", "[Unclosed note.", "He sat.")
+        val d = ExpressiveReading.direct(spoken, booleanArrayOf(false, true, true, true), system = setOf(SystemMark.SQUARE))
+        assertEquals(listOf(Role.SYSTEM), d[0]!!.pieces.map { it.role })
+        assertEquals(listOf(Role.SYSTEM), d[1]!!.pieces.map { it.role })
+        assertEquals(listOf(Role.NARRATOR), d[3]!!.pieces.map { it.role }, "forgotten at the paragraph's end")
+    }
+
+    @Test fun aSystemMessageInCapitalsIsNotAShout() {
+        val d = ExpressiveReading.direct(listOf("[ACCEPT STATUS CHANGE: CAENOGEN]"), booleanArrayOf(true),
+            system = setOf(SystemMark.SQUARE))
+        assertEquals(1f, d[0]!!.pieces.single().gain)
+    }
+
+    @Test fun theSystemVoiceIsApartFromNarratorAndDialogue() {
+        val id = { code: String -> KokoroVoices.all.first { it.code == code }.id }
+        val code = { i: Int -> KokoroVoices.voice(i)!!.code }
+        assertEquals("af_nicole", code(ExpressiveReading.kokoroSystemVoice(id("af_heart"), id("am_michael"))))
+        assertEquals("af_bella", code(ExpressiveReading.kokoroSystemVoice(id("af_nicole"), id("am_michael"))))
+        assertEquals("bf_isabella", code(ExpressiveReading.kokoroSystemVoice(id("bm_george"), id("bf_emma"))))
+        // A language with one voice keeps it.
+        assertEquals(id("ff_siwis"), ExpressiveReading.kokoroSystemVoice(id("ff_siwis"), id("ff_siwis")))
+
+        assertEquals(2, ExpressiveReading.supertonicSystemVoice(0))
+        assertEquals(1, ExpressiveReading.supertonicSystemVoice(4))
+        assertEquals(8, ExpressiveReading.supertonicSystemVoice(6))
+        assertEquals(6, ExpressiveReading.supertonicSystemVoice(9))
+
+        val heart = id("af_heart")
+        assertEquals(heart, ExpressiveReading.speakerFor(BOOK, ReaderPrefs.ENGINE_KOKORO, heart, Role.NARRATOR))
+        assertEquals("af_nicole", code(ExpressiveReading.speakerFor(BOOK, ReaderPrefs.ENGINE_KOKORO, heart, Role.SYSTEM)))
+        NovelVoicings.set(BOOK, NovelVoicing(kokoroSystem = id("bm_lewis")))
+        assertEquals("bm_lewis", code(ExpressiveReading.speakerFor(BOOK, ReaderPrefs.ENGINE_KOKORO, heart, Role.SYSTEM)))
+        assertEquals(3, ExpressiveReading.speakerFor(BOOK, ReaderPrefs.ENGINE_PIPER, 3, Role.SYSTEM), "Piper: one voice")
+    }
+
+    @Test fun detectionSuggestsSystemMessagesSeenOften() {
+        val litrpg = List(5) { "<p>[Skill acquired: Stealth]</p><p>He grinned.</p><p>[Level up!]</p>" }
+        assertEquals(setOf(SystemMark.SQUARE), VoicingDetector.detect(litrpg).suggestedSystem)
+        val tagged = listOf("<p>[Progression Fantasy, LitRPG]</p><p>He grinned.</p>")
+        assertNull(VoicingDetector.detect(tagged).suggestedSystem, "one tag is not a novel's messages")
     }
 
     private companion object { const val BOOK = 4242 }

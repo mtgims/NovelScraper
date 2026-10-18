@@ -73,8 +73,11 @@ class LiveKokoroTest {
         prefs.setKokoroDialogueSpeaker(-1)
         prefs.setTtsRate(1f)
         prefs.setTtsAutoNext(false)
+        // Book 1 here, as the narrator below is given: system messages on for it.
+        NovelVoicings.set(1, NovelVoicing(system = setOf(SystemMark.SQUARE)))
         val passage = "<p>\"V-Violet. You-You're alive.\"</p>" +
             "<p>\"Violet, that-that hurts. You need... you need to lift the beams, please,\" he said.</p>" +
+            "<p>[Skill acquired: Stealth. Level 2.]</p>" +
             "<p>\"Stay here,\" she whispered. \"Don't move.\"</p>" +
             "<p>\"Get out of my house!\" he shouted.</p><p>\"STOP RIGHT THERE!\"</p>" +
             "<p>The rain had not let up since noon. Klein stood at the window, watching the lamps.</p>" +
@@ -127,20 +130,20 @@ class LiveKokoroTest {
         // them and once directed speech has levelled them.
         val line = "The lamps were lit early that evening, and the rain had not let up."
         val narrator = prefs.kokoroSpeaker.value
-        val dialogue = ExpressiveReading.dialogueSpeaker(1, prefs.ENGINE_KOKORO, narrator)
+        val dialogue = ExpressiveReading.speakerFor(1, prefs.ENGINE_KOKORO, narrator, Role.DIALOGUE)
         val db = { a: Float, b: Float -> "%.1f dB".format(20 * kotlin.math.log10(a / b)) }
         val sr = KokoroEngine.sampleRate
         val rawN = speechRms(KokoroEngine.generate(line, narrator, 1f), sr)
         val rawD = speechRms(KokoroEngine.generate(line, dialogue, 1f), sr)
         val speech = DirectedSpeech(KokoroVoice, ExpressiveReading, 1)
-        val n = speechRms(speech.speak(Direction(listOf(Piece(line, false)), 0), prefs.ENGINE_KOKORO, narrator, 1f), sr)
-        val d = speechRms(speech.speak(Direction(listOf(Piece(line, true)), 0), prefs.ENGINE_KOKORO, narrator, 1f), sr)
+        val n = speechRms(speech.speak(Direction(listOf(Piece(line, Role.NARRATOR)), 0), prefs.ENGINE_KOKORO, narrator, 1f), sr)
+        val d = speechRms(speech.speak(Direction(listOf(Piece(line, Role.DIALOGUE)), 0), prefs.ENGINE_KOKORO, narrator, 1f), sr)
         println("dialogue against narrator: ${db(rawD, rawN)} as given, ${db(d, n)} levelled")
 
         // A whisper and a shout against the same line said plainly.
-        val plainLine = speechRms(speech.speak(Direction(listOf(Piece(line, true)), 0), prefs.ENGINE_KOKORO, narrator, 1f), sr)
+        val plainLine = speechRms(speech.speak(Direction(listOf(Piece(line, Role.DIALOGUE)), 0), prefs.ENGINE_KOKORO, narrator, 1f), sr)
         for ((name, gain) in listOf("whisper" to ExpressiveReading.WHISPER_GAIN, "shout" to ExpressiveReading.SHOUT_GAIN)) {
-            val r = speechRms(speech.speak(Direction(listOf(Piece(line, true, gain = gain)), 0), prefs.ENGINE_KOKORO, narrator, 1f), sr)
+            val r = speechRms(speech.speak(Direction(listOf(Piece(line, Role.DIALOGUE, gain = gain)), 0), prefs.ENGINE_KOKORO, narrator, 1f), sr)
             println("$name: ${db(r, plainLine)}")
         }
 
