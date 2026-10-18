@@ -120,6 +120,20 @@ class LiveKokoroTest {
             assertTrue(floats.isNotEmpty(), "nothing came out")
         }
         prefs.setTtsExpressive(false)
+
+        // How loud the narrator and the dialogue voice are, as the model gives
+        // them and once directed speech has levelled them.
+        val line = "The lamps were lit early that evening, and the rain had not let up."
+        val narrator = prefs.kokoroSpeaker.value
+        val dialogue = ExpressiveReading.dialogueSpeaker(1, prefs.ENGINE_KOKORO, narrator)
+        val db = { a: Float, b: Float -> "%.1f dB".format(20 * kotlin.math.log10(a / b)) }
+        val sr = KokoroEngine.sampleRate
+        val rawN = speechRms(KokoroEngine.generate(line, narrator, 1f), sr)
+        val rawD = speechRms(KokoroEngine.generate(line, dialogue, 1f), sr)
+        val speech = DirectedSpeech(KokoroVoice, ExpressiveReading, 1)
+        val n = speechRms(speech.speak(Direction(listOf(Piece(line, false)), 0), prefs.ENGINE_KOKORO, narrator, 1f), sr)
+        val d = speechRms(speech.speak(Direction(listOf(Piece(line, true)), 0), prefs.ENGINE_KOKORO, narrator, 1f), sr)
+        println("dialogue against narrator: ${db(rawD, rawN)} as given, ${db(d, n)} levelled")
         KokoroEngine.release()
     }
 

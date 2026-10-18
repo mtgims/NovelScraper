@@ -18,14 +18,18 @@ object ExpressiveReading : NarrationDirector {
     override fun enabled(bookId: Int): Boolean =
         NovelVoicings.get(bookId).enabled ?: ReaderPrefs.ttsExpressive.value
 
-    // Pauses, in milliseconds at 1x, added after the voice's own.
-    internal const val PAUSE_PARAGRAPH = 250
-    internal const val PAUSE_EXCHANGE = 120    // one line of dialogue answering another
-    internal const val PAUSE_TRAILING = 350    // "...", where a sentence ends or within one
-    internal const val PAUSE_BROKEN_OFF = 180  // "—", likewise
-    internal const val PAUSE_SCENE = 700       // "***"
-    internal const val PAUSE_STUTTER = 110     // after "V-" in "V-Violet"
-    internal const val PAUSE_REPEAT = 70       // after the first "that" in "that-that"
+    // Pauses, in milliseconds at 1x, voice to voice: the voice's own silence is
+    // trimmed (DirectedSpeech), so these are the whole gap. Read plainly, Kokoro
+    // leaves about 160 ms between sentences and 50 ms at a comma.
+    internal const val PAUSE_JOIN = 130        // between two pieces of one sentence
+    internal const val PAUSE_SENTENCE = 180
+    internal const val PAUSE_PARAGRAPH = 450
+    internal const val PAUSE_EXCHANGE = 300    // one line of dialogue answering another
+    internal const val PAUSE_TRAILING = 500    // "...", where a sentence ends or within one
+    internal const val PAUSE_BROKEN_OFF = 300  // "—", likewise
+    internal const val PAUSE_SCENE = 1000      // "***"
+    internal const val PAUSE_STUTTER = 170     // after "V-" in "V-Violet"
+    internal const val PAUSE_REPEAT = 130      // after the first "that" in "that-that"
 
     internal const val FASTER = 1.06f   // a short exclamation
     internal const val SLOWER = 0.96f   // a long, descriptive sentence
@@ -73,8 +77,10 @@ object ExpressiveReading : NarrationDirector {
                 else -> pauseFor(text)
             }
             val beats = own.flatMap { beats(it.text, it.dialogue, speed, stutters) }
-            // The sentence's own pause follows its last piece, not both.
-            Direction(beats.dropLast(1) + beats.last().copy(pauseAfterMs = 0), pause)
+            // Pieces of one sentence are never run together; the sentence's own
+            // pause follows its last piece, not both.
+            val joined = beats.dropLast(1).map { it.copy(pauseAfterMs = maxOf(it.pauseAfterMs, PAUSE_JOIN)) }
+            Direction(joined + beats.last().copy(pauseAfterMs = 0), pause)
         }
     }
 
@@ -270,7 +276,7 @@ object ExpressiveReading : NarrationDirector {
         return when {
             end.endsWith('…') || end.endsWith("...") -> PAUSE_TRAILING
             end.endsWith('—') || end.endsWith('–') || end.endsWith('-') -> PAUSE_BROKEN_OFF
-            else -> 0
+            else -> PAUSE_SENTENCE
         }
     }
 

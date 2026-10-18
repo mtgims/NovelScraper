@@ -196,8 +196,9 @@ class NeuralNarratorTest {
         } finally { directed.stop() }
         // Chapter 1 is "S10 one. S11 two." then "S12 three." in its own paragraph.
         assertEquals(listOf(false, true, true), director.ends!!.toList())
-        // 100 frames of voice + 500 ms of silence at 1000 Hz, one write per sentence.
-        assertEquals(listOf(600, 600, 600), sink.sizes.toList())
+        // 100 frames of voice, then 500 ms voice to voice at 1000 Hz, less the
+        // lead-in the next sentence brings with it: one write per sentence.
+        assertEquals(listOf(585, 585, 585), sink.sizes.toList())
         val speaker = ReaderPrefs.speakerFor(ReaderPrefs.ENGINE_PIPER)
         assertTrue(calls.all { it.second == speaker + 7 }, "dialogue in the dialogue voice")
         assertTrue(calls.all { it.third == 2f }, "the piece's speed on top of the reader's")

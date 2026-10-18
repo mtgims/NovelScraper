@@ -77,7 +77,7 @@ class ExpressiveReadingTest {
         assertEquals(emptyList(), d[5]!!.pieces, "a scene break is not spoken")
         assertNull(d[6], "a sentence passed over stays passed over")
         assertEquals(PAUSE_PARAGRAPH, d[7]!!.pauseAfterMs)
-        assertEquals(0, ExpressiveReading.pauseFor("He sat down."))
+        assertEquals(ExpressiveReading.PAUSE_SENTENCE, ExpressiveReading.pauseFor("He sat down."))
     }
 
     @Test fun pacingIsSlight() {
@@ -113,30 +113,30 @@ class ExpressiveReadingTest {
     }
 
     @Test fun aStutterIsTheStartOfTheWordItself() {
-        assertEquals(listOf("~Violet~0.17|110", "Violet.|0"), beats("V-Violet."))
-        assertEquals(listOf("~You're~0.50|110", "You're alive.|0"), beats("You-You're alive."))
-        assertEquals(listOf("~Violet~0.17|110", "~Violet~0.17|110", "Violet!|0"), beats("V-V-Violet!"))
+        assertEquals(listOf("~Violet~0.17|170", "Violet.|0"), beats("V-Violet."))
+        assertEquals(listOf("~You're~0.50|170", "You're alive.|0"), beats("You-You're alive."))
+        assertEquals(listOf("~Violet~0.17|170", "~Violet~0.17|170", "Violet!|0"), beats("V-V-Violet!"))
     }
 
     @Test fun aStutterSetWithADashIsAStutterToo() {
         // As a novel in the library has it: an en dash, and ellipses.
-        assertEquals(listOf("~help~0.25|110", "help…|350", "me…|0"), beats("H–help… me…"))
-        assertEquals(listOf("~Help~0.25|110", "Help me.|0"), beats("H‑Help me."))
-        assertEquals(listOf("I|70", "I don't.|0"), beats("I—I don't."))
+        assertEquals(listOf("~help~0.25|170", "help…|500", "me…|0"), beats("H–help… me…"))
+        assertEquals(listOf("~Help~0.25|170", "Help me.|0"), beats("H‑Help me."))
+        assertEquals(listOf("I|130", "I don't.|0"), beats("I—I don't."))
     }
 
     @Test fun aRepeatedWordIsSaidTwiceWithABeat() {
-        assertEquals(listOf("Violet, that|70", "that hurts.|0"), beats("Violet, that-that hurts."))
-        assertEquals(listOf("I|70", "I|70", "I don't know.|0"), beats("I-I-I don't know."))
+        assertEquals(listOf("Violet, that|130", "that hurts.|0"), beats("Violet, that-that hurts."))
+        assertEquals(listOf("I|130", "I|130", "I don't know.|0"), beats("I-I-I don't know."))
     }
 
     @Test fun anEllipsisOrDashWithinASentenceIsAPause() {
         assertEquals(
-            listOf("You need...|350", "you need to lift the beams, please,|0"),
+            listOf("You need...|500", "you need to lift the beams, please,|0"),
             beats("You need... you need to lift the beams, please,"),
         )
-        assertEquals(listOf("I wanted|180", "never mind.|0"), beats("I wanted—never mind."))
-        assertEquals(listOf("Wait…|350", "what?|0"), beats("Wait… what?"))
+        assertEquals(listOf("I wanted|300", "never mind.|0"), beats("I wanted—never mind."))
+        assertEquals(listOf("Wait…|500", "what?|0"), beats("Wait… what?"))
         // At the very end it is the sentence's pause, not a beat.
         assertEquals(listOf("And then...|0"), beats("And then..."))
     }
@@ -186,9 +186,9 @@ class ExpressiveReadingTest {
 
     @Test fun onlyTheNovelsStutterMarksAreStutters() {
         val hyphenOnly = setOf(StutterMark.HYPHEN)
-        assertEquals(listOf("~Violet~0.17|110", "Violet.|0"),
+        assertEquals(listOf("~Violet~0.17|170", "Violet.|0"),
             ExpressiveReading.beats("V-Violet.", false, 1f, hyphenOnly).map(::show))
-        assertEquals(listOf("V|180", "Violet.|0"),
+        assertEquals(listOf("V|300", "Violet.|0"),
             ExpressiveReading.beats("V–Violet.", false, 1f, hyphenOnly).map(::show), "an en dash is only a dash here")
         assertEquals(listOf("V-Violet.|0"), ExpressiveReading.beats("V-Violet.", false, 1f, emptySet()).map(::show))
     }

@@ -193,6 +193,9 @@ class NeuralNarrator(
         // Written in order; the ticker walks forward through them.
         val marks = java.util.Collections.synchronizedList(ArrayList<Mark>())
 
+        // Directed speech learns each voice's loudness as it goes, so one
+        // serves the whole run.
+        val speech = director?.let { DirectedSpeech(voice, it, bookId) }
         val producer = scope.launch(Dispatchers.Default) {
             var chapter = first
             var start = from
@@ -201,7 +204,10 @@ class NeuralNarrator(
                     if (!isActive) return@launch
                     val text = chapter.spoken.getOrNull(i) ?: continue   // passed over
                     val direction = chapter.directions?.getOrNull(i)
-                    val pcm = if (direction != null) directed(direction) else voice.generate(text, speaker(), speed())
+                    val pcm = if (direction != null && speech != null) {
+                        val narrator = speaker()   // sets engine
+                        speech.speak(direction, engine, narrator, speed())
+                    } else voice.generate(text, speaker(), speed())
                     queue.send(Triple(chapter, i, pcm))
                 }
                 // The chapter is synthesized; roll into the next one while it plays.
@@ -325,24 +331,6 @@ class NeuralNarrator(
 
     private fun speed() = ReaderPrefs.ttsRate.value.coerceIn(0.5f, 2.5f)
 
-    /** One directed sentence: each piece in its voice, then the pause. */
-    private fun directed(direction: Direction): FloatArray {
-        val narrator = speaker()
-        val dialogue = director?.dialogueSpeaker(bookId, engine, narrator) ?: narrator
-        val rate = speed()
-        val sr = voice.sampleRate
-        val silence = { ms: Int -> (ms / rate * sr / 1000).toInt().coerceAtLeast(0) }
-        val parts = direction.pieces.map { p ->
-            val pcm = voice.generate(p.text, if (p.dialogue) dialogue else narrator, (rate * p.speedFactor).coerceIn(0.5f, 2.5f))
-            val said = if (p.onset > 0f) onsetOf(pcm, p.onset, sr) else pcm
-            said.copyOf(said.size + silence(p.pauseAfterMs))
-        }
-        val out = FloatArray(parts.sumOf { it.size } + silence(direction.pauseAfterMs))
-        var at = 0
-        for (p in parts) { p.copyInto(out, at); at += p.size }
-        return out
-    }
-
     private fun resumeNow() {
         val c = current ?: return
         start(c.position, index)
@@ -404,24 +392,4 @@ class NeuralNarrator(
         const val TAG = "Narrator"
         const val SEC_PER_CHAR = 0.06f
     }
-}
-
-/**
- * The opening [share] of the voiced part of [pcm] (the silence a voice leaves
- * around a word is not counted), between 70 and 250 ms, faded out so the cut
- * doesn't click.
- */
-internal fun onsetOf(pcm: FloatArray, share: Float, sampleRate: Int): FloatArray {
-    val loud = 0.02f
-    val first = pcm.indexOfFirst { kotlin.math.abs(it) > loud }
-    if (first < 0) return FloatArray(0)
-    val last = pcm.indexOfLast { kotlin.math.abs(it) > loud }
-    val voiced = last - first + 1
-    val n = (voiced * share).toInt()
-        .coerceIn(sampleRate * 70 / 1000, sampleRate * 250 / 1000)
-        .coerceAtMost(voiced)
-    val out = pcm.copyOfRange(first, first + n)
-    val fade = minOf(n, sampleRate * 12 / 1000)
-    for (i in 0 until fade) out[n - 1 - i] *= i.toFloat() / fade
-    return out
 }
