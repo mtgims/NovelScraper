@@ -12,6 +12,7 @@ import kotlin.test.BeforeTest
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertNull
+import kotlin.test.assertTrue
 
 /** Expressive reading: which stretches are dialogue, the pauses, the pacing. */
 class ExpressiveReadingTest {
@@ -327,9 +328,17 @@ class ExpressiveReadingTest {
     @Test fun theSystemVoiceIsApartFromNarratorAndDialogue() {
         val id = { code: String -> KokoroVoices.all.first { it.code == code }.id }
         val code = { i: Int -> KokoroVoices.voice(i)!!.code }
-        assertEquals("af_nicole", code(ExpressiveReading.kokoroSystemVoice(id("af_heart"), id("am_michael"))))
-        assertEquals("af_bella", code(ExpressiveReading.kokoroSystemVoice(id("af_nicole"), id("am_michael"))))
-        assertEquals("bf_isabella", code(ExpressiveReading.kokoroSystemVoice(id("bm_george"), id("bf_emma"))))
+        // The narrator's own kind, another voice: the dialogue voice is the other kind.
+        assertEquals("af_bella", code(ExpressiveReading.kokoroSystemVoice(id("af_heart"), id("am_michael"))))
+        assertEquals("am_fenrir", code(ExpressiveReading.kokoroSystemVoice(id("am_adam"), id("af_heart"))),
+            "the reported case: Adam narrating, Heart for dialogue")
+        assertEquals("af_sarah", code(ExpressiveReading.kokoroSystemVoice(id("af_bella"), id("am_michael"))))
+        assertEquals("bm_fable", code(ExpressiveReading.kokoroSystemVoice(id("bm_george"), id("bf_emma"))))
+        // Nicole whispers: no narrator and dialogue pair ever gets her automatically.
+        for (n in KokoroVoices.all) for (d in KokoroVoices.all) {
+            assertTrue(code(ExpressiveReading.kokoroSystemVoice(n.id, d.id)) != "af_nicole" || n.code == "af_nicole",
+                "${n.code} with ${d.code}")
+        }
         // A language with one voice keeps it.
         assertEquals(id("ff_siwis"), ExpressiveReading.kokoroSystemVoice(id("ff_siwis"), id("ff_siwis")))
 
@@ -340,7 +349,7 @@ class ExpressiveReadingTest {
 
         val heart = id("af_heart")
         assertEquals(heart, ExpressiveReading.speakerFor(BOOK, ReaderPrefs.ENGINE_KOKORO, heart, Role.NARRATOR))
-        assertEquals("af_nicole", code(ExpressiveReading.speakerFor(BOOK, ReaderPrefs.ENGINE_KOKORO, heart, Role.SYSTEM)))
+        assertEquals("af_bella", code(ExpressiveReading.speakerFor(BOOK, ReaderPrefs.ENGINE_KOKORO, heart, Role.SYSTEM)))
         NovelVoicings.set(BOOK, NovelVoicing(kokoroSystem = id("bm_lewis")))
         assertEquals("bm_lewis", code(ExpressiveReading.speakerFor(BOOK, ReaderPrefs.ENGINE_KOKORO, heart, Role.SYSTEM)))
         assertEquals(3, ExpressiveReading.speakerFor(BOOK, ReaderPrefs.ENGINE_PIPER, 3, Role.SYSTEM), "Piper: one voice")

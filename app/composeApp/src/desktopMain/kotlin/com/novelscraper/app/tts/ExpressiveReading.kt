@@ -428,21 +428,37 @@ object ExpressiveReading : NarrationDirector {
         else -> narrator
     }
 
-    // Voices for system messages, best first, per accent: distinct from the
-    // usual narrator picks.
+    // Kokoro voices recorded whispering: never picked on their own, whatever
+    // they would suit.
+    private val WHISPERING = setOf("af_nicole")
+
+    // Voices for system messages, best first, per accent and kind.
     private val SYSTEM_PREFERRED = mapOf(
-        "American English" to listOf("af_nicole", "af_bella", "am_puck", "am_fenrir", "af_sarah"),
-        "British English" to listOf("bf_isabella", "bm_fable", "bm_george", "bf_emma"),
+        "American English" to mapOf(
+            "Female" to listOf("af_bella", "af_sarah", "af_nova"),
+            "Male" to listOf("am_fenrir", "am_puck", "am_michael"),
+        ),
+        "British English" to mapOf(
+            "Female" to listOf("bf_isabella", "bf_emma", "bf_alice"),
+            "Male" to listOf("bm_fable", "bm_george", "bm_lewis"),
+        ),
     )
 
-    /** A system voice in the narrator's language that is neither the narrator nor [dialogue]. */
+    /**
+     * A system voice in the narrator's language that is neither the narrator nor
+     * [dialogue]. The dialogue voice is usually of the other kind, so the
+     * narrator's own kind comes first: three voices, each apart.
+     */
     internal fun kokoroSystemVoice(narrator: Int, dialogue: Int): Int {
         val me = KokoroVoices.voice(narrator) ?: return narrator
         val taken = setOf(narrator, dialogue)
-        val preferred = SYSTEM_PREFERRED[me.language].orEmpty()
+        val byKind = SYSTEM_PREFERRED[me.language].orEmpty()
+        val otherKind = byKind.keys.firstOrNull { it != me.gender }
+        val preferred = (byKind[me.gender].orEmpty() + byKind[otherKind].orEmpty())
             .mapNotNull { code -> KokoroVoices.all.firstOrNull { it.code == code } }
         return (preferred.firstOrNull { it.id !in taken }
-            ?: KokoroVoices.all.firstOrNull { it.language == me.language && it.id !in taken })?.id ?: narrator
+            ?: KokoroVoices.all.firstOrNull { it.language == me.language && it.id !in taken && it.code !in WHISPERING })
+            ?.id ?: narrator
     }
 
     /** Two voices along from the narrator, in its own block of five (female, male). */
@@ -459,7 +475,8 @@ object ExpressiveReading : NarrationDirector {
         val same = KokoroVoices.all.filter { it.language == me.language && it.id != me.id }
         val other = same.filter { it.gender.isNotEmpty() && it.gender != me.gender }
         val preferred = PREFERRED[me.language]?.get(other.firstOrNull()?.gender)
-        return (other.firstOrNull { it.code == preferred } ?: other.firstOrNull() ?: same.firstOrNull())?.id ?: speaker
+        return (other.firstOrNull { it.code == preferred } ?: other.firstOrNull { it.code !in WHISPERING }
+            ?: same.firstOrNull { it.code !in WHISPERING })?.id ?: speaker
     }
 
     /** Supertonic's voices are five female then five male. */
