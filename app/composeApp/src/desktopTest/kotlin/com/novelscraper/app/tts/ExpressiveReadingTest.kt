@@ -269,25 +269,53 @@ class ExpressiveReadingTest {
         assertEquals("\"STOP!\"", d[0]!!.pieces[0].text)
     }
 
-    /** Each piece as "N:", "D:" or "S:" and its text, with system messages in square brackets. */
-    private fun roles(text: String, system: Set<SystemMark> = setOf(SystemMark.SQUARE)) =
-        ExpressiveReading.split(text, system = system).first.map { it.role.name.first() + ":" + it.text }
+    private val SQUARE = setOf(SystemMark.SQUARE)
 
-    @Test fun aSystemMessageIsItsOwnVoice() {
-        assertEquals(listOf("S:[Skill acquired: Stealth]", "N:He grinned."), roles("[Skill acquired: Stealth] He grinned."))
-        assertEquals(listOf("S:【Level up】", "N:he read."), roles("【Level up】 he read.", setOf(SystemMark.LENTICULAR)))
-        // Quotes inside a message are part of it.
-        assertEquals(listOf("S:[Quest: \"Find the key\"]", "N:appeared."), roles("[Quest: \"Find the key\"] appeared."))
-        // Off unless the novel picks it: brackets are only brackets.
-        assertEquals(listOf("N:[Skill acquired: Stealth] He grinned."), roles("[Skill acquired: Stealth] He grinned.", emptySet()))
+    /** Each paragraph (one sentence each) as its pieces' roles and texts. */
+    private fun roles(vararg paragraphs: String, system: Set<SystemMark> = SQUARE) =
+        ExpressiveReading.direct(paragraphs.toList(), BooleanArray(paragraphs.size) { true }, system = system)
+            .map { d -> d!!.pieces.joinToString(" | ") { it.role.name.first() + ":" + it.text } }
+
+    @Test fun aLineWhollyInBracketsIsASystemMessage() {
+        assertEquals(
+            listOf("S:[Skill acquired: Stealth]", "S:[Noah Osmont][Occupation: Hunter]", "S:【Level up】"),
+            roles("[Skill acquired: Stealth]", "[Noah Osmont][Occupation: Hunter]", "【Level up】",
+                system = setOf(SystemMark.SQUARE, SystemMark.LENTICULAR)),
+        )
+        // Off unless the novel picks it.
+        assertEquals(listOf("N:[Skill acquired: Stealth]"), roles("[Skill acquired: Stealth]", system = emptySet()))
+    }
+
+    @Test fun aBracketedNameInsideASentenceStaysTheNarrators() {
+        // As Infinite Mana in the Apocalypse writes its items and skills.
+        assertEquals(
+            listOf("N:I kept using [Smite] all the way through.", "N:I took a few of the piles of [Core]s out."),
+            roles("I kept using [Smite] all the way through.", "I took a few of the piles of [Core]s out."),
+        )
+        // Quotes still work around one.
+        assertEquals(listOf("D:\"Clear [Mangrove Swamp] first,\" | N:he said."),
+            roles("\"Clear [Mangrove Swamp] first,\" he said."))
+    }
+
+    @Test fun aStatusWindowIsNotReadAsStuttering() {
+        val window = "[Skill(s): (F-Fireball-100)(D-Danger Sense-100)]"
+        val asSystem = ExpressiveReading.direct(listOf(window), booleanArrayOf(true), system = SQUARE)[0]!!
+        assertEquals(listOf(0f), asSystem.pieces.map { it.onset }, "one whole piece, nothing cut")
+        // Read as narration too (system messages off): a letter right after a
+        // bracket or parenthesis is a rank, not a stammer.
+        val asNarration = ExpressiveReading.direct(listOf(window), booleanArrayOf(true))[0]!!
+        assertEquals(listOf(0f), asNarration.pieces.map { it.onset })
+        assertEquals(listOf("~Violet~0.17|170", "Violet.|0"),
+            ExpressiveReading.beats("V-Violet.", Role.NARRATOR, 1f).map(::show), "a real stutter still is one")
     }
 
     @Test fun aSystemMessageRunsAcrossSentencesToTheParagraphsEnd() {
         val spoken = listOf("[Level up.", "Strength +1.]", "[Unclosed note.", "He sat.")
-        val d = ExpressiveReading.direct(spoken, booleanArrayOf(false, true, true, true), system = setOf(SystemMark.SQUARE))
+        val d = ExpressiveReading.direct(spoken, booleanArrayOf(false, true, true, true), system = SQUARE)
         assertEquals(listOf(Role.SYSTEM), d[0]!!.pieces.map { it.role })
         assertEquals(listOf(Role.SYSTEM), d[1]!!.pieces.map { it.role })
-        assertEquals(listOf(Role.NARRATOR), d[3]!!.pieces.map { it.role }, "forgotten at the paragraph's end")
+        assertEquals(listOf(Role.NARRATOR), d[2]!!.pieces.map { it.role }, "never closed: not a message")
+        assertEquals(listOf(Role.NARRATOR), d[3]!!.pieces.map { it.role })
     }
 
     @Test fun aSystemMessageInCapitalsIsNotAShout() {
@@ -318,9 +346,18 @@ class ExpressiveReadingTest {
         assertEquals(3, ExpressiveReading.speakerFor(BOOK, ReaderPrefs.ENGINE_PIPER, 3, Role.SYSTEM), "Piper: one voice")
     }
 
-    @Test fun detectionSuggestsSystemMessagesSeenOften() {
-        val litrpg = List(5) { "<p>[Skill acquired: Stealth]</p><p>He grinned.</p><p>[Level up!]</p>" }
-        assertEquals(setOf(SystemMark.SQUARE), VoicingDetector.detect(litrpg).suggestedSystem)
+    @Test fun detectionCountsStandaloneLinesApartFromNames() {
+        val litrpg = List(5) { "<p>[Skill acquired: Stealth]</p><p>He used [Smite] twice.</p><p>[Level up!]</p>" }
+        val found = VoicingDetector.detect(litrpg)
+        assertEquals(setOf(SystemMark.SQUARE), found.suggestedSystem)
+        assertEquals(10, found.system[SystemMark.SQUARE])
+        assertEquals(5, found.inlineBrackets)
+
+        // Names only, as most of Infinite Mana's chapters: nothing to read as messages.
+        val names = List(20) { "<p>I took the [Core]s and cast [Smite] in [Mangrove Swamp].</p>" }
+        assertNull(VoicingDetector.detect(names).suggestedSystem)
+        assertEquals(60, VoicingDetector.detect(names).inlineBrackets)
+
         val tagged = listOf("<p>[Progression Fantasy, LitRPG]</p><p>He grinned.</p>")
         assertNull(VoicingDetector.detect(tagged).suggestedSystem, "one tag is not a novel's messages")
     }

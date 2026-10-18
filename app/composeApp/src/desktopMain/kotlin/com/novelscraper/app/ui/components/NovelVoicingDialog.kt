@@ -136,7 +136,8 @@ fun NovelVoicingDialog(bookId: Int, title: String, onDismiss: () -> Unit) {
                 }
                 Note(if (system.isEmpty()) "None. Pick one for a LitRPG novel whose messages are in brackets; " +
                     "it's off unless picked, since brackets also hold author notes."
-                    else "Read in a voice of their own.")
+                    else "Lines wholly in brackets, like status windows, are read in a voice of their own. " +
+                    "A [Skill] named inside a sentence stays in the narrator's voice.")
                 if (system.isNotEmpty()) SystemVoice(engine, v) { v = it }
 
                 TextButton(
@@ -272,8 +273,9 @@ private fun summary(found: VoicingDetector.Found): String {
         .joinToString(" · ") { (q, n) -> "${q.label} ${"%,d".format(n)}" }.ifEmpty { "no quote marks" }
     val stutters = found.stutters.filterValues { it > 0 }.entries.sortedByDescending { it.value }
         .joinToString(" · ") { (m, n) -> "${m.label} $n" }.ifEmpty { "none found, so all marks stay on" }
-    val system = found.system.entries.sortedByDescending { it.value }
-        .joinToString(" · ") { (m, n) -> "${m.label} $n" }.ifEmpty { "none" }
+    val lines = found.system.values.sum()
+    val system = "$lines standalone line${if (lines == 1) "" else "s"}, " +
+        "${found.inlineBrackets} inside sentences (read as narration)"
     val chapters = found.chapters
     return "From $chapters stored chapter${if (chapters == 1) "" else "s"}: $quotes. Stutters: $stutters. " +
         "Bracketed: $system."

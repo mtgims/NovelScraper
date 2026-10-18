@@ -104,24 +104,35 @@ object ExpressiveReading : NarrationDirector {
         dynamics: Boolean = true,
         system: Set<SystemMark> = emptySet(),
     ): List<Direction?> {
-        var state = QuoteState()
-        val pieces = spoken.mapIndexed { i, text ->
-            val paragraphStart = i == 0 || paragraphEnd.getOrElse(i - 1) { false }
-            val out = text?.let { t ->
-                if (t.none { it.isLetterOrDigit() }) emptyList()
-                else split(t, state, quotes, paragraphStart, system).also { (_, after) -> state = after }.first
-            }
-            if (paragraphEnd.getOrElse(i) { false }) state = QuoteState()
-            out
-        }
-        // How each paragraph's lines are spoken, from its narration: one speaker
-        // to a paragraph is the convention, so a cue there is about its lines.
         val paragraph = IntArray(spoken.size)
         var current = 0
         for (i in spoken.indices) {
             paragraph[i] = current
             if (paragraphEnd.getOrElse(i) { false }) current++
         }
+        // A system message is a paragraph that is nothing but brackets (a status
+        // window, "[Level up!]"). Brackets inside a sentence ("I used [Smite]")
+        // are names, read by the narrator: a voice changing for one word is worse
+        // than none.
+        val systemParagraphs: Set<Int> = if (system.isEmpty()) emptySet() else spoken.indices
+            .groupBy { paragraph[it] }
+            .filterValues { sentences -> isSystemLine(sentences.mapNotNull { spoken[it] }.joinToString(" "), system) }
+            .keys
+        var state = QuoteState()
+        val pieces = spoken.mapIndexed { i, text ->
+            val paragraphStart = i == 0 || paragraphEnd.getOrElse(i - 1) { false }
+            val out = text?.let { t ->
+                when {
+                    t.none { it.isLetterOrDigit() } -> emptyList()
+                    paragraph[i] in systemParagraphs -> listOf(Piece(t.trim(), Role.SYSTEM))
+                    else -> split(t, state, quotes, paragraphStart).also { (_, after) -> state = after }.first
+                }
+            }
+            if (paragraphEnd.getOrElse(i) { false }) state = QuoteState()
+            out
+        }
+        // How each paragraph's lines are spoken, from its narration: one speaker
+        // to a paragraph is the convention, so a cue there is about its lines.
         val tones: Map<Int, Tone> = if (!dynamics) emptyMap() else spoken.indices.groupBy { paragraph[it] }
             .mapValues { (_, sentences) ->
                 toneOf(sentences.flatMap { pieces[it].orEmpty() }.filter { it.role == Role.NARRATOR }.joinToString(" ") { it.text })
@@ -151,7 +162,8 @@ object ExpressiveReading : NarrationDirector {
                     Tone.SHOUT -> SHOUT_GAIN to SHOUT_SPEED
                     Tone.PLAIN -> 1f to 1f
                 }
-                beats(p.text, p.role, speed * pace, stutters, gain)
+                // A status window's "(F-Fireball-100)" is a rank, not a stammer.
+                beats(p.text, p.role, speed * pace, if (p.role == Role.SYSTEM) emptySet() else stutters, gain)
             }
             // Pieces of one sentence are never run together; the sentence's own
             // pause follows its last piece, not both.
@@ -170,7 +182,7 @@ object ExpressiveReading : NarrationDirector {
         beatRegexes.getOrPut(marks) {
             val chars = marks.joinToString("") { it.chars }.replace("-", "\\-")
             val stutter = if (chars.isEmpty()) "" else
-                """(?<![\p{L}\p{N}'’\-‐‑–—])(?<frags>(?:\p{L}{1,4}[$chars])+)(?<word>\p{L}[\p{L}'’]*)|"""
+                """(?<![\p{L}\p{N}'’\-‐‑–—(\[【])(?<frags>(?:\p{L}{1,4}[$chars])+)(?<word>\p{L}[\p{L}'’]*)|"""
             Regex(
                 stutter +
                     """(?<dots>\.\.\.|…)(?=\s*[\p{L}\p{N}"“'‘«])""" +
@@ -190,6 +202,31 @@ object ExpressiveReading : NarrationDirector {
 
     // "re-read", "co-op": a prefix and a hyphen, not a stammer.
     private val PREFIXES = setOf("re", "pre", "de", "co", "un", "non", "sub", "ex", "bi", "tri", "mis", "anti", "semi")
+
+    private val BRACKETS = mapOf(
+        SystemMark.SQUARE to Regex("""\[[^\[\]\n]+]"""),
+        SystemMark.LENTICULAR to Regex("""【[^【】\n]+】"""),
+    )
+
+    /**
+     * Whether [text] (a whole paragraph) is nothing but bracketed stretches in
+     * [marks], with at most punctuation around them: "[Vitality: 200+40]",
+     * "[Noah Osmont][Occupation: Hunter]".
+     */
+    internal fun isSystemLine(text: String, marks: Set<SystemMark>): Boolean {
+        var rest = text
+        var found = false
+        for (m in marks) {
+            val r = BRACKETS.getValue(m)
+            if (r.containsMatchIn(rest)) found = true
+            rest = r.replace(rest, " ")
+        }
+        return found && rest.none { it.isLetterOrDigit() }
+    }
+
+    /** How many bracketed stretches in [marks] [text] has, standalone lines or not. */
+    internal fun countBrackets(text: String, marks: Set<SystemMark>): Int =
+        marks.sumOf { BRACKETS.getValue(it).findAll(text).count() }
 
     /** [text] cut at its stutters, ellipses and dashes, a pause after each. */
     internal fun beats(
@@ -258,7 +295,6 @@ object ExpressiveReading : NarrationDirector {
         state: QuoteState = QuoteState(),
         quotes: Set<Quote> = Quote.AUTOMATIC,
         paragraphStart: Boolean = false,
-        system: Set<SystemMark> = emptySet(),
     ): Pair<List<Piece>, QuoteState> {
         val out = ArrayList<Piece>()
         var closer = state.closer
@@ -267,7 +303,7 @@ object ExpressiveReading : NarrationDirector {
         val run = StringBuilder()
         fun flush() {
             val t = run.toString().trim()
-            if (t.isNotEmpty()) out.add(Piece(t, roleOf(closer)))
+            if (t.isNotEmpty()) out.add(Piece(t, if (closer == null) Role.NARRATOR else Role.DIALOGUE))
             run.clear()
         }
         for (k in text.indices) {
@@ -289,7 +325,7 @@ object ExpressiveReading : NarrationDirector {
                     else -> { run.append(c); flush(); closer = null }
                 }
             } else {
-                val opens = opener(c, before, after, quotes, dashParagraph, system)
+                val opens = opener(c, before, after, quotes, dashParagraph)
                 if (opens != null) { flush(); closer = opens }
                 run.append(c)
             }
@@ -298,24 +334,9 @@ object ExpressiveReading : NarrationDirector {
         return merge(out) to QuoteState(closer, dashParagraph)
     }
 
-    /** Who speaks inside a stretch that [closer] will close: a bracket holds a system message. */
-    private fun roleOf(closer: Char?): Role = when {
-        closer == null -> Role.NARRATOR
-        SystemMark.entries.any { it.close == closer } -> Role.SYSTEM
-        else -> Role.DIALOGUE
-    }
-
-    /** The mark that will close a quote (or a system message) [c] opens here, or null if it opens none. */
-    private fun opener(
-        c: Char,
-        before: Char?,
-        after: Char?,
-        quotes: Set<Quote>,
-        dashParagraph: Boolean,
-        system: Set<SystemMark>,
-    ): Char? {
+    /** The mark that will close a quote [c] opens here, or null if it opens none. */
+    private fun opener(c: Char, before: Char?, after: Char?, quotes: Set<Quote>, dashParagraph: Boolean): Char? {
         val wordStart = before == null || !before.isLetterOrDigit()
-        system.firstOrNull { it.open == c }?.let { return it.close }
         return when {
             c == '"' && Quote.DOUBLE_STRAIGHT in quotes -> '"'
             c == '“' && Quote.DOUBLE_CURLY in quotes -> '”'
