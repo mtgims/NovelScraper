@@ -100,6 +100,7 @@ fun main(args: Array<String>) {
         com.novelscraper.app.ui.components.GpuAccelerationSetting()
         com.novelscraper.app.ui.components.ExpressiveReadingSetting()
     }
+    com.novelscraper.app.tts.AudiobookExport.director = com.novelscraper.app.tts.ExpressiveReading
     com.novelscraper.app.ui.screen.BookHooks.narration = { bookId, title, onDismiss ->
         com.novelscraper.app.ui.components.NovelVoicingDialog(bookId, title, onDismiss)
     }

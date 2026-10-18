@@ -43,6 +43,9 @@ object AudiobookExport {
         val error: String? = null,
     )
 
+    /** Expressive reading and a novel's own words (desktop); null reads plainly. */
+    var director: NarrationDirector? = null
+
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
     private val _state = MutableStateFlow(State())
     val state: StateFlow<State> = _state.asStateFlow()
@@ -69,13 +72,11 @@ object AudiobookExport {
                 try {
                     val chapter = Library.store.chapter(bookId, position)
                     _state.value = _state.value.copy(chapter = chapter.title, done = done)
-                    val plain = Sentences.plain(chapter.content)
-                    val sentences = Sentences.ranges(plain).map { plain.substring(it.first, it.last + 1) }
-                    val lines = NarrationText.spokenLines(sentences).filterNotNull()
-                    if (lines.isEmpty()) { done++; continue }
+                    val audio = chapterAudio(bookId, chapter.content, voice, director)
+                    if (audio.isEmpty()) { done++; continue }
                     val name = fileName(bookTitle, position, chapter.title)
                     val saved = saveToDownloads(name, "audio/wav") { out ->
-                        writeWav(out, voice, lines)
+                        writeWav(out, voice.sampleRate, audio)
                     }
                     done++
                     _state.value = _state.value.copy(done = done, lastFile = saved)
@@ -108,6 +109,33 @@ object AudiobookExport {
 
     private fun speaker() = ReaderPrefs.speakerFor(ReaderPrefs.ttsEngine.value)
 
+    /**
+     * A chapter's audio, one piece per spoken sentence, made when called: read
+     * as narration would, with expressive reading if [director] has it on for
+     * this novel (one [DirectedSpeech] for the file, so its voices stay level),
+     * else plainly, as it always was.
+     */
+    internal fun chapterAudio(
+        bookId: Int,
+        content: String,
+        voice: NarratorVoice,
+        director: NarrationDirector?,
+    ): List<suspend () -> FloatArray> {
+        val plain = Sentences.plain(content)
+        val ranges = Sentences.ranges(plain)
+        val sentences = ranges.map { plain.substring(it.first, it.last + 1) }
+        val spoken = NarrationText.spokenLines(sentences, director?.pronunciations(bookId).orEmpty())
+        val speed = ReaderPrefs.ttsRate.value.coerceIn(0.5f, 2.5f)
+        val engine = ReaderPrefs.ttsEngine.value
+        val speaker = speaker()
+        if (director != null && director.enabled(bookId)) {
+            val speech = DirectedSpeech(voice, director, bookId)
+            return director.direct(bookId, spoken, paragraphEnds(plain, ranges)).filterNotNull()
+                .map { direction -> suspend { speech.speak(direction, engine, speaker, speed) } }
+        }
+        return spoken.filterNotNull().map { line -> suspend { voice.generate(line, speaker, speed) } }
+    }
+
     /** "The Novel - 012 Chapter title.wav", safe on every file system. */
     internal fun fileName(bookTitle: String, position: Int, chapterTitle: String): String {
         val safe = { s: String -> s.replace(Regex("""[\\/:*?"<>|\n\r\t]"""), " ").trim().take(60) }
@@ -116,20 +144,18 @@ object AudiobookExport {
     }
 
     /**
-     * A 16-bit mono WAV of [lines]. WAV puts its size in the header, so the audio
-     * is synthesized into a scratch file first (chapters run to tens of MB) and
-     * then copied out behind the header; the scratch file goes either way.
+     * A 16-bit mono WAV of [audio], piece by piece. WAV puts its size in the
+     * header, so the audio is synthesized into a scratch file first (chapters
+     * run to tens of MB) and then copied out behind the header; the scratch
+     * file goes either way.
      */
-    private suspend fun writeWav(out: OutputStream, voice: NarratorVoice, lines: List<String>) {
-        val rate = voice.sampleRate
-        val speed = ReaderPrefs.ttsRate.value.coerceIn(0.5f, 2.5f)
-        val speaker = speaker()
+    private suspend fun writeWav(out: OutputStream, rate: Int, audio: List<suspend () -> FloatArray>) {
         val scratch = java.io.File.createTempFile("narration", ".pcm", appCacheDir())
         try {
             scratch.outputStream().buffered().use { raw ->
-                for (line in lines) {
+                for (piece in audio) {
                     if (!coroutineContext.isActive) break
-                    val pcm = withContext(Dispatchers.Default) { voice.generate(line, speaker, speed) }
+                    val pcm = withContext(Dispatchers.Default) { piece() }
                     val bytes = ByteArray(pcm.size * 2)
                     for (i in pcm.indices) {
                         val v = (pcm[i].coerceIn(-1f, 1f) * Short.MAX_VALUE).toInt()

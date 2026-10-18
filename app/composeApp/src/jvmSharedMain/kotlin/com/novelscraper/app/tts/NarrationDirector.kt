@@ -48,3 +48,13 @@ interface NarrationDirector {
      *  novel's names are not an expressive matter. */
     fun pronunciations(bookId: Int): List<NarrationText.Term> = emptyList()
 }
+
+/**
+ * Per sentence of [plain] (cut at [ranges]), whether it ends its paragraph:
+ * only spaces lie between it and a line break, or the end of the text.
+ */
+internal fun paragraphEnds(plain: String, ranges: List<IntRange>): BooleanArray = BooleanArray(ranges.size) { i ->
+    var j = ranges[i].last + 1
+    while (j < plain.length && plain[j] != '\n' && plain[j].isWhitespace()) j++
+    j >= plain.length || plain[j] == '\n'
+}
