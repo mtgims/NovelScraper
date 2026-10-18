@@ -63,6 +63,15 @@ FROM chapter c JOIN chapter_content cc ON cc.chapter_id = c.id
 WHERE c.book_id = ?
 ORDER BY c.position;
 
+-- The text of up to some number of a novel's stored chapters, for telling how
+-- it writes dialogue.
+selectStoredSample:
+SELECT cc.html
+FROM chapter c JOIN chapter_content cc ON cc.chapter_id = c.id
+WHERE c.book_id = ?
+ORDER BY c.position
+LIMIT ?;
+
 selectForMerge:
 SELECT id, path, position, number, title, volume, release_time
 FROM chapter WHERE book_id = ?;

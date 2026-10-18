@@ -100,6 +100,9 @@ fun main(args: Array<String>) {
         com.novelscraper.app.ui.components.GpuAccelerationSetting()
         com.novelscraper.app.ui.components.ExpressiveReadingSetting()
     }
+    com.novelscraper.app.ui.screen.BookHooks.narration = { bookId, title, onDismiss ->
+        com.novelscraper.app.ui.components.NovelVoicingDialog(bookId, title, onDismiss)
+    }
     // Settings are saved in the background; make sure pending saves land however
     // the app exits (window close, logout, SIGTERM).
     Runtime.getRuntime().addShutdownHook(Thread { PropertiesStore.flush() })

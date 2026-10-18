@@ -9,12 +9,14 @@ import com.novelscraper.app.data.ReaderPrefs
  *
  * Quotes are tracked across a chapter, because the sentence split cuts
  * `"Hello. How are you?" she asked.` in two, and forgotten at each paragraph's
- * end (a speech running over paragraphs opens a quote again anyway). Single
- * quotes are left alone: they are apostrophes far more often than speech.
+ * end (a speech running over paragraphs opens a quote again anyway). Which
+ * marks count as dialogue and as stutters, and the dialogue voice, can be set
+ * per novel ([NovelVoicing]); the general settings fill in the rest.
  */
 object ExpressiveReading : NarrationDirector {
 
-    override val enabled: Boolean get() = ReaderPrefs.ttsExpressive.value
+    override fun enabled(bookId: Int): Boolean =
+        NovelVoicings.get(bookId).enabled ?: ReaderPrefs.ttsExpressive.value
 
     // Pauses, in milliseconds at 1x, added after the voice's own.
     internal const val PAUSE_PARAGRAPH = 250
@@ -28,18 +30,36 @@ object ExpressiveReading : NarrationDirector {
     internal const val FASTER = 1.06f   // a short exclamation
     internal const val SLOWER = 0.96f   // a long, descriptive sentence
 
-    private const val OPEN = "“「『"
-    private const val CLOSE = "”」』"
-    private const val QUOTES = "\"“”「」『』"
+    private const val QUOTES = "\"“”'‘’「」『』«»"
 
-    override fun direct(spoken: List<String?>, paragraphEnd: BooleanArray): List<Direction?> {
-        var quoted = false
+    /** Where a quote is closed by a dash, not a quote mark. */
+    private const val BY_DASH = '—'
+
+    /** What is open at a point in the text: the mark that will close it, and
+     *  whether this paragraph speaks by dashes ([Quote.DASH]). */
+    internal data class QuoteState(val closer: Char? = null, val dashParagraph: Boolean = false)
+
+    override fun direct(bookId: Int, spoken: List<String?>, paragraphEnd: BooleanArray): List<Direction?> {
+        val v = NovelVoicings.get(bookId)
+        return direct(spoken, paragraphEnd, v.quotes ?: Quote.AUTOMATIC, v.stutters ?: ALL_MARKS)
+    }
+
+    private val ALL_MARKS = StutterMark.entries.toSet()
+
+    internal fun direct(
+        spoken: List<String?>,
+        paragraphEnd: BooleanArray,
+        quotes: Set<Quote> = Quote.AUTOMATIC,
+        stutters: Set<StutterMark> = ALL_MARKS,
+    ): List<Direction?> {
+        var state = QuoteState()
         val pieces = spoken.mapIndexed { i, text ->
+            val paragraphStart = i == 0 || paragraphEnd.getOrElse(i - 1) { false }
             val out = text?.let { t ->
                 if (t.none { it.isLetterOrDigit() }) emptyList()
-                else split(t, quoted).also { (_, still) -> quoted = still }.first
+                else split(t, state, quotes, paragraphStart).also { (_, after) -> state = after }.first
             }
-            if (paragraphEnd.getOrElse(i) { false }) quoted = false
+            if (paragraphEnd.getOrElse(i) { false }) state = QuoteState()
             out
         }
         return spoken.mapIndexed { i, text ->
@@ -52,27 +72,50 @@ object ExpressiveReading : NarrationDirector {
                     if (own.last().dialogue && next?.first()?.dialogue == true) PAUSE_EXCHANGE else PAUSE_PARAGRAPH
                 else -> pauseFor(text)
             }
-            val beats = own.flatMap { beats(it.text, it.dialogue, speed) }
+            val beats = own.flatMap { beats(it.text, it.dialogue, speed, stutters) }
             // The sentence's own pause follows its last piece, not both.
             Direction(beats.dropLast(1) + beats.last().copy(pauseAfterMs = 0), pause)
         }
     }
 
-    // A stutter: up to four letters and a hyphen or dash (novels set them as
-    // "H–help" as often as "H-help"), once or more, before a
-    // word they begin ("V-Violet", "I-I-I", "that-that"). A trailing "..." or
-    // dash with more of the sentence after it. Each is a beat to pause on.
-    private val BEAT = Regex(
-        """(?<![\p{L}\p{N}'’\-‐‑–—])(?<frags>(?:\p{L}{1,4}[\-‐‑–—])+)(?<word>\p{L}[\p{L}'’]*)""" +
-            """|(?<dots>\.\.\.|…)(?=\s*[\p{L}\p{N}"“'‘])""" +
-            """|\s*(?<dash>—|–|--|\s-\s)\s*(?=[\p{L}\p{N}"“'‘])""",
-    )
+    // A stutter: up to four letters and one of the novel's stutter marks, once
+    // or more, before a word they begin ("V-Violet", "I—I", "that–that"). A
+    // trailing "..." or dash with more of the sentence after it. Each is a beat
+    // to pause on.
+    private val beatRegexes = HashMap<Set<StutterMark>, Regex>()
+
+    private fun beatRegex(marks: Set<StutterMark>): Regex = synchronized(beatRegexes) {
+        beatRegexes.getOrPut(marks) {
+            val chars = marks.joinToString("") { it.chars }.replace("-", "\\-")
+            val stutter = if (chars.isEmpty()) "" else
+                """(?<![\p{L}\p{N}'’\-‐‑–—])(?<frags>(?:\p{L}{1,4}[$chars])+)(?<word>\p{L}[\p{L}'’]*)|"""
+            Regex(
+                stutter +
+                    """(?<dots>\.\.\.|…)(?=\s*[\p{L}\p{N}"“'‘«])""" +
+                    """|\s*(?<dash>—|–|--|\s-\s)\s*(?=[\p{L}\p{N}"“'‘«])""",
+            )
+        }
+    }
+
+    private val MARK_CHARS = StutterMark.entries.joinToString("") { it.chars }.toCharArray()
+
+    /** How many stutters [text] has, set with [marks]. */
+    internal fun countStutters(text: String, marks: Set<StutterMark>): Int =
+        beatRegex(marks).findAll(text).count { m ->
+            val word = m.groups["word"]?.value ?: return@count false
+            isStutter(m.groups["frags"]!!.value.split(*MARK_CHARS).filter { it.isNotEmpty() }, word)
+        }
 
     // "re-read", "co-op": a prefix and a hyphen, not a stammer.
     private val PREFIXES = setOf("re", "pre", "de", "co", "un", "non", "sub", "ex", "bi", "tri", "mis", "anti", "semi")
 
     /** [text] cut at its stutters, ellipses and dashes, a pause after each. */
-    internal fun beats(text: String, dialogue: Boolean, speed: Float): List<Piece> {
+    internal fun beats(
+        text: String,
+        dialogue: Boolean,
+        speed: Float,
+        marks: Set<StutterMark> = ALL_MARKS,
+    ): List<Piece> {
         val out = ArrayList<Piece>()
         val rest = StringBuilder()
         /** Speak what has gathered, then pause; a pause with nothing to say
@@ -86,9 +129,9 @@ object ExpressiveReading : NarrationDirector {
             }
         }
         var at = 0
-        for (m in BEAT.findAll(text)) {
+        for (m in beatRegex(marks).findAll(text)) {
             val word = m.groups["word"]?.value
-            val frags = m.groups["frags"]?.value?.split('-', '‐', '‑', '–', '—')?.filter { it.isNotEmpty() }
+            val frags = m.groups["frags"]?.value?.split(*MARK_CHARS)?.filter { it.isNotEmpty() }
             if (word != null && frags != null && !isStutter(frags, word)) continue
             rest.append(text, at, m.range.first)
             at = m.range.last + 1
@@ -122,27 +165,69 @@ object ExpressiveReading : NarrationDirector {
         return frags.all { f -> word.startsWith(f, ignoreCase = true) }
     }
 
-    /** [text] cut at its quotes; the second value is whether a quote is still open after it. */
-    internal fun split(text: String, quotedAtStart: Boolean): Pair<List<Piece>, Boolean> {
+    /**
+     * [text] cut at the novel's dialogue marks ([quotes]), starting from [state];
+     * also returns what is still open after it. [paragraphStart] says whether a
+     * dash here can open a paragraph of dialogue.
+     */
+    internal fun split(
+        text: String,
+        state: QuoteState = QuoteState(),
+        quotes: Set<Quote> = Quote.AUTOMATIC,
+        paragraphStart: Boolean = false,
+    ): Pair<List<Piece>, QuoteState> {
         val out = ArrayList<Piece>()
-        var quoted = quotedAtStart
+        var closer = state.closer
+        val dashParagraph = state.dashParagraph ||
+            (paragraphStart && Quote.DASH in quotes && text.trimStart().firstOrNull().let { it == '—' || it == '–' })
         val run = StringBuilder()
         fun flush() {
             val t = run.toString().trim()
-            if (t.isNotEmpty()) out.add(Piece(t, quoted))
+            if (t.isNotEmpty()) out.add(Piece(t, closer != null))
             run.clear()
         }
-        for (c in text) {
-            val opens = c in OPEN || (c == '"' && !quoted)
-            val closes = c in CLOSE || (c == '"' && quoted)
-            when {
-                opens && !quoted -> { flush(); quoted = true; run.append(c) }
-                closes && quoted -> { run.append(c); flush(); quoted = false }
-                else -> run.append(c)
+        for (k in text.indices) {
+            val c = text[k]
+            val before = text.getOrNull(k - 1)
+            val after = text.getOrNull(k + 1)
+            val open = closer
+            if (open != null) {
+                val closes = when (open) {
+                    BY_DASH -> c == '—' || c == '–'
+                    // An apostrophe inside a word ("don't") closes nothing.
+                    '\'', '’' -> c == open && (after == null || !after.isLetterOrDigit())
+                    else -> c == open
+                }
+                when {
+                    !closes -> run.append(c)
+                    // The dash that ends a line of dialogue begins the narration.
+                    open == BY_DASH -> { flush(); closer = null; run.append(c) }
+                    else -> { run.append(c); flush(); closer = null }
+                }
+            } else {
+                val opens = opener(c, before, after, quotes, dashParagraph)
+                if (opens != null) { flush(); closer = opens }
+                run.append(c)
             }
         }
         flush()
-        return merge(out) to quoted
+        return merge(out) to QuoteState(closer, dashParagraph)
+    }
+
+    /** The mark that will close a quote [c] opens here, or null if it opens none. */
+    private fun opener(c: Char, before: Char?, after: Char?, quotes: Set<Quote>, dashParagraph: Boolean): Char? {
+        val wordStart = before == null || !before.isLetterOrDigit()
+        return when {
+            c == '"' && Quote.DOUBLE_STRAIGHT in quotes -> '"'
+            c == '“' && Quote.DOUBLE_CURLY in quotes -> '”'
+            c == '\'' && Quote.SINGLE_STRAIGHT in quotes && wordStart && after?.isLetter() == true -> '\''
+            c == '‘' && Quote.SINGLE_CURLY in quotes && wordStart -> '’'
+            c == '「' && Quote.CORNER in quotes -> '」'
+            c == '『' && Quote.WHITE_CORNER in quotes -> '』'
+            c == '«' && Quote.GUILLEMETS in quotes -> '»'
+            (c == '—' || c == '–') && dashParagraph -> BY_DASH
+            else -> null
+        }
     }
 
     /** Pieces with under two letters (a stray `",` or `—`) join a neighbour,
@@ -195,12 +280,16 @@ object ExpressiveReading : NarrationDirector {
         "British English" to mapOf("Female" to "bf_emma", "Male" to "bm_george"),
     )
 
-    override fun dialogueSpeaker(engine: String, speaker: Int): Int = when (engine) {
-        ReaderPrefs.ENGINE_KOKORO -> ReaderPrefs.kokoroDialogueSpeaker.value
-            .takeIf { KokoroVoices.voice(it) != null } ?: kokoroPartner(speaker)
-        ReaderPrefs.ENGINE_SUPERTONIC -> ReaderPrefs.supertonicDialogueSpeaker.value
-            .takeIf { it in TtsModels.SUPERTONIC_VOICES.indices } ?: supertonicPartner(speaker)
-        else -> speaker   // Piper has one voice per model
+    /** The novel's own dialogue voice, else the general one, else one picked to go with the narrator. */
+    override fun dialogueSpeaker(bookId: Int, engine: String, speaker: Int): Int {
+        val v = NovelVoicings.get(bookId)
+        return when (engine) {
+            ReaderPrefs.ENGINE_KOKORO -> (v.kokoroDialogue ?: ReaderPrefs.kokoroDialogueSpeaker.value)
+                .takeIf { KokoroVoices.voice(it) != null } ?: kokoroPartner(speaker)
+            ReaderPrefs.ENGINE_SUPERTONIC -> (v.supertonicDialogue ?: ReaderPrefs.supertonicDialogueSpeaker.value)
+                .takeIf { it in TtsModels.SUPERTONIC_VOICES.indices } ?: supertonicPartner(speaker)
+            else -> speaker   // Piper has one voice per model
+        }
     }
 
     /** A voice of the other gender in the narrator's language, else another of the same. */

@@ -54,9 +54,10 @@ class NeuralNarratorTest {
     /** Directs every sentence: the word "said" onwards is narration, the rest
      *  dialogue; a 500 ms pause after each. */
     private val director = object : NarrationDirector {
-        @Volatile override var enabled = true
+        @Volatile var on = true
+        override fun enabled(bookId: Int) = on
         var ends: BooleanArray? = null
-        override fun direct(spoken: List<String?>, paragraphEnd: BooleanArray): List<Direction?> {
+        override fun direct(bookId: Int, spoken: List<String?>, paragraphEnd: BooleanArray): List<Direction?> {
             ends = paragraphEnd
             return spoken.map { t ->
                 t?.let {
@@ -67,7 +68,7 @@ class NeuralNarratorTest {
                 }
             }
         }
-        override fun dialogueSpeaker(engine: String, speaker: Int) = speaker + 7
+        override fun dialogueSpeaker(bookId: Int, engine: String, speaker: Int) = speaker + 7
     }
 
     private val sinks = CopyOnWriteArrayList<Sink>()
@@ -203,7 +204,7 @@ class NeuralNarratorTest {
     }
 
     @Test fun switchedOffItReadsAsBefore() {
-        director.enabled = false
+        director.on = false
         ReaderPrefs.setTtsAutoNext(false)
         val sink = SizedSink()
         val directed = directedNarrator(sink)

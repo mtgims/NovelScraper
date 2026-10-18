@@ -397,6 +397,11 @@ class LibraryStore(
      * novel exported twice gives the same volumes both times. A window with
      * nothing stored in it is dropped rather than written empty.
      */
+    /** The text of up to [limit] of a novel's stored chapters, first ones first; nothing is fetched. */
+    suspend fun storedSample(id: Int, limit: Int): List<String> = io {
+        chapters.selectStoredSample(id.toLong(), limit.toLong()).executeAsList()
+    }
+
     suspend fun storedVolumes(id: Int): List<Epub.Volume> = io {
         // One query, not one per chapter. The text still all arrives at once,
         // which on a very long novel is a lot to hold while the file is

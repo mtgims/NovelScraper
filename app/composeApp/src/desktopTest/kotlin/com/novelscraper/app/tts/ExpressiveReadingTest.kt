@@ -18,13 +18,15 @@ class ExpressiveReadingTest {
 
     @BeforeTest fun prefs() {
         ReaderPrefs.init()
+        ReaderPrefs.setTtsExpressive(false)
+        NovelVoicings.set(BOOK, NovelVoicing())
         ReaderPrefs.setKokoroDialogueSpeaker(-1)
         ReaderPrefs.setSupertonicDialogueSpeaker(-1)
     }
 
     /** Each piece as "D:text" or "N:text". */
     private fun shape(text: String, quoted: Boolean = false) =
-        ExpressiveReading.split(text, quoted).first.map { (if (it.dialogue) "D:" else "N:") + it.text }
+        ExpressiveReading.split(text, ExpressiveReading.QuoteState(if (quoted) '"' else null)).first.map { (if (it.dialogue) "D:" else "N:") + it.text }
 
     @Test fun cutsASentenceAtItsQuotes() {
         assertEquals(listOf("D:\"Run,\"", "N:he said,", "D:\"now.\""), shape("\"Run,\" he said, \"now.\""))
@@ -95,14 +97,14 @@ class ExpressiveReadingTest {
 
         assertEquals(5, ExpressiveReading.supertonicPartner(0))
         assertEquals(1, ExpressiveReading.supertonicPartner(6))
-        assertEquals(3, ExpressiveReading.dialogueSpeaker(ReaderPrefs.ENGINE_PIPER, 3))
+        assertEquals(3, ExpressiveReading.dialogueSpeaker(BOOK, ReaderPrefs.ENGINE_PIPER, 3))
     }
 
     @Test fun theReadersChoiceWins() {
         ReaderPrefs.setKokoroDialogueSpeaker(KokoroVoices.all.first { it.code == "bm_fable" }.id)
-        assertEquals("bm_fable", KokoroVoices.voice(ExpressiveReading.dialogueSpeaker(ReaderPrefs.ENGINE_KOKORO, 0))!!.code)
+        assertEquals("bm_fable", KokoroVoices.voice(ExpressiveReading.dialogueSpeaker(BOOK, ReaderPrefs.ENGINE_KOKORO, 0))!!.code)
         ReaderPrefs.setSupertonicDialogueSpeaker(2)
-        assertEquals(2, ExpressiveReading.dialogueSpeaker(ReaderPrefs.ENGINE_SUPERTONIC, 0))
+        assertEquals(2, ExpressiveReading.dialogueSpeaker(BOOK, ReaderPrefs.ENGINE_SUPERTONIC, 0))
     }
 
     /** Each beat as "text|pause" or "~text~share|pause" for a cut-off start. */
@@ -156,4 +158,76 @@ class ExpressiveReadingTest {
         )
         assertEquals(listOf(true, true, true, false), d[2]!!.pieces.map { it.dialogue })
     }
+
+    /** Each piece as "D:text" or "N:text", with the novel's [quotes]. */
+    private fun marked(text: String, vararg quotes: Quote, paragraphStart: Boolean = true) =
+        ExpressiveReading.split(text, quotes = quotes.toSet(), paragraphStart = paragraphStart).first
+            .map { (if (it.dialogue) "D:" else "N:") + it.text }
+
+    @Test fun singleQuotesWhenTheNovelSpeaksInThem() {
+        assertEquals(listOf("D:‘Don’t go,’", "N:she said."), marked("‘Don’t go,’ she said.", Quote.SINGLE_CURLY))
+        assertEquals(listOf("D:'I can't,'", "N:he said."), marked("'I can't,' he said.", Quote.SINGLE_STRAIGHT))
+        // Not picked: the same line is all narration.
+        assertEquals(listOf("N:‘Don’t go,’ she said."), marked("‘Don’t go,’ she said.", *Quote.AUTOMATIC.toTypedArray()))
+        // Nor do double quotes count once the novel is set to single ones.
+        assertEquals(listOf("N:He said \"no\"."), marked("He said \"no\".", Quote.SINGLE_CURLY))
+    }
+
+    @Test fun guillemetsAndDashLedDialogue() {
+        assertEquals(listOf("D:«Bonjour»", "N:, dit-il."), marked("«Bonjour», dit-il.", Quote.GUILLEMETS))
+        // A paragraph opened by a dash speaks; each later dash turns narration on and off.
+        assertEquals(
+            listOf("D:—Hola", "N:—dijo él", "D:—. ¿Cómo estás?"),
+            marked("—Hola —dijo él—. ¿Cómo estás?", Quote.DASH),
+        )
+        // A dash in the middle of an ordinary paragraph is only a dash.
+        assertEquals(listOf("N:He waited—nothing."), marked("He waited—nothing.", Quote.DASH, paragraphStart = true))
+    }
+
+    @Test fun onlyTheNovelsStutterMarksAreStutters() {
+        val hyphenOnly = setOf(StutterMark.HYPHEN)
+        assertEquals(listOf("~Violet~0.17|110", "Violet.|0"),
+            ExpressiveReading.beats("V-Violet.", false, 1f, hyphenOnly).map(::show))
+        assertEquals(listOf("V|180", "Violet.|0"),
+            ExpressiveReading.beats("V–Violet.", false, 1f, hyphenOnly).map(::show), "an en dash is only a dash here")
+        assertEquals(listOf("V-Violet.|0"), ExpressiveReading.beats("V-Violet.", false, 1f, emptySet()).map(::show))
+    }
+
+    private fun show(p: Piece) =
+        (if (p.onset > 0f) "~${p.text}~${"%.2f".format(p.onset)}" else p.text) + "|" + p.pauseAfterMs
+
+    @Test fun aNovelsOwnSettingsWinOverTheGeneralOnes() {
+        assertEquals(false, ExpressiveReading.enabled(BOOK), "follows the general switch, off")
+        ReaderPrefs.setTtsExpressive(true)
+        assertEquals(true, ExpressiveReading.enabled(BOOK))
+
+        val fable = KokoroVoices.all.first { it.code == "bm_fable" }.id
+        NovelVoicings.set(BOOK, NovelVoicing(enabled = false, kokoroDialogue = fable, quotes = setOf(Quote.SINGLE_CURLY)))
+        assertEquals(false, ExpressiveReading.enabled(BOOK), "off for this novel")
+        assertEquals(true, ExpressiveReading.enabled(BOOK + 1), "others still follow the switch")
+        assertEquals(fable, ExpressiveReading.dialogueSpeaker(BOOK, ReaderPrefs.ENGINE_KOKORO, 0))
+        val d = ExpressiveReading.direct(BOOK, listOf("‘Run,’ she said."), booleanArrayOf(true))
+        assertEquals(listOf(true, false), d[0]!!.pieces.map { it.dialogue }, "the novel's own quote marks")
+
+        NovelVoicings.set(BOOK, NovelVoicing())
+        assertEquals(true, ExpressiveReading.enabled(BOOK), "reset: back to the general switch")
+    }
+
+    @Test fun detectionCountsTheMarksANovelUses() {
+        val british = List(5) { "<p>‘Wait,’ she said. ‘It’s – it’s fine.’</p><p>‘W–What?’</p>" }
+        val found = VoicingDetector.detect(british)
+        assertEquals(setOf(Quote.SINGLE_CURLY), found.suggestedQuotes)
+        assertEquals(setOf(StutterMark.EN_DASH), found.suggestedStutters)
+
+        val american = List(5) { "<p>&ldquo;Wait,&rdquo; she said. &ldquo;It&rsquo;s fine. He said &lsquo;no&rsquo;.&rdquo;</p>" }
+        val us = VoicingDetector.detect(american)
+        assertEquals(setOf(Quote.DOUBLE_CURLY), us.suggestedQuotes, "a quote within a quote isn't the novel's dialogue")
+        assertNull(us.suggestedStutters, "no stutters seen: every mark stays on")
+
+        val spanish = List(5) { "<p>—Hola —dijo él—. ¿Cómo estás?</p><p>—Bien.</p>" }
+        assertEquals(setOf(Quote.DASH), VoicingDetector.detect(spanish).suggestedQuotes)
+        assertEquals(0, VoicingDetector.detect(emptyList()).chapters)
+    }
+
+    private companion object { const val BOOK = 4242 }
 }

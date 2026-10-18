@@ -92,6 +92,12 @@ import com.novelscraper.app.ui.components.VolumeHeaderRow
 import com.novelscraper.app.ui.components.groupVolumes
 import com.novelscraper.app.ui.theme.Kicker
 
+/** What only some platforms add to a novel's page. */
+object BookHooks {
+    /** A novel's own narration settings, as a dialog: (book id, title, dismiss). */
+    var narration: (@Composable (bookId: Int, title: String, onDismiss: () -> Unit) -> Unit)? = null
+}
+
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun BookScreen(
@@ -115,6 +121,7 @@ fun BookScreen(
     val titleInBar = remember { mutableStateOf(false) }
     var showDownload by remember { mutableStateOf(false) }
     var showAudio by remember { mutableStateOf(false) }
+    var showNarration by remember { mutableStateOf(false) }
 
     // Surface action results as a toast.
     val action by vm.action.collectAsState()
@@ -163,6 +170,10 @@ fun BookScreen(
                             text = { Text("Remove downloads") },
                             onClick = { menuOpen = false; vm.removeDownloads() },
                         )
+                        if (BookHooks.narration != null) DropdownMenuItem(
+                            text = { Text("Expressive reading") },
+                            onClick = { menuOpen = false; showNarration = true },
+                        )
                         DropdownMenuItem(
                             text = { Text("Save as audio") },
                             onClick = { menuOpen = false; showAudio = true },
@@ -201,6 +212,10 @@ fun BookScreen(
     }
 
     val b = book
+    if (showNarration && b != null) {
+        BookHooks.narration?.invoke(b.id, b.title) { showNarration = false }
+    }
+
     if (showAudio && b != null) {
         AudioExportDialog(
             onChoice = { showAudio = false; vm.exportAudio(it) },

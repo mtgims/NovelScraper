@@ -26,16 +26,17 @@ data class Piece(
  * one, every sentence is a single [NarratorVoice.generate] call as before.
  */
 interface NarrationDirector {
-    /** Off unless the reader switched it on. */
-    val enabled: Boolean
+    /** Whether novel [bookId] is directed: off unless the reader switched it on. */
+    fun enabled(bookId: Int): Boolean
 
     /**
-     * One entry per sentence, aligned with [spoken] (null where spoken is null).
-     * [paragraphEnd] is true for a sentence that ends its paragraph. Never adds
-     * or removes sentences: the highlight follows their indices.
+     * One entry per sentence of a chapter of [bookId], aligned with [spoken]
+     * (null where spoken is null). [paragraphEnd] is true for a sentence that
+     * ends its paragraph. Never adds or removes sentences: the highlight
+     * follows their indices.
      */
-    fun direct(spoken: List<String?>, paragraphEnd: BooleanArray): List<Direction?>
+    fun direct(bookId: Int, spoken: List<String?>, paragraphEnd: BooleanArray): List<Direction?>
 
-    /** The dialogue speaker to pair with the narrator's [speaker] on [engine]. */
-    fun dialogueSpeaker(engine: String, speaker: Int): Int
+    /** The dialogue speaker to pair with the narrator's [speaker] on [engine], in [bookId]. */
+    fun dialogueSpeaker(bookId: Int, engine: String, speaker: Int): Int
 }

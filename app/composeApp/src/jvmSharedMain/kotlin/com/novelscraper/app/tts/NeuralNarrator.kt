@@ -293,7 +293,7 @@ class NeuralNarrator(
         val ranges = Sentences.ranges(plain)
         val sentences = ranges.map { plain.substring(it.first, it.last + 1) }
         val spoken = NarrationText.spokenLines(sentences)
-        val directions = director?.takeIf { it.enabled }?.let { d ->
+        val directions = director?.takeIf { it.enabled(bookId) }?.let { d ->
             // A sentence ends its paragraph when only spaces lie between it and
             // a line break (or the end of the text).
             val paragraphEnd = BooleanArray(ranges.size) { i ->
@@ -301,7 +301,7 @@ class NeuralNarrator(
                 while (j < plain.length && plain[j] != '\n' && plain[j].isWhitespace()) j++
                 j >= plain.length || plain[j] == '\n'
             }
-            d.direct(spoken, paragraphEnd)
+            d.direct(bookId, spoken, paragraphEnd)
         }
         val loaded = Loaded(
             position = position, title = chapter.title, sentences = sentences,
@@ -328,7 +328,7 @@ class NeuralNarrator(
     /** One directed sentence: each piece in its voice, then the pause. */
     private fun directed(direction: Direction): FloatArray {
         val narrator = speaker()
-        val dialogue = director?.dialogueSpeaker(engine, narrator) ?: narrator
+        val dialogue = director?.dialogueSpeaker(bookId, engine, narrator) ?: narrator
         val rate = speed()
         val sr = voice.sampleRate
         val silence = { ms: Int -> (ms / rate * sr / 1000).toInt().coerceAtLeast(0) }
