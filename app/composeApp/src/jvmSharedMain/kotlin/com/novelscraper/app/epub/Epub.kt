@@ -224,10 +224,9 @@ object Epub {
 
     private val BODY = Regex("<body[^>]*>(.*?)</body>", setOf(RegexOption.IGNORE_CASE, RegexOption.DOT_MATCHES_ALL))
     private val HEADING = Regex("<h[1-6][^>]*>(.*?)</h[1-6]>", setOf(RegexOption.IGNORE_CASE, RegexOption.DOT_MATCHES_ALL))
-    private val DROP_BLOCK = Regex("<(script|style|head|svg)\\b[^>]*>.*?</\\1>",
-        setOf(RegexOption.IGNORE_CASE, RegexOption.DOT_MATCHES_ALL))
+    /** Blocks dropped whole, contents and all ([dropBlocks]). */
+    private val DROP_OPEN = Regex("<(script|style|head|svg)\\b[^>]*>", RegexOption.IGNORE_CASE)
     private val COMMENT = Regex("<!--.*?-->", RegexOption.DOT_MATCHES_ALL)
-    private val TAG = Regex("<(/?)([a-zA-Z0-9]+)((?:\\s+[^>]*)?)/?>", RegexOption.DOT_MATCHES_ALL)
     private val SRC = Regex("\\bsrc\\s*=\\s*[\"']([^\"']*)[\"']", RegexOption.IGNORE_CASE)
     private val ALT = Regex("\\balt\\s*=\\s*[\"']([^\"']*)[\"']", RegexOption.IGNORE_CASE)
 
@@ -248,12 +247,9 @@ object Epub {
      * anywhere are gone: nothing here is fetched and nothing is executed.
      */
     private fun sanitize(body: String, files: Map<String, ByteArray>, dir: String, images: ImageBudget): String {
-        var s = DROP_BLOCK.replace(body, "")
+        var s = dropBlocks(body)
         s = COMMENT.replace(s, "")
-        return TAG.replace(s) { m ->
-            val closing = m.groupValues[1] == "/"
-            val name = m.groupValues[2].lowercase()
-            val attrs = m.groupValues[3]
+        return replaceTags(s) { closing, name, attrs ->
             when {
                 name !in KEEP -> ""
                 name == "img" -> {
@@ -291,9 +287,102 @@ object Epub {
     private fun escape(s: String) = s
         .replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;").replace("\"", "&quot;")
 
-    private fun unescape(s: String) = s
-        .replace("&nbsp;", " ").replace("&amp;", "&").replace("&lt;", "<")
-        .replace("&gt;", ">").replace("&quot;", "\"").replace("&#39;", "'")
+    /**
+     * Text with its character references decoded, in one pass (so "&amp;lt;"
+     * stays "&lt;"): decimal, hexadecimal and every HTML 4 name. It knew six
+     * names, so a title kept "&#8217;" and "&hellip;" as written. A non-breaking
+     * space becomes a plain one, as titles and the empty-page check want.
+     */
+    private fun unescape(s: String): String = ENTITY.replace(s) { m ->
+        val ref = m.groupValues[1]
+        val code = when {
+            ref.startsWith("#x") || ref.startsWith("#X") -> ref.drop(2).toIntOrNull(16)
+            ref.startsWith("#") -> ref.drop(1).toIntOrNull()
+            else -> null
+        }
+        when {
+            code != null && Character.isValidCodePoint(code) && code != 0 -> String(Character.toChars(code))
+            ref.startsWith("#") -> m.value
+            else -> HTML_ENTITIES[ref] ?: m.value
+        }
+    }.replace('\u00A0', ' ')
+
+    private val ENTITY = Regex("&(#[0-9]{1,7}|#[xX][0-9a-fA-F]{1,6}|[a-zA-Z][a-zA-Z0-9]{1,31});")
+
+    /**
+     * Each tag in [html] replaced by what [transform] makes of it (closing?,
+     * lower-case name, attributes). A tag ends at the first ">" outside quotes:
+     * a regex ending it at the first ">" anywhere cut `alt="a > b"` short,
+     * leaking the rest of the tag as text and losing a src that came after it.
+     * A quote never closed falls back to the first ">", as before. One pass.
+     */
+    private fun replaceTags(html: String, transform: (Boolean, String, String) -> String): String {
+        val out = StringBuilder(html.length)
+        var i = 0
+        while (i < html.length) {
+            val lt = html.indexOf('<', i)
+            if (lt < 0) { out.append(html, i, html.length); break }
+            out.append(html, i, lt)
+            var j = lt + 1
+            val closing = j < html.length && html[j] == '/'
+            if (closing) j++
+            val nameStart = j
+            while (j < html.length && html[j].isLetterOrDigit()) j++
+            val name = html.substring(nameStart, j)
+            // Not a tag ("<" in text, "<!", "< b"): kept as it is.
+            if (name.isEmpty() || (j < html.length && !html[j].isWhitespace() && html[j] != '>' && html[j] != '/')) {
+                out.append('<'); i = lt + 1; continue
+            }
+            var end = -1
+            var quote = 0.toChar()
+            var k = j
+            while (k < html.length) {
+                val c = html[k]
+                if (quote != 0.toChar()) { if (c == quote) quote = 0.toChar() }
+                else if (c == '"' || c == '\'') quote = c
+                else if (c == '>') { end = k; break }
+                k++
+            }
+            if (end < 0) end = html.indexOf('>', j)          // an unclosed quote: as before
+            if (end < 0) { out.append(html, lt, html.length); break }   // never closed: text
+            val attrs = html.substring(j, end).removeSuffix("/")
+            out.append(transform(closing, name.lowercase(), attrs))
+            i = end + 1
+        }
+        return out.toString()
+    }
+
+    /**
+     * [html] without its script, style, head and svg blocks, contents and all.
+     * A block never closed loses only its opening tag. One pass: the regex
+     * this replaces looked for the closing tag from every opening one, to the
+     * end of the document each time one was missing, so 20,000 unclosed ones
+     * took 36 s.
+     */
+    private fun dropBlocks(html: String): String {
+        val out = StringBuilder(html.length)
+        // Where looking for a closing tag already found none, by name: none
+        // will be found from anywhere after there either.
+        val noCloseFrom = HashMap<String, Int>()
+        var i = 0
+        while (true) {
+            val open = DROP_OPEN.find(html, i) ?: break
+            out.append(html, i, open.range.first)
+            val name = open.groupValues[1].lowercase()
+            val after = open.range.last + 1
+            val known = noCloseFrom[name]
+            val close = if (known != null && after >= known) -1 else html.indexOf("</$name", after, ignoreCase = true)
+            if (close < 0) {
+                noCloseFrom[name] = minOf(after, known ?: after)
+                i = after                                    // only the opening tag goes
+                continue
+            }
+            val gt = html.indexOf('>', close)
+            i = if (gt < 0) html.length else gt + 1
+        }
+        if (i < html.length) out.append(html, i, html.length)
+        return out.toString()
+    }
 
     private fun xml(bytes: ByteArray) = try {
         DocumentBuilderFactory.newInstance().apply {
@@ -440,8 +529,6 @@ ${xhtmlBody(c.html)}
         }
     }
 
-    /** Stored chapter HTML is a fragment, and not necessarily well-formed XML.
-     *  Close the void tags XHTML insists on and drop anything unrecognised. */
     /**
      * Named entities XHTML has no declaration for, resolved to the characters
      * they mean.
@@ -451,19 +538,70 @@ ${xhtmlBody(c.html)}
      * not well-formed in an EPUB and a strict reader refuses the file. The
      * output is UTF-8, so the character itself is always safe.
      *
-     * Names not listed are neutralised to a literal "&name;" instead of being
-     * dropped: it reads oddly in the rare case, where silently losing text or
-     * producing a file that will not open reads worse.
+     * Every HTML 4 name is known (it was 31). One not listed is neutralised to
+     * a literal "&name;" instead of being dropped: it reads oddly in the rare
+     * case, where silently losing text or producing a file that will not open
+     * reads worse.
      */
-    private val NAMED_ENTITIES = mapOf(
-        "nbsp" to "\u00A0", "mdash" to "\u2014", "ndash" to "\u2013", "hellip" to "\u2026",
-        "lsquo" to "\u2018", "rsquo" to "\u2019", "ldquo" to "\u201C", "rdquo" to "\u201D",
-        "laquo" to "\u00AB", "raquo" to "\u00BB", "bull" to "\u2022", "middot" to "\u00B7",
-        "deg" to "\u00B0", "times" to "\u00D7", "trade" to "\u2122", "copy" to "\u00A9",
-        "reg" to "\u00AE", "sect" to "\u00A7", "para" to "\u00B6", "dagger" to "\u2020",
-        "prime" to "\u2032", "Prime" to "\u2033", "eacute" to "\u00E9", "egrave" to "\u00E8",
-        "agrave" to "\u00E0", "ccedil" to "\u00E7", "uuml" to "\u00FC", "ouml" to "\u00F6",
-        "auml" to "\u00E4", "szlig" to "\u00DF", "ntilde" to "\u00F1",
+    private val HTML_ENTITIES: Map<String, String> = mapOf(
+        "AElig" to "\u00C6", "Aacute" to "\u00C1", "Acirc" to "\u00C2", "Agrave" to "\u00C0",
+        "Alpha" to "\u0391", "Aring" to "\u00C5", "Atilde" to "\u00C3", "Auml" to "\u00C4",
+        "Beta" to "\u0392", "Ccedil" to "\u00C7", "Chi" to "\u03A7", "Dagger" to "\u2021",
+        "Delta" to "\u0394", "ETH" to "\u00D0", "Eacute" to "\u00C9", "Ecirc" to "\u00CA",
+        "Egrave" to "\u00C8", "Epsilon" to "\u0395", "Eta" to "\u0397", "Euml" to "\u00CB",
+        "Gamma" to "\u0393", "Iacute" to "\u00CD", "Icirc" to "\u00CE", "Igrave" to "\u00CC",
+        "Iota" to "\u0399", "Iuml" to "\u00CF", "Kappa" to "\u039A", "Lambda" to "\u039B", "Mu" to "\u039C",
+        "Ntilde" to "\u00D1", "Nu" to "\u039D", "OElig" to "\u0152", "Oacute" to "\u00D3",
+        "Ocirc" to "\u00D4", "Ograve" to "\u00D2", "Omega" to "\u03A9", "Omicron" to "\u039F",
+        "Oslash" to "\u00D8", "Otilde" to "\u00D5", "Ouml" to "\u00D6", "Phi" to "\u03A6", "Pi" to "\u03A0",
+        "Prime" to "\u2033", "Psi" to "\u03A8", "Rho" to "\u03A1", "Scaron" to "\u0160", "Sigma" to "\u03A3",
+        "THORN" to "\u00DE", "Tau" to "\u03A4", "Theta" to "\u0398", "Uacute" to "\u00DA",
+        "Ucirc" to "\u00DB", "Ugrave" to "\u00D9", "Upsilon" to "\u03A5", "Uuml" to "\u00DC",
+        "Xi" to "\u039E", "Yacute" to "\u00DD", "Yuml" to "\u0178", "Zeta" to "\u0396", "aacute" to "\u00E1",
+        "acirc" to "\u00E2", "acute" to "\u00B4", "aelig" to "\u00E6", "agrave" to "\u00E0",
+        "alefsym" to "\u2135", "alpha" to "\u03B1", "amp" to "\u0026", "and" to "\u2227", "ang" to "\u2220",
+        "aring" to "\u00E5", "asymp" to "\u2248", "atilde" to "\u00E3", "auml" to "\u00E4",
+        "bdquo" to "\u201E", "beta" to "\u03B2", "brvbar" to "\u00A6", "bull" to "\u2022", "cap" to "\u2229",
+        "ccedil" to "\u00E7", "cedil" to "\u00B8", "cent" to "\u00A2", "chi" to "\u03C7", "circ" to "\u02C6",
+        "clubs" to "\u2663", "cong" to "\u2245", "copy" to "\u00A9", "crarr" to "\u21B5", "cup" to "\u222A",
+        "curren" to "\u00A4", "dArr" to "\u21D3", "dagger" to "\u2020", "darr" to "\u2193",
+        "deg" to "\u00B0", "delta" to "\u03B4", "diams" to "\u2666", "divide" to "\u00F7",
+        "eacute" to "\u00E9", "ecirc" to "\u00EA", "egrave" to "\u00E8", "empty" to "\u2205",
+        "emsp" to "\u2003", "ensp" to "\u2002", "epsilon" to "\u03B5", "equiv" to "\u2261",
+        "eta" to "\u03B7", "eth" to "\u00F0", "euml" to "\u00EB", "euro" to "\u20AC", "exist" to "\u2203",
+        "fnof" to "\u0192", "forall" to "\u2200", "frac12" to "\u00BD", "frac14" to "\u00BC",
+        "frac34" to "\u00BE", "frasl" to "\u2044", "gamma" to "\u03B3", "ge" to "\u2265", "gt" to "\u003E",
+        "hArr" to "\u21D4", "harr" to "\u2194", "hearts" to "\u2665", "hellip" to "\u2026",
+        "iacute" to "\u00ED", "icirc" to "\u00EE", "iexcl" to "\u00A1", "igrave" to "\u00EC",
+        "image" to "\u2111", "infin" to "\u221E", "int" to "\u222B", "iota" to "\u03B9",
+        "iquest" to "\u00BF", "isin" to "\u2208", "iuml" to "\u00EF", "kappa" to "\u03BA",
+        "lArr" to "\u21D0", "lambda" to "\u03BB", "lang" to "\u2329", "laquo" to "\u00AB",
+        "larr" to "\u2190", "lceil" to "\u2308", "ldquo" to "\u201C", "le" to "\u2264", "lfloor" to "\u230A",
+        "lowast" to "\u2217", "loz" to "\u25CA", "lrm" to "\u200E", "lsaquo" to "\u2039",
+        "lsquo" to "\u2018", "lt" to "\u003C", "macr" to "\u00AF", "mdash" to "\u2014", "micro" to "\u00B5",
+        "middot" to "\u00B7", "minus" to "\u2212", "mu" to "\u03BC", "nabla" to "\u2207", "nbsp" to "\u00A0",
+        "ndash" to "\u2013", "ne" to "\u2260", "ni" to "\u220B", "not" to "\u00AC", "notin" to "\u2209",
+        "nsub" to "\u2284", "ntilde" to "\u00F1", "nu" to "\u03BD", "oacute" to "\u00F3",
+        "ocirc" to "\u00F4", "oelig" to "\u0153", "ograve" to "\u00F2", "oline" to "\u203E",
+        "omega" to "\u03C9", "omicron" to "\u03BF", "oplus" to "\u2295", "or" to "\u2228",
+        "ordf" to "\u00AA", "ordm" to "\u00BA", "oslash" to "\u00F8", "otilde" to "\u00F5",
+        "otimes" to "\u2297", "ouml" to "\u00F6", "para" to "\u00B6", "part" to "\u2202",
+        "permil" to "\u2030", "perp" to "\u22A5", "phi" to "\u03C6", "pi" to "\u03C0", "piv" to "\u03D6",
+        "plusmn" to "\u00B1", "pound" to "\u00A3", "prime" to "\u2032", "prod" to "\u220F",
+        "prop" to "\u221D", "psi" to "\u03C8", "quot" to "\u0022", "rArr" to "\u21D2", "radic" to "\u221A",
+        "rang" to "\u232A", "raquo" to "\u00BB", "rarr" to "\u2192", "rceil" to "\u2309",
+        "rdquo" to "\u201D", "real" to "\u211C", "reg" to "\u00AE", "rfloor" to "\u230B", "rho" to "\u03C1",
+        "rlm" to "\u200F", "rsaquo" to "\u203A", "rsquo" to "\u2019", "sbquo" to "\u201A",
+        "scaron" to "\u0161", "sdot" to "\u22C5", "sect" to "\u00A7", "shy" to "\u00AD", "sigma" to "\u03C3",
+        "sigmaf" to "\u03C2", "sim" to "\u223C", "spades" to "\u2660", "sub" to "\u2282", "sube" to "\u2286",
+        "sum" to "\u2211", "sup" to "\u2283", "sup1" to "\u00B9", "sup2" to "\u00B2", "sup3" to "\u00B3",
+        "supe" to "\u2287", "szlig" to "\u00DF", "tau" to "\u03C4", "there4" to "\u2234",
+        "theta" to "\u03B8", "thetasym" to "\u03D1", "thinsp" to "\u2009", "thorn" to "\u00FE",
+        "tilde" to "\u02DC", "times" to "\u00D7", "trade" to "\u2122", "uArr" to "\u21D1",
+        "uacute" to "\u00FA", "uarr" to "\u2191", "ucirc" to "\u00FB", "ugrave" to "\u00F9",
+        "uml" to "\u00A8", "upsih" to "\u03D2", "upsilon" to "\u03C5", "uuml" to "\u00FC",
+        "weierp" to "\u2118", "xi" to "\u03BE", "yacute" to "\u00FD", "yen" to "\u00A5", "yuml" to "\u00FF",
+        "zeta" to "\u03B6", "zwj" to "\u200D", "zwnj" to "\u200C",
     )
     private val XML_PREDEFINED = setOf("amp", "lt", "gt", "quot", "apos")
     private val ENTITY_OR_AMP = Regex("&(#[0-9]+|#[xX][0-9a-fA-F]+|[a-zA-Z][a-zA-Z0-9]{1,31});|&")
@@ -474,15 +612,14 @@ ${xhtmlBody(c.html)}
             ref.isEmpty() -> "&amp;"            // a bare ampersand in the text
             ref.startsWith("#") -> m.value      // numeric, always valid
             ref in XML_PREDEFINED -> m.value
-            else -> NAMED_ENTITIES[ref] ?: "&amp;$ref;"
+            else -> HTML_ENTITIES[ref] ?: "&amp;$ref;"
         }
     }
 
+    /** Stored chapter HTML is a fragment, and not necessarily well-formed XML.
+     *  Close the void tags XHTML insists on and drop anything unrecognised. */
     private fun xhtmlBody(html: String): String =
-        TAG.replace(xmlEntities(html)) { m ->
-            val closing = m.groupValues[1] == "/"
-            val name = m.groupValues[2].lowercase()
-            val attrs = m.groupValues[3]
+        replaceTags(xmlEntities(html)) { closing, name, attrs ->
             when {
                 name !in KEEP -> ""
                 name == "br" || name == "hr" -> "<$name/>"

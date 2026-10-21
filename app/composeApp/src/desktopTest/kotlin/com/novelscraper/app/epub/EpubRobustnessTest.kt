@@ -103,4 +103,49 @@ class EpubRobustnessTest {
         assertTrue("&amp;" in xhtml, "a real ampersand is still escaped properly")
         assertTrue(" " in xhtml, "the non-breaking space survived as a character")
     }
+
+    private fun importOne(body: String) = Epub.read(epub("c1.xhtml", "c1.xhtml", body).inputStream()).chapters.single()
+
+    /** A tag ended at its first ">", so one inside a quoted attribute cut it short:
+     *  the rest of the tag leaked into the text, and an image whose src came
+     *  after it was lost. */
+    @Test fun aGreaterThanSignInsideAnAttributeKeepsTheTagWhole() {
+        val pic = epubWithImage("""<p>Before.</p><img alt="a > b" src="pic.png"/><p>After.</p>""")
+        val c = Epub.read(pic.inputStream()).chapters.single()
+        assertTrue("data:image/png" in c.html, "the image survived: ${c.html}")
+        assertTrue("src=\"pic.png\"" !in c.html, "nothing of the tag leaked as text: ${c.html}")
+        assertTrue("alt=\"a &gt; b\"" in c.html, "the alt text kept whole: ${c.html}")
+    }
+
+    @Test fun entitiesInATitleAreDecoded() {
+        val c = importOne("""<h1>Don&#8217;t &hellip; caf&eacute; &#x2014; &Omega;</h1><p>Text.</p>""")
+        assertEquals("Don\u2019t \u2026 caf\u00e9 \u2014 \u03a9", c.title)
+    }
+
+    /** An unclosed <svg> made the block remover scan to the end of the document
+     *  once per opening, which for many of them is quadratic. */
+    @Test fun manyUnclosedBlocksAreQuickAndLoseNoText() {
+        val body = (1..20_000).joinToString("") { "<svg width=\"1\"><p>line $it</p>" }
+        val started = System.currentTimeMillis()
+        val c = importOne(body)
+        val took = System.currentTimeMillis() - started
+        assertTrue(took < 3_000, "took ${took}ms")
+        assertTrue("line 1<" in c.html && "line 20000" in c.html, "every line kept")
+    }
+
+    /** One chapter showing pic.png, stored beside it. */
+    private fun epubWithImage(body: String): ByteArray {
+        val plain = epub("c1.xhtml", "c1.xhtml", body)
+        val out = java.io.ByteArrayOutputStream()
+        java.util.zip.ZipOutputStream(out).use { z ->
+            java.util.zip.ZipInputStream(plain.inputStream()).use { zin ->
+                while (true) {
+                    val e = zin.nextEntry ?: break
+                    z.putNextEntry(ZipEntry(e.name)); z.write(zin.readBytes()); z.closeEntry()
+                }
+            }
+            z.putNextEntry(ZipEntry("OEBPS/pic.png")); z.write(ByteArray(64) { it.toByte() }); z.closeEntry()
+        }
+        return out.toByteArray()
+    }
 }
