@@ -84,4 +84,21 @@ class ExtensionsTest {
             PluginRuntime.loadTimeoutMs = previous
         }
     }
+
+    /** Loading outside the lock means two callers can load one source at once,
+     *  or it can go while loading: either way one runtime, or none, is in use. */
+    @Test
+    fun aSourceLoadedTwiceAtOnceOrRemovedWhileLoadingIsSettled() = runBlocking<Unit> {
+        place("twice", plugin("twice", topLevel = spin(500)))
+        val both = (1..2).map { async(Dispatchers.Default) { Extensions.runtime("twice") } }.map { it.await() }
+        assertTrue(both[0] === both[1], "both callers got the one runtime in use")
+        assertEquals("answered", both[0].popular(1).single().name)
+
+        place("going", plugin("going", topLevel = spin(1_000)))
+        val loading = async(Dispatchers.Default) { runCatching { Extensions.runtime("going") } }
+        delay(300)
+        Extensions.uninstall("going")
+        assertTrue(loading.await().exceptionOrNull() is PluginNotInstalledException,
+            "uninstalled while it loaded: not put in use")
+    }
 }
