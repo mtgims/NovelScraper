@@ -212,16 +212,26 @@ object LibrarySyncRunner {
         _state.value = State()
     }
 
-    /** A change was made here: sync shortly. */
+    /** A change was made here: sync shortly. While the loop sleeps (narration
+     *  in the background saves progress every 20 s), asks made before the
+     *  waiting sync starts join it rather than each starting their own. */
+    @Synchronized
     fun soon() {
         if (loop?.isActive == true) wake.trySend(Unit)
-        else scope.launch { delay(DEBOUNCE_MS); runOnce() }
+        else if (waiting?.isActive != true) waiting = scope.launch { delay(DEBOUNCE_MS); runOnce() }
     }
+
+    /** The sync [soon] has asked for and not yet started. */
+    private var waiting: Job? = null
 
     /** Sync now and wait for it (pull-to-refresh). */
     suspend fun now(): Boolean = runOnce()
 
+    /** Syncs started so far (tests). */
+    internal val runs = java.util.concurrent.atomic.AtomicInteger()
+
     private suspend fun runOnce(): Boolean {
+        runs.incrementAndGet()
         val folder = SyncSettings.folder()
         if (folder == null && !Account.signedIn) return false
         _state.value = _state.value.copy(syncing = true)

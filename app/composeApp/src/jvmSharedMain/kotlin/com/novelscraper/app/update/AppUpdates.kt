@@ -158,6 +158,7 @@ object AppUpdates {
             if (!r.isSuccessful) error("HTTP ${r.code}")
             val total = if (body.contentLength() > 0) body.contentLength() else available.bytes
             var done = 0L
+            val progress = Progress(total)
             body.byteStream().use { input ->
                 file.outputStream().buffered().use { out ->
                     val buffer = ByteArray(1 shl 16)
@@ -167,7 +168,7 @@ object AppUpdates {
                         out.write(buffer, 0, n)
                         sha.update(buffer, 0, n)
                         done += n
-                        _state.value = State.Downloading(available.version, done, total)
+                        if (progress.advance(n.toLong())) _state.value = State.Downloading(available.version, done, total)
                     }
                 }
             }
@@ -197,5 +198,23 @@ object AppUpdates {
             if (x != y) return x > y
         }
         return false
+    }
+}
+
+/**
+ * Whether a download's progress is worth showing again: each whole percent of
+ * [total], or every 4 MiB when the size isn't known. Every 64 KiB piece used to
+ * be published, some 2,300 times for one update, each redrawing the screen.
+ */
+internal class Progress(private val total: Long) {
+    private var done = 0L
+    private var shown = -1L
+
+    fun advance(bytes: Long): Boolean {
+        done += bytes
+        val step = if (total > 0) done * 100 / total else done / (4L * 1024 * 1024)
+        if (step == shown) return false
+        shown = step
+        return true
     }
 }
