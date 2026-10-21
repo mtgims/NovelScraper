@@ -5,6 +5,7 @@ import com.dokar.quickjs.QuickJs
 import com.dokar.quickjs.alias.def
 import com.dokar.quickjs.binding.AsyncFunctionBinding
 import com.dokar.quickjs.binding.FunctionBinding
+import com.novelscraper.app.net.PrivateHosts
 import com.novelscraper.app.platform.Log
 import com.novelscraper.app.platform.fetchThroughBrowser
 import com.novelscraper.app.platform.BrowserBody
@@ -32,11 +33,7 @@ import kotlinx.serialization.json.put
 import okhttp3.MediaType.Companion.toMediaTypeOrNull
 import okhttp3.MultipartBody
 import okhttp3.OkHttpClient
-import okhttp3.Interceptor
-import okhttp3.Response
 import java.io.IOException
-import java.net.Inet6Address
-import java.net.InetAddress
 import okhttp3.Request
 import okhttp3.RequestBody.Companion.toRequestBody
 import java.io.Closeable
@@ -278,7 +275,7 @@ class PluginRuntime private constructor(
             // Both: the application interceptor refuses the first URL before any
             // socket is opened, and the network one runs again on every redirect
             // hop, which the application one never sees.
-            b = b.addInterceptor(NoPrivateHosts).addNetworkInterceptor(NoPrivateHosts)
+            b = PrivateHosts.guard(b)
         }
         b.build()
     }
@@ -492,31 +489,3 @@ class PluginEnvironment(
      */
     val cookies: BrowserCookieJar? = null,
 )
-
-/**
- * Refuses any host that resolves onto the machine or its local network.
- *
- * This resolves the host itself rather than relying on a custom [Dns], because
- * OkHttp skips DNS entirely for a literal IP address: a plugin asking for
- * http://192.168.1.1/ would never have reached a Dns-based check at all, and
- * that is precisely the request worth refusing. getAllByName returns a literal
- * unchanged and resolves a name, so one path covers both.
- */
-private object NoPrivateHosts : Interceptor {
-    override fun intercept(chain: Interceptor.Chain): Response {
-        val host = chain.request().url.host
-        val addresses = runCatching { InetAddress.getAllByName(host).toList() }
-            .getOrDefault(emptyList())
-        if (addresses.any { it.isPrivateTarget() }) {
-            throw IOException(
-                "$host is on a private network; sources may only reach the public internet")
-        }
-        return chain.proceed(chain.request())
-    }
-}
-
-private fun InetAddress.isPrivateTarget(): Boolean =
-    isLoopbackAddress || isAnyLocalAddress || isLinkLocalAddress ||
-        isSiteLocalAddress || isMulticastAddress ||
-        // IPv6 unique local, fc00::/7. The JDK has no predicate for it.
-        (this is Inet6Address && (address[0].toInt() and 0xFE) == 0xFC)

@@ -233,6 +233,45 @@ class PluginRuntimeTest {
     }
 
     /**
+     * The guard used to look the host up itself and let the client look it up
+     * again to connect, so a name that answered "public" to the first and
+     * "this machine" to the second (DNS rebinding) got through. Here a name the
+     * guard can't resolve at all is pointed at 127.0.0.1 by the client's DNS.
+     */
+    @Test fun aNameThatResolvesToTheLocalNetworkOnConnectIsRefused() = runBlocking<Unit> {
+        val hits = java.util.concurrent.atomic.AtomicInteger()
+        server.createContext("/rebound") { ex ->
+            hits.incrementAndGet()
+            ex.sendResponseHeaders(200, 2); ex.responseBody.use { it.write("in".toByteArray()) }
+        }
+        val rebinding = OkHttpClient.Builder().dns(object : okhttp3.Dns {
+            override fun lookup(hostname: String): List<java.net.InetAddress> =
+                if (hostname == "rebind.invalid") listOf(java.net.InetAddress.getByName("127.0.0.1"))
+                else okhttp3.Dns.SYSTEM.lookup(hostname)
+        }).build()
+        val walled = PluginEnvironment(rebinding, "TestAgent/1.0", { mutableMapOf() })
+        val port = server.address.port
+        val prober = """
+            class Prober {
+              id = 'prober'; name = 'Prober'; site = 'http://rebind.invalid:$port/'; version = '1.0.0';
+              async popularNovels(page) {
+                const { fetchApi } = require('@libs/fetch');
+                const r = await fetchApi('http://rebind.invalid:$port/rebound');
+                return [{ name: await r.text(), path: 'p' }];
+              }
+              async searchNovels(term, page) { return []; }
+              async parseNovel(path) { return { name: 'n', path, chapters: [] }; }
+              async parseChapter(path) { return ''; }
+            }
+            exports.default = new Prober();
+        """.trimIndent()
+        PluginRuntime.load("prober", prober, walled).use { p ->
+            assertFailsWith<Exception>("a name that connects to 127.0.0.1 must not succeed") { p.popular(1) }
+        }
+        assertEquals(0, hits.get(), "nothing reached the local server")
+    }
+
+    /**
      * One plugin must not ride another's session.
      *
      * The jar scopes cookies by site, as a browser does, but a browser has one
