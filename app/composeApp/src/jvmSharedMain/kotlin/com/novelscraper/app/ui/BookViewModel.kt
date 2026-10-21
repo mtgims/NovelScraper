@@ -120,21 +120,23 @@ class BookViewModel(private val bookId: Int) : ViewModel() {
      *  device, so it works offline and needs no account. */
     fun saveEpub(title: String, author: String) {
         viewModelScope.launch {
-            val volumes = lib.storedVolumes(bookId)
-            val chapterCount = volumes.sumOf { it.chapters.size }
+            val positions = lib.storedPositions(bookId)
+            val chapterCount = positions.size
+            val volumes = positions.map { lib.volumeOf(it) }.distinct()
             if (volumes.isEmpty()) {
                 _action.value = "No chapters are on this device yet. Download some first."
                 return@launch
             }
             // One volume is a single EPUB; several travel as a zip of them.
+            // Each volume's text is read as it is written, not all at once.
             val saved = runCatching {
                 if (volumes.size == 1) {
                     saveToDownloads(epubFileName(title), "application/epub+zip") { out ->
-                        Epub.write(title, author, volumes.single().chapters, out)
+                        Epub.write(title, author, lib.storedVolume(bookId, volumes.single()).chapters, out)
                     }
                 } else {
                     saveToDownloads(zipFileName(title), "application/zip") { out ->
-                        Epub.writeZip(title, title, author, volumes, out)
+                        Epub.writeZip(title, title, author, volumes, { lib.storedVolume(bookId, it) }, out)
                     }
                 }
             }.getOrNull()

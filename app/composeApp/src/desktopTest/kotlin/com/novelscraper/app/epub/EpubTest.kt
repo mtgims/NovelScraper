@@ -134,7 +134,12 @@ class EpubTest {
             Epub.Volume(3, listOf(Epub.Chapter("Three", "<p>third volume</p>"))),
         )
         val zipped = ByteArrayOutputStream()
-            .also { Epub.writeZip("a novel", "A Novel", "An Author", volumes, it) }.toByteArray()
+            .also { out ->
+                kotlinx.coroutines.runBlocking {
+                    Epub.writeZip("a novel", "A Novel", "An Author", volumes.map { it.number },
+                        { n -> volumes.single { it.number == n } }, out)
+                }
+            }.toByteArray()
 
         val entries = mutableMapOf<String, ByteArray>()
         ZipInputStream(ByteArrayInputStream(zipped)).use { z ->

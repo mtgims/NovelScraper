@@ -415,9 +415,21 @@ ${xhtmlBody(c.html)}
      * the server named them. A novel past a hundred chapters is too big to hand
      * over as a single file, and volume-sized pieces are what a reader expects.
      */
-    fun writeZip(slug: String, title: String, author: String, volumes: List<Volume>, out: OutputStream) {
+    /**
+     * Several volumes as a zip of EPUBs. Each volume is asked for ([volume]) as
+     * it is written and let go after, so only one is ever held.
+     */
+    suspend fun writeZip(
+        slug: String,
+        title: String,
+        author: String,
+        numbers: List<Int>,
+        volume: suspend (Int) -> Volume,
+        out: OutputStream,
+    ) {
         ZipOutputStream(out).use { zip ->
-            for (v in volumes) {
+            for (n in numbers) {
+                val v = volume(n)
                 zip.putNextEntry(ZipEntry(epubFileName(slug, v.number)))
                 // The volume's own title, so the file says which part it holds.
                 ByteArrayOutputStream().also { buf ->

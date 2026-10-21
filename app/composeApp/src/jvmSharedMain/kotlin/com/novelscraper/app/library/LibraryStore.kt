@@ -396,22 +396,29 @@ class LibraryStore(
      * happens to be downloaded, so volume 3 is always chapters 201 to 300 and a
      * novel exported twice gives the same volumes both times. A window with
      * nothing stored in it is dropped rather than written empty.
+     *
+     * The positions only: each volume's text is read when it is written
+     * ([storedVolume]), so a long novel is never all in memory at once.
      */
+    suspend fun storedPositions(id: Int): List<Int> = io {
+        chapters.selectStoredPositions(id.toLong()).executeAsList().map { it.toInt() }
+    }
+
+    /** One volume of [storedPositions], with its chapters' text. */
+    suspend fun storedVolume(id: Int, number: Int): Epub.Volume = io {
+        val from = (number - 1L) * Epub.CHAPTERS_PER_VOLUME + 1
+        val chapters = chapters.selectStoredRange(id.toLong(), from, from + Epub.CHAPTERS_PER_VOLUME - 1)
+            .executeAsList()
+            .map { c -> Epub.Chapter(c.title.ifBlank { "Chapter ${c.position}" }, c.html) }
+        Epub.Volume(number, chapters)
+    }
+
+    /** The volume a stored chapter at [position] belongs to. */
+    fun volumeOf(position: Int): Int = (position - 1) / Epub.CHAPTERS_PER_VOLUME + 1
+
     /** The text of up to [limit] of a novel's stored chapters, first ones first; nothing is fetched. */
     suspend fun storedSample(id: Int, limit: Int): List<String> = io {
         chapters.selectStoredSample(id.toLong(), limit.toLong()).executeAsList()
-    }
-
-    suspend fun storedVolumes(id: Int): List<Epub.Volume> = io {
-        // One query, not one per chapter. The text still all arrives at once,
-        // which on a very long novel is a lot to hold while the file is
-        // written; bounding that means handing the writer a volume at a time
-        // rather than a finished list, which is a change to Epub's shape.
-        chapters.selectStoredWithContent(id.toLong()).executeAsList()
-            .map { c -> c.position to Epub.Chapter(c.title.ifBlank { "Chapter ${c.position}" }, c.html) }
-            .groupBy { (position, _) -> ((position - 1) / Epub.CHAPTERS_PER_VOLUME + 1).toInt() }
-            .toSortedMap()
-            .map { (number, list) -> Epub.Volume(number, list.map { it.second }) }
     }
 
     // --- downloads -----------------------------------------------------------

@@ -54,13 +54,18 @@ SELECT id, path FROM chapter WHERE book_id = ?;
 -- Everything a refresh might change, so rows that did not change can be left
 -- alone. A refresh used to rewrite every chapter of a novel each time, which
 -- on a long one is thousands of writes every few hours for nothing.
--- Stored chapters with their text, in one go. Export used to ask for each
--- chapter's text in a separate query, which on a long novel is thousands of
--- round trips to build one file.
-selectStoredWithContent:
-SELECT c.position, c.title, cc.html
+-- Which of a novel's chapters are stored, for exporting one volume at a time.
+selectStoredPositions:
+SELECT c.position
 FROM chapter c JOIN chapter_content cc ON cc.chapter_id = c.id
 WHERE c.book_id = ?
+ORDER BY c.position;
+
+-- The stored chapters of one volume (a window of positions), with their text.
+selectStoredRange:
+SELECT c.position, c.title, cc.html
+FROM chapter c JOIN chapter_content cc ON cc.chapter_id = c.id
+WHERE c.book_id = ? AND c.position BETWEEN ? AND ?
 ORDER BY c.position;
 
 -- The text of up to some number of a novel's stored chapters, for telling how
