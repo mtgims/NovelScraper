@@ -2,8 +2,11 @@ package com.novelscraper.app.platform
 
 import android.annotation.SuppressLint
 import android.webkit.CookieManager
+import android.webkit.WebResourceRequest
+import android.webkit.WebResourceResponse
 import android.webkit.WebView
 import android.webkit.WebViewClient
+import com.novelscraper.app.net.PrivateHosts
 import com.novelscraper.app.extensions.BrowserCookieJar
 import com.novelscraper.app.extensions.Extensions
 import kotlinx.coroutines.CompletableDeferred
@@ -24,7 +27,7 @@ private const val LOAD_MS = 45_000L
 /** Loads the page in an offscreen WebView, which the site sees as a browser,
  *  and returns the document it ends up with. */
 @SuppressLint("SetJavaScriptEnabled")
-actual suspend fun fetchThroughBrowser(url: String): String? = lock.withLock {
+actual suspend fun fetchThroughBrowser(url: String, publicOnly: Boolean): String? = lock.withLock {
     withContext(Dispatchers.Main) {
         val view = WebView(appContext).apply {
             settings.javaScriptEnabled = true
@@ -35,8 +38,10 @@ actual suspend fun fetchThroughBrowser(url: String): String? = lock.withLock {
         }
         try {
             val loaded = CompletableDeferred<Unit>()
+            val guard = PublicOnly(publicOnly)
             view.webViewClient = object : WebViewClient() {
                 override fun onPageFinished(v: WebView, u: String) { loaded.complete(Unit) }
+                override fun shouldInterceptRequest(v: WebView, request: WebResourceRequest) = guard.check(request)
             }
             view.loadUrl(url)
             withTimeoutOrNull(LOAD_MS) {
@@ -49,6 +54,7 @@ actual suspend fun fetchThroughBrowser(url: String): String? = lock.withLock {
                     delay(1_500)
                     page = html(view)
                 }
+                if (guard.blocked) return@withTimeoutOrNull null
                 // The cookies that got the page through go to the extensions, so
                 // the pages after it can be fetched plainly.
                 if (page != null) keepCookies(url)
@@ -61,6 +67,28 @@ actual suspend fun fetchThroughBrowser(url: String): String? = lock.withLock {
 }
 
 private const val SETTLE_MS = 2_500L
+
+/**
+ * Keeps a source's page, and whatever it asks for, off this phone and its local
+ * network when [on]. The WebView looks names up and follows redirects for
+ * itself, so every request it makes is checked here, before it goes out, and a
+ * page that tried is not handed back at all. The WebView resolves a name again
+ * to connect, so a name that answers differently the second time (DNS
+ * rebinding) is the one gap left; it can't say what address it reached.
+ */
+private class PublicOnly(private val on: Boolean) {
+    @Volatile var blocked = false
+        private set
+
+    /** Called on the WebView's network thread: null lets the request through. */
+    fun check(request: WebResourceRequest): WebResourceResponse? {
+        if (!on) return null
+        val host = request.url.host ?: return null
+        if (!PrivateHosts.isPrivateHost(host)) return null
+        blocked = true
+        return WebResourceResponse("text/plain", "utf-8", 403, "Forbidden", emptyMap(), "".byteInputStream())
+    }
+}
 
 /** Give what the WebView collected to the extensions' cookie jar. The header form
  *  is name/value pairs only, so the domain is the one we asked for. */
@@ -105,6 +133,7 @@ actual suspend fun requestThroughBrowser(
     method: String,
     headers: Map<String, String>,
     body: BrowserBody?,
+    publicOnly: Boolean,
 ): BrowserReply? = lock.withLock {
     val origin = runCatching { java.net.URI(url) }.getOrNull()
         ?.let { "${it.scheme}://${it.authority}" } ?: return null
@@ -118,8 +147,10 @@ actual suspend fun requestThroughBrowser(
         }
         try {
             val loaded = CompletableDeferred<Unit>()
+            val guard = PublicOnly(publicOnly)
             view.webViewClient = object : WebViewClient() {
                 override fun onPageFinished(v: WebView, u: String) { loaded.complete(Unit) }
+                override fun shouldInterceptRequest(v: WebView, request: WebResourceRequest) = guard.check(request)
             }
             view.loadUrl(origin)
             withTimeoutOrNull(LOAD_MS) {
@@ -169,6 +200,7 @@ actual suspend fun requestThroughBrowser(
                 val cut = reply.indexOf('\u0000')
                 if (cut < 0) return@withTimeoutOrNull null
                 val status = reply.take(cut).toIntOrNull()?.takeIf { it > 0 } ?: return@withTimeoutOrNull null
+                if (guard.blocked) return@withTimeoutOrNull null
                 BrowserReply(status, reply.substring(cut + 1))
             }
         } finally {

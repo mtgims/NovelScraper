@@ -30,6 +30,7 @@ import kotlinx.serialization.json.jsonArray
 import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
 import kotlinx.serialization.json.put
+import okhttp3.HttpUrl.Companion.toHttpUrlOrNull
 import okhttp3.MediaType.Companion.toMediaTypeOrNull
 import okhttp3.MultipartBody
 import okhttp3.OkHttpClient
@@ -349,17 +350,23 @@ class PluginRuntime private constructor(
         }
     }
 
-    /** The page as a real browser sees it, shaped like a fetch response. Null if
-     *  this device has no browser, or it couldn't load the page. */
-    /** The same request, made by the browser: the page itself for a GET, the
-     *  site's own kind of request for anything else. */
+    /**
+     * The same request, made by the browser: the page itself for a GET, the
+     * site's own kind of request for anything else. Null if this device has no
+     * browser, it couldn't make the request, or the answer came from this
+     * machine or its local network (the plain client then refuses it too).
+     */
     private suspend fun viaBrowser(
         url: String,
         method: String,
         headers: Map<String, String>,
         body: JsonObject?,
     ): String? {
-        if (method.equals("GET", true)) return browserResponse(url)
+        // The plain client is guarded, and the browser has to be as well: a site
+        // could get itself marked as needing the browser, then send it home.
+        val publicOnly = !env.allowPrivateHosts
+        if (publicOnly && PrivateHosts.isPrivateHost(url.toHttpUrlOrNull()?.host ?: return null)) return null
+        if (method.equals("GET", true)) return browserResponse(url, publicOnly)
         // Text and form bodies can be handed to a page as they are; a binary one
         // keeps to the plain client.
         val kind = body?.get("kind")?.jsonPrimitive?.contentOrNull
@@ -376,7 +383,7 @@ class PluginRuntime private constructor(
             else -> return null
         }
         val reply: BrowserReply? = try {
-            requestThroughBrowser(url, method, headers, sending)
+            requestThroughBrowser(url, method, headers, sending, publicOnly)
         } catch (e: kotlinx.coroutines.CancellationException) {
             throw e
         } catch (e: Exception) {
@@ -388,9 +395,10 @@ class PluginRuntime private constructor(
         return synthetic(reply.status, url, reply.body, "text/html; charset=utf-8")
     }
 
-    private suspend fun browserResponse(url: String): String? {
+    /** The page as a real browser sees it, shaped like a fetch response. */
+    private suspend fun browserResponse(url: String, publicOnly: Boolean): String? {
         if (!canFetchThroughBrowser) return null
-        val html = runCatching { fetchThroughBrowser(url) }
+        val html = runCatching { fetchThroughBrowser(url, publicOnly) }
             .onFailure { Log.w(TAG, "browser fetch failed: ${it.message}") }
             .getOrNull()?.takeIf { it.isNotBlank() } ?: return null
         if (looksLikeBrowserCheck(html)) {

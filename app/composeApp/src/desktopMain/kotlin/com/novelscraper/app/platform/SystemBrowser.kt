@@ -9,6 +9,7 @@ import kotlinx.coroutines.withTimeoutOrNull
 import kotlinx.serialization.encodeToString
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonObject
+import com.novelscraper.app.net.isPrivateTarget
 import kotlinx.serialization.json.add
 import kotlinx.serialization.json.boolean
 import kotlinx.serialization.json.buildJsonObject
@@ -173,7 +174,25 @@ object SystemBrowser {
         patienceMs: Long,
         interactiveMs: Long,
         loadMs: Long,
+        /** Nothing from this machine or its network may come back (see [reachedPrivate]). */
+        publicOnly: Boolean = false,
         onShown: () -> Unit = {},
+    ): String? {
+        reachedPrivate = false
+        val page = loadPage(url, patienceMs, interactiveMs, loadMs, onShown)
+        if (publicOnly && reachedPrivate) {
+            Log.w(TAG, "$url reached a private address in the browser: not handed back")
+            return null
+        }
+        return page
+    }
+
+    private suspend fun loadPage(
+        url: String,
+        patienceMs: Long,
+        interactiveMs: Long,
+        loadMs: Long,
+        onShown: () -> Unit,
     ): String? {
         if (!start()) return null
         lastUsed = System.currentTimeMillis()
@@ -393,6 +412,23 @@ object SystemBrowser {
         method: String,
         headers: Map<String, String>,
         body: BrowserBody?,
+        /** As for [load]. */
+        publicOnly: Boolean = false,
+    ): BrowserReply? {
+        reachedPrivate = false
+        val reply = requestInPage(url, method, headers, body)
+        if (publicOnly && reachedPrivate) {
+            Log.w(TAG, "$url reached a private address in the browser: not handed back")
+            return null
+        }
+        return reply
+    }
+
+    private suspend fun requestInPage(
+        url: String,
+        method: String,
+        headers: Map<String, String>,
+        body: BrowserBody?,
     ): BrowserReply? {
         if (!start()) return null
         lastUsed = System.currentTimeMillis()
@@ -553,6 +589,21 @@ object SystemBrowser {
     internal fun endItBehindOurBack() {
         runCatching { process?.destroyForcibly() }
     }
+
+    /**
+     * Whether anything the page received since the last [load] or [request]
+     * came from this machine or its local network. The browser resolves names
+     * and follows redirects for itself, so checking the address asked for is
+     * not enough: this is the address each answer actually came from.
+     */
+    @Volatile private var reachedPrivate = false
+
+    /** A literal address as the browser reports it (IPv6 possibly in brackets). */
+    private fun isPrivateLiteral(address: String): Boolean =
+        runCatching { java.net.InetAddress.getByName(address.trim('[', ']')).isPrivateTarget() }.getOrDefault(false)
+
+    /** Extra command-line flags for the next start (tests: pointing a name at an address). */
+    @Volatile internal var extraFlags: List<String> = emptyList()
 
     /** What the tab is showing right now, whatever state it is in. */
     internal suspend fun currentPage(): String? = html()
@@ -715,6 +766,7 @@ object SystemBrowser {
             // by hand, which is what the phone's WebView already looks like: it
             // has no such flag to set. This puts the desktop on the same footing.
             "--disable-blink-features=AutomationControlled",
+            *extraFlags.toTypedArray(),
             "about:blank",
         )
         // Kept, not discarded. When the browser fails to come up, what it said
@@ -885,6 +937,15 @@ object SystemBrowser {
                         // Not an answer: the browser saying the page finished.
                         val event = message["method"]?.jsonPrimitive?.contentOrNull
                         if (event == "Page.loadEventFired") loadedAt = System.currentTimeMillis()
+                        // Where each answer actually came from: a redirect hop
+                        // arrives with the request it led to.
+                        val answered = when (event) {
+                            "Network.responseReceived" -> message["params"]?.jsonObject?.get("response")
+                            "Network.requestWillBeSent" -> message["params"]?.jsonObject?.get("redirectResponse")
+                            else -> null
+                        }
+                        val from = (answered as? JsonObject)?.get("remoteIPAddress")?.jsonPrimitive?.contentOrNull
+                        if (!from.isNullOrBlank() && isPrivateLiteral(from)) reachedPrivate = true
                         // The page has stopped fetching things: what is in the
                         // document now is what the reader would see.
                         if (event == "Page.lifecycleEvent" &&

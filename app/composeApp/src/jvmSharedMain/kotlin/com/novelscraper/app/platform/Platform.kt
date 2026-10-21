@@ -189,8 +189,12 @@ expect val canFetchThroughBrowser: Boolean
  * Load [url] in a real browser and hand back the page's HTML, for sites that
  * refuse plain requests however good the cookies are (Cloudflare reads more than
  * cookies). Null if the page couldn't be loaded. GET only.
+ *
+ * [publicOnly]: nothing from this machine or its local network may come back
+ * (a source asked). The browser looks names up and follows redirects for
+ * itself, so this is checked inside it, not just on [url].
  */
-expect suspend fun fetchThroughBrowser(url: String): String?
+expect suspend fun fetchThroughBrowser(url: String, publicOnly: Boolean): String?
 
 /** What a request made from inside the browser came back with. */
 data class BrowserReply(val status: Int, val body: String)
@@ -218,6 +222,8 @@ expect suspend fun requestThroughBrowser(
     method: String,
     headers: Map<String, String>,
     body: BrowserBody?,
+    /** As for [fetchThroughBrowser]. */
+    publicOnly: Boolean,
 ): BrowserReply?
 
 /**

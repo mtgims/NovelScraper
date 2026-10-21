@@ -13,6 +13,7 @@ import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.withTimeoutOrNull
 import okhttp3.HttpUrl.Companion.toHttpUrlOrNull
+import com.novelscraper.app.net.PrivateHosts
 import org.cef.browser.CefBrowser
 import org.cef.browser.CefRendering
 import org.cef.callback.CefStringVisitor
@@ -60,7 +61,7 @@ private var frame: JFrame? = null
  * drawn, and some want a tick in a box. It goes away again once the page comes
  * through. One page at a time, so a chapter download doesn't open twelve.
  */
-actual suspend fun fetchThroughBrowser(url: String): String? = browserTabLock.withLock {
+actual suspend fun fetchThroughBrowser(url: String, publicOnly: Boolean): String? = browserTabLock.withLock {
     // The reader's own browser first: it is current, it has the graphics card
     // behind it, and checks that turn the bundled one away pass in it.
     if (SystemBrowser.available) {
@@ -71,7 +72,7 @@ actual suspend fun fetchThroughBrowser(url: String): String? = browserTabLock.wi
         val patience = if (SiteChecks.wantsPerson(url)) IMPATIENCE_MS else PATIENCE_MS
         val host = runCatching { java.net.URI(url).host }.getOrNull() ?: url
         var askedPerson = false
-        val page = SystemBrowser.load(url, patience, INTERACTIVE_MS, LOAD_MS) {
+        val page = SystemBrowser.load(url, patience, INTERACTIVE_MS, LOAD_MS, publicOnly) {
             askedPerson = true
             SiteChecks.neededPerson(url)
             // The window appearing by itself explains nothing on its own.
@@ -112,6 +113,15 @@ actual suspend fun fetchThroughBrowser(url: String): String? = browserTabLock.wi
             }
             delay(1_500)
             page = source(view)
+        }
+        // This browser can't say what address a page came from, so the most
+        // that can be checked is where it ended up. A name that only the
+        // browser resolves to this machine still gets past it (the driven
+        // browser above does check the address).
+        val landed = runCatching { view.url }.getOrNull()?.toHttpUrlOrNull()?.host
+        if (publicOnly && landed != null && PrivateHosts.isPrivateHost(landed)) {
+            Log.w(TAG, "$url ended up on $landed, a private address: not handed back")
+            return null
         }
         val result = page?.takeIf { !looksLikeBrowserCheck(it) }
         // A page that came through carries the cookies that got it through: hand
@@ -209,9 +219,10 @@ actual suspend fun requestThroughBrowser(
     method: String,
     headers: Map<String, String>,
     body: BrowserBody?,
+    publicOnly: Boolean,
 ): BrowserReply? = browserTabLock.withLock {
     if (!SystemBrowser.available) return null
-    val reply = SystemBrowser.request(url, method, headers, body)
+    val reply = SystemBrowser.request(url, method, headers, body, publicOnly)
     if (reply != null) keepSystemCookies(url)
     reply
 }
