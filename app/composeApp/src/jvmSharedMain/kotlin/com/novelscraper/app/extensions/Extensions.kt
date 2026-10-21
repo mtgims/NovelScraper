@@ -357,19 +357,53 @@ object Extensions {
     }
 
     /** A map that saves itself on every change (plugins write rarely). */
-    private class PersistentMap(
+    /**
+     * A source's storage, saved through [save]. Each change used to copy and
+     * save the whole map there and then, so a source setting ten keys wrote it
+     * ten times. Now a change asks for one save, on [storageWriter], and that
+     * save writes the map as it stands when it runs: a burst becomes a save or
+     * two, with no delay added (a delay would be lost if the app were killed).
+     * Setting a value it already has saves nothing.
+     */
+    internal class PersistentMap(
         initial: Map<String, String>,
         private val save: (Map<String, String>) -> Unit,
     ) : AbstractMutableMap<String, String>() {
         private val m = HashMap(initial)
+        @Volatile private var pending = false
         override val entries: MutableSet<MutableMap.MutableEntry<String, String>>
             get() = synchronized(m) { HashMap(m).entries }
         override val keys: MutableSet<String> get() = synchronized(m) { m.keys.toMutableSet() }
         override fun get(key: String): String? = synchronized(m) { m[key] }
-        override fun put(key: String, value: String): String? =
-            synchronized(m) { m.put(key, value).also { save(HashMap(m)) } }
-        override fun remove(key: String): String? =
-            synchronized(m) { m.remove(key).also { save(HashMap(m)) } }
+        override fun put(key: String, value: String): String? = synchronized(m) {
+            m.put(key, value).also { if (it != value) changed() }
+        }
+        override fun remove(key: String): String? = synchronized(m) {
+            val had = m.containsKey(key)
+            m.remove(key).also { if (had) changed() }
+        }
+
+        /** Under the lock: ask for a save unless one is already waiting. */
+        private fun changed() {
+            if (pending) return
+            pending = true
+            storageWriter.execute {
+                // Cleared before the copy: a change made after this asks for
+                // another save, and one made before is in this one.
+                val snapshot = synchronized(m) { pending = false; HashMap(m) }
+                runCatching { save(snapshot) }.onFailure { Log.w(TAG, "plugin storage not saved: ${it.message}") }
+            }
+        }
+    }
+
+    /** Where sources' storage is saved, one save at a time. */
+    private val storageWriter = java.util.concurrent.Executors.newSingleThreadExecutor { r ->
+        Thread(r, "plugin-storage").apply { isDaemon = true }
+    }
+
+    /** Wait for every source's storage to be saved (the app is closing). */
+    fun flushStorage() {
+        runCatching { storageWriter.submit {}.get(5, java.util.concurrent.TimeUnit.SECONDS) }
     }
 
     /**

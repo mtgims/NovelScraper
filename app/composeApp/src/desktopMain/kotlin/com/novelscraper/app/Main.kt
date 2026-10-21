@@ -106,7 +106,7 @@ fun main(args: Array<String>) {
     }
     // Settings are saved in the background; make sure pending saves land however
     // the app exits (window close, logout, SIGTERM).
-    Runtime.getRuntime().addShutdownHook(Thread { PropertiesStore.flush() })
+    Runtime.getRuntime().addShutdownHook(Thread { Extensions.flushStorage(); PropertiesStore.flush() })
     // The desktop app is "in the foreground" while it runs: confirm the session
     // and keep syncing (when signed in).
     Account.onForeground()
@@ -229,5 +229,6 @@ private fun shutdown() {
     // The process is ending and the system takes the memory back anyway, so
     // closing the window never waits on it for more than a moment.
     Thread { DesktopTtsPlayer.release() }.apply { isDaemon = true; start() }.join(2_000)
+    Extensions.flushStorage()
     PropertiesStore.flush()
 }
