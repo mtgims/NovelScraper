@@ -126,8 +126,11 @@ class PluginRuntime private constructor(
             throw e
         } finally {
             // Nothing after the call can use what a request it left running
-            // brings back.
+            // brings back, nor the bodies it was handed: a plugin reads a body
+            // only during the call that fetched it. Kept, they held up to 16
+            // replies of up to 16 MiB for as long as the source stayed loaded.
             cancelRequests()
+            synchronized(responseBodies) { responseBodies.clear() }
         }
     }
 
@@ -226,6 +229,9 @@ class PluginRuntime private constructor(
         override fun removeEldestEntry(eldest: MutableMap.MutableEntry<Long, ByteArray>) = size > 16
     }
     private val responseSeq = AtomicLong()
+
+    /** Reply bodies held for the plugin (tests). */
+    internal val heldBodies: Int get() = synchronized(responseBodies) { responseBodies.size }
 
     @OptIn(ExperimentalQuickJsApi::class)
     private fun bindNative() {

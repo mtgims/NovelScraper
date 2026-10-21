@@ -232,6 +232,15 @@ class PluginRuntimeTest {
         }
     }
 
+    /** Up to sixteen reply bodies, of up to 16 MiB each, were kept after a call
+     *  ended, for as long as the source stayed loaded. Nothing can use them then. */
+    @Test fun aCallLeavesNoReplyBodiesBehind() = runBlocking<Unit> {
+        PluginRuntime.load("fake", plugin, env).use { p ->
+            assertTrue(p.popular(1).isNotEmpty())
+            assertEquals(0, p.heldBodies, "reply bodies are let go when the call ends")
+        }
+    }
+
     /**
      * The guard used to look the host up itself and let the client look it up
      * again to connect, so a name that answered "public" to the first and
