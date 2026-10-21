@@ -637,6 +637,15 @@ class LibraryStore(
         val protect = chapters.protectedIds(bookId).executeAsList().toSet()
         val (held, disposable) = missing.partition { it in protect }
         disposable.forEach { chapters.deleteById(it) }
+        // What is kept goes after everything the source lists, in its old
+        // order. Left where it was, it could share a position with a chapter
+        // renumbered onto it, and a position is how a chapter is opened and
+        // marked read: two rows there and opening throws, marking marks both.
+        val byId = existing.values.associateBy { it.id }
+        held.mapNotNull { byId[it] }.sortedBy { it.position }.forEachIndexed { i, c ->
+            val pos = list.size.toLong() + 1 + i
+            if (c.position != pos) chapters.updateMeta(pos, c.number, c.title, c.volume, c.release_time, c.id)
+        }
         if (held.isNotEmpty()) {
             Log.w(TAG, "refresh of book $bookId dropped ${missing.size} chapters; " +
                        "kept ${held.size} holding downloads or read marks")

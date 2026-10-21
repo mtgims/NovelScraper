@@ -91,4 +91,57 @@ class ChapterMergeTest {
         assertEquals(2, lib.count(id),
             "nothing was downloaded or read, so there is nothing to protect")
     }
+
+    /** A source whose chapters are whatever [paths] says now. */
+    private class Listed(var paths: List<String>) : SourceOrigin {
+        override suspend fun name(pluginId: String) = "Fake"
+        override suspend fun novel(pluginId: String, path: String) = SourceNovel(
+            name = "Novel", path = path,
+            chapters = paths.map { ChapterItem("Chapter ${it.substringAfterLast('/')}", it) },
+        )
+        override suspend fun chapter(pluginId: String, path: String) = "<p>$path</p>"
+        override suspend fun webUrl(pluginId: String, path: String) = null
+    }
+
+    private suspend fun LibraryStore.positions(id: Int) = chaptersFlow(id).first().map { it.position }
+
+    @Test
+    fun aChapterDroppedFromTheMiddleKeepsAPositionOfItsOwn() = runBlocking<Unit> {
+        val source = Listed((1..5).map { "n/c$it" })
+        val lib = store(source)
+        val id = lib.openSource("fake", "n", "Novel", null).also { lib.refresh(it) }
+        lib.setInLibrary(id, true)
+        lib.setRead(id, listOf(3), true)       // read, so it is kept when it goes
+
+        source.paths = source.paths - "n/c3"   // the site took chapter 3 down
+        lib.refresh(id)
+
+        val positions = lib.positions(id)
+        assertEquals(positions.distinct(), positions, "two chapters at one position: $positions")
+        assertEquals(listOf(1, 2, 3, 4, 5), positions.sorted())
+        for (p in positions) lib.chapter(id, p)   // each opens: one row per position
+        val kept = lib.chaptersFlow(id).first().single { it.read }
+        assertEquals(5, kept.position, "kept after the ones the source still lists")
+
+        // Marking one position marks one chapter.
+        lib.setRead(id, listOf(3), true)
+        assertEquals(2, lib.chaptersFlow(id).first().count { it.read })
+    }
+
+    @Test
+    fun aSourceThatChangesEveryAddressKeepsReadChaptersApart() = runBlocking<Unit> {
+        val source = Listed((1..4).map { "old/c$it" })
+        val lib = store(source)
+        val id = lib.openSource("fake", "n", "Novel", null).also { lib.refresh(it) }
+        lib.setInLibrary(id, true)
+        lib.setRead(id, listOf(1, 2), true)
+
+        source.paths = (1..4).map { "new/c$it" }   // a new URL scheme
+        lib.refresh(id)
+
+        val positions = lib.positions(id)
+        assertEquals(positions.distinct(), positions, "two chapters at one position: $positions")
+        assertEquals(6, positions.size, "the four listed, and the two read ones kept")
+        for (p in positions) lib.chapter(id, p)
+    }
 }
