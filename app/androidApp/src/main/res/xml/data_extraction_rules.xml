@@ -3,7 +3,8 @@
   Android 12 and above, which splits the two cases.
 
   cloud-backup leaves the device, so credentials are excluded, as in
-  backup_rules.xml.
+  backup_rules.xml: sessions, cookies, what sources store, and the sync code
+  with the WebDAV password and passphrase.
 
   device-transfer is the reader moving to their own new phone, directly and
   deliberately. Keeping sessions there means the move does not sign them out of
@@ -14,6 +15,7 @@
         <exclude domain="sharedpref" path="ns.xml" />
         <exclude domain="sharedpref" path="site-cookies.xml" />
         <exclude domain="sharedpref" path="plugin-data.xml" />
+        <exclude domain="sharedpref" path="sync.xml" />
     </cloud-backup>
     <device-transfer />
 </data-extraction-rules>

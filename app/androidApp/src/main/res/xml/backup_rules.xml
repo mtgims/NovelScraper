@@ -11,6 +11,8 @@
     site-cookies.xml  what sites set while sources browse them, including any
                       login a source made on the reader's behalf
     plugin-data.xml   whatever a source stored, which is where its tokens live
+    sync.xml          the sync code, which unlocks everything synced, and the
+                      WebDAV password and passphrase
 
   Signing in again is a small cost; the alternative is handing them out.
 -->
@@ -18,4 +20,5 @@
     <exclude domain="sharedpref" path="ns.xml" />
     <exclude domain="sharedpref" path="site-cookies.xml" />
     <exclude domain="sharedpref" path="plugin-data.xml" />
+    <exclude domain="sharedpref" path="sync.xml" />
 </full-backup-content>
