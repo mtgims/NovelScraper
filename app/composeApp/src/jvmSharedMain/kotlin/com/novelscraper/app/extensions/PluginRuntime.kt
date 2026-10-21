@@ -95,9 +95,10 @@ class PluginRuntime private constructor(
     /**
      * Close once whatever is running has finished.
      *
-     * [close] tears the interpreter down there and then, which is a crash if a
-     * call is still evaluating inside it. Eviction cannot use that, so it waits
-     * on the same lock every call takes.
+     * [close] tears the interpreter down there and then, which cuts off a call
+     * still evaluating inside it (it fails with "Already closed"). Eviction,
+     * replacement and uninstalling cannot use that, so they wait on the same
+     * lock every call takes.
      */
     internal suspend fun closeWhenIdle() = mutex.withLock { js.close() }
 

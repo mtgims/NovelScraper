@@ -198,7 +198,7 @@ object Extensions {
             }
             // Idle first, for the same reason eviction waits: the version being
             // replaced may be mid-call, and ending its interpreter there would
-            // take the app with it.
+            // cut that call off.
             running.remove(p.id)?.let { old ->
                 evicting.launch { runCatching { old.closeWhenIdle() } }
             }
@@ -208,7 +208,9 @@ object Extensions {
     }
 
     suspend fun uninstall(id: String) = mutex.withLock {
-        running.remove(id)?.close()
+        // Closed once idle, as install and eviction do: a call under way (a
+        // download, a browse) finishes rather than being cut off.
+        running.remove(id)?.let { old -> evicting.launch { runCatching { old.closeWhenIdle() } } }
         withContext(Dispatchers.IO) { codeFile(id).delete() }
         storageCache.remove(id)
         dataPrefs.remove(id)
@@ -290,7 +292,8 @@ object Extensions {
             // closed only once it is idle. close() ends the interpreter where
             // it stands, and with more than MAX_RUNNING sources in use the one
             // falling off the end can be in the middle of a call: closing a
-            // QuickJS context under a running evaluation takes the app with it.
+            // QuickJS context under a running evaluation cuts that call off
+            // ("Already closed", measured 2026-10-21), or worse.
             //
             // Off this coroutine as well, because waiting here would hold the
             // extensions lock for as long as that call takes, which is up to
