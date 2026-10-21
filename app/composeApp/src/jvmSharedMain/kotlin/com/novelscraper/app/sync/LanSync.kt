@@ -456,7 +456,7 @@ class LanSync internal constructor(
 
     private fun localEntries(): Map<String, Replication.Entry> =
         folder.listNow().filter { SyncFiles.parse(it.name) != null }.mapNotNull { f ->
-            folder.readNow(f.name)?.let { Replication.Entry(f.name, it.size.toLong(), sha(it)) }
+            folder.hashNow(f.name, ::sha)?.let { Replication.Entry(f.name, f.size, it) }
         }.associateBy { it.name }
 
     private fun prune(floors: Map<String, Long>) {

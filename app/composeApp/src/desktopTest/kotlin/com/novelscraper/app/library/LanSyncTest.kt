@@ -285,5 +285,24 @@ class LanSyncTest {
         }
     }
 
+    /** A meeting used to read and hash every file in the folder again for each
+     *  listing and each file it took, so its cost grew with the square of the
+     *  folder. Each file is read once to hash it and once to send it now. */
+    @Test
+    fun aMeetingReadsEachFileAFewTimesNotOncePerFile() = runBlocking<Unit> {
+        val a = Device(code); val b = Device(code)
+        for (i in 1..20) {
+            a.clock += 1_000
+            val id = a.lib.openSource("fake", "n$i", "Novel $i", null)
+            a.lib.refresh(id); a.lib.setInLibrary(id, true); a.sync()
+        }
+        val files = a.folder.listNow().size
+        a.folder.reads.set(0)
+        assertTrue(b.meet(a))
+        val reads = a.folder.reads.get()
+        println("meeting: $files files on A, $reads reads of them")
+        assertTrue(reads <= 2 * files + 2, "$reads reads for $files files")
+    }
+
     private fun freeUdpPort() = DatagramSocket(0).use { it.localPort }
 }

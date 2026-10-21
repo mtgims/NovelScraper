@@ -31,7 +31,29 @@ class LocalFolder(val dir: File) : SyncFolder {
         dir.listFiles().orEmpty().filter { it.isFile && !it.name.startsWith(".") }.map { RemoteFile(it.name, it.length()) }
     }
 
-    internal fun readNow(name: String): ByteArray? = synchronized(lock) { file(name).takeIf { it.isFile }?.readBytes() }
+    internal fun readNow(name: String): ByteArray? = synchronized(lock) {
+        file(name).takeIf { it.isFile }?.readBytes()?.also { reads.incrementAndGet() }
+    }
+
+    /** Files read whole so far (tests). */
+    internal val reads = java.util.concurrent.atomic.AtomicInteger()
+
+    /**
+     * A file's hash by [hash], read and computed only when the file is new or
+     * has changed since: a meeting lists the folder more than once, and used
+     * to read every file again each time. Writes and deletes here keep it
+     * exact; a file changed any other way shows in its size or time.
+     */
+    internal fun hashNow(name: String, hash: (ByteArray) -> String): String? = synchronized(lock) {
+        val f = file(name)
+        if (!f.isFile) { hashes.remove(name); return null }
+        val stamp = f.length() to f.lastModified()
+        hashes[name]?.let { (seen, value) -> if (seen == stamp) return value }
+        val bytes = readNow(name) ?: return null
+        hash(bytes).also { hashes[name] = stamp to it }
+    }
+
+    private val hashes = HashMap<String, Pair<Pair<Long, Long>, String>>()
 
     internal fun writeNow(name: String, bytes: ByteArray) {
         synchronized(lock) {
@@ -40,13 +62,14 @@ class LocalFolder(val dir: File) : SyncFolder {
             tmp.writeBytes(bytes)
             Files.move(tmp.toPath(), file(name).toPath(),
                 StandardCopyOption.REPLACE_EXISTING, StandardCopyOption.ATOMIC_MOVE)
+            hashes.remove(name)
         }
     }
 
-    internal fun deleteNow(name: String) { synchronized(lock) { file(name).delete() } }
+    internal fun deleteNow(name: String) { synchronized(lock) { file(name).delete(); hashes.remove(name) } }
 
     /** Everything goes: disconnecting. */
-    fun clear() { synchronized(lock) { dir.deleteRecursively() } }
+    fun clear() { synchronized(lock) { dir.deleteRecursively(); hashes.clear() } }
 
     private fun file(name: String): File {
         // Names come from other devices too: never a path.
