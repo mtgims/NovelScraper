@@ -100,6 +100,7 @@ object ReaderPrefs {
 
     fun init() {
         prefs = settingsStore("reader")
+        loadRecentScroll()
         _fontScale.value = prefs.getFloat("font_scale", 1.0f)
         _ttsRate.value = prefs.getFloat("tts_rate", 1.0f)
         _ttsVoice.value = prefs.getString("tts_voice", "") ?: ""
@@ -213,11 +214,49 @@ object ReaderPrefs {
         prefs.putFloat("font_scale", clamped)
     }
 
+    /** How many chapters keep their place (see [setScroll]). */
+    const val MAX_SCROLL_KEYS = 500
+
     /** In-chapter scroll, per novel ([ReaderViewModel.scrollKey]) and chapter. */
     fun getScroll(novelKey: String, position: Int): Float =
         prefs.getFloat("scroll_${novelKey}_$position", 0f)
 
+    /**
+     * Where reading stopped in a chapter. Every chapter ever opened kept its
+     * key for good, so the settings file only grew, and it is rewritten whole.
+     * Only the [MAX_SCROLL_KEYS] most recently read chapters keep theirs now;
+     * an older one opens at its top.
+     */
     fun setScroll(novelKey: String, position: Int, fraction: Float) {
-        prefs.putFloat("scroll_${novelKey}_$position", fraction.coerceIn(0f, 1f))
+        val key = "scroll_${novelKey}_$position"
+        prefs.putFloat(key, fraction.coerceIn(0f, 1f))
+        synchronized(recentScroll) {
+            recentScroll.remove(key)
+            recentScroll.add(key)
+            trimScroll()
+            prefs.putString(RECENT_SCROLL, json.encodeToString(ListSerializer(String.serializer()), recentScroll.toList()))
+        }
     }
+
+    /** The chapters that keep their place, least recently read first. */
+    private val recentScroll = LinkedHashSet<String>()
+
+    private fun trimScroll() {
+        while (recentScroll.size > MAX_SCROLL_KEYS) {
+            val oldest = recentScroll.first()
+            recentScroll.remove(oldest)
+            prefs.remove(oldest)
+        }
+    }
+
+    /** Read the list of kept places; on first use, start it from whatever is stored. */
+    private fun loadRecentScroll() = synchronized(recentScroll) {
+        recentScroll.clear()
+        val listed = prefs.getString(RECENT_SCROLL, null)
+            ?.let { runCatching { json.decodeFromString(ListSerializer(String.serializer()), it) }.getOrNull() }
+        recentScroll.addAll(listed ?: prefs.keys().filter { it.startsWith("scroll_") }.sorted())
+        trimScroll()
+    }
+
+    private const val RECENT_SCROLL = "recent_scroll_keys"
 }

@@ -28,6 +28,9 @@ interface KeyValueStore {
     fun putInt(key: String, value: Int)
     fun putBoolean(key: String, value: Boolean)
     fun remove(key: String)
+
+    /** Every key stored. */
+    fun keys(): Set<String>
 }
 
 expect fun settingsStore(name: String): KeyValueStore

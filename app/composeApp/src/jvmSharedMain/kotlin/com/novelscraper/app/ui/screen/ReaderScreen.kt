@@ -93,6 +93,7 @@ import com.novelscraper.app.data.ReaderPrefs
 import com.novelscraper.app.data.Sentences
 import com.novelscraper.app.net.Net
 import com.novelscraper.app.tts.TtsController
+import com.novelscraper.app.ui.ScrollSaver
 import com.novelscraper.app.ui.components.ChaptersSheet
 import com.novelscraper.app.ui.components.ReaderTtsBar
 import com.novelscraper.app.ui.theme.Serif
@@ -447,9 +448,15 @@ private fun ChapterBody(
         runCatching { scroll.scrollTo((savedFrac * scroll.maxValue).roundToInt()) }
         restored = true
     }
+    // Saved once the scrolling stops, and when the chapter closes.
+    val saveScope = rememberCoroutineScope()
+    val scrollSaver = remember(bookId, pos) {
+        ScrollSaver(saveScope) { f -> ReaderPrefs.setScroll(data.scrollKey, pos, f) }
+    }
+    DisposableEffect(scrollSaver) { onDispose { scrollSaver.flush() } }
     LaunchedEffect(bookId, pos) {
         snapshotFlow { if (scroll.maxValue > 0) scroll.value.toFloat() / scroll.maxValue else 0f }
-            .collect { f -> if (restored) ReaderPrefs.setScroll(data.scrollKey, pos, f) }
+            .collect { f -> if (restored) scrollSaver.update(f) }
     }
     // Hide the bars once the reader actually starts scrolling (after the initial
     // restore, so opening a chapter doesn't immediately hide them). TTS auto-centring

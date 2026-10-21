@@ -50,6 +50,7 @@ class SharedLogicTest {
         override fun putInt(key: String, value: Int) {}
         override fun putBoolean(key: String, value: Boolean) {}
         override fun remove(key: String) { sets.remove(key) }
+        override fun keys(): Set<String> = sets.keys.toSet()
     }
 
     @Test fun cookiesSurviveARestartAndClear() {

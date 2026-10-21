@@ -51,6 +51,8 @@ class PropertiesStore(private val file: File) : KeyValueStore {
         scheduleSave()
     }
 
+    override fun keys(): Set<String> = synchronized(props) { props.stringPropertyNames().toSet() }
+
     private fun put(key: String, value: String) {
         synchronized(props) { props.setProperty(key, value) }
         scheduleSave()

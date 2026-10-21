@@ -62,6 +62,7 @@ private class PrefsStore(private val p: SharedPreferences) : KeyValueStore {
     override fun putInt(key: String, value: Int) = p.edit().putInt(key, value).apply()
     override fun putBoolean(key: String, value: Boolean) = p.edit().putBoolean(key, value).apply()
     override fun remove(key: String) = p.edit().remove(key).apply()
+    override fun keys(): Set<String> = p.all.keys.toSet()
 }
 
 actual fun settingsStore(name: String): KeyValueStore =
