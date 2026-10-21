@@ -14,6 +14,10 @@ import com.novelscraper.app.platform.requestThroughBrowser
 import com.novelscraper.app.platform.canFetchThroughBrowser
 import com.novelscraper.app.platform.looksLikeBrowserCheck
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.awaitCancellation
+import kotlinx.coroutines.coroutineScope
+import kotlinx.coroutines.ensureActive
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
@@ -106,6 +110,12 @@ class PluginRuntime private constructor(
         try {
             evaluateCall(expr)
         } catch (e: TimeoutCancellationException) {
+            // A plugin's requests run in the interpreter's own coroutines, not
+            // this one, so giving up on the call does not end them: a reply
+            // trickling in would keep its connection, and a thread, for as long
+            // as the server kept sending. Calls take turns, so every request in
+            // flight is this call's.
+            cancelRequests()
             // The timeout on its own is advisory. withTimeout cancels the
             // coroutine, but `while (true) {}` in a plugin never reaches a
             // suspension point, so the interpreter keeps spinning a thread
@@ -114,7 +124,20 @@ class PluginRuntime private constructor(
             // interpreter itself, which is the only thing that stops it.
             js.interruptEvaluation()
             throw e
+        } finally {
+            // Nothing after the call can use what a request it left running
+            // brings back.
+            cancelRequests()
         }
+    }
+
+    /** This runtime's requests still under way (see [call]). */
+    private val inFlight: MutableSet<okhttp3.Call> =
+        java.util.Collections.newSetFromMap(java.util.concurrent.ConcurrentHashMap())
+
+    private fun cancelRequests() {
+        inFlight.forEach { it.cancel() }
+        inFlight.clear()
     }
 
     private suspend fun evaluateCall(expr: String): String =
@@ -268,7 +291,10 @@ class PluginRuntime private constructor(
      * which a check on the requested URL alone would miss.
      */
     private val http: OkHttpClient by lazy {
-        var b = env.http.newBuilder()
+        // A whole request is bounded, not just each read: a reply that trickles
+        // in a byte at a time never trips a read timeout. Inside the call's own
+        // limit, so the call sees why it failed.
+        var b = env.http.newBuilder().callTimeout(80, java.util.concurrent.TimeUnit.SECONDS)
         // Its own cookies, never another plugin's session. env.http carries the
         // shared jar for the app's own fetches; this replaces it per plugin.
         env.cookies?.let { b = b.cookieJar(it.forPlugin(pluginId)) }
@@ -317,36 +343,75 @@ class PluginRuntime private constructor(
             if (SiteChecks.wantsBrowser(url)) {
                 viaBrowser(url, method, headers, r["body"] as? JsonObject)?.let { return@withContext it }
             }
-            http.newCall(builder.build()).execute().use { resp ->
-                val bytes = readCapped(resp)
-                if (isChallenge(resp.code, resp.headers, bytes)) {
-                    // Cloudflare reads more than cookies, so a browser check can't
-                    // hand this client a pass: ask through the browser instead.
-                    SiteChecks.needsBrowser(url)
-                    viaBrowser(url, method, headers, r["body"] as? JsonObject)?.let { return@withContext it }
-                    challengedUrl = url
-                } else if (resp.isSuccessful) {
-                    // It answered us plainly: it no longer needs the long way round.
-                    SiteChecks.plainAgain(url)
-                }
-                val id = responseSeq.incrementAndGet()
-                synchronized(responseBodies) { responseBodies[id] = bytes }
-                // Like fetch's Response.text(): UTF-8 unless the caller (fetchText) asks.
-                val encoding = r["encoding"]?.jsonPrimitive?.contentOrNull
-                buildJsonObject {
-                    put("status", resp.code)
-                    put("statusText", resp.message)
-                    put("url", resp.request.url.toString())
-                    put("redirected", resp.priorResponse != null)
-                    put("headers", buildJsonObject {
-                        for (name in resp.headers.names()) put(name.lowercase(), resp.headers.values(name).joinToString(", "))
-                    })
-                    put("text", String(bytes, charset(encoding)))
-                    put("bodyId", id.toString())
-                }.toString()
+            val call = http.newCall(builder.build())
+            // Read whole inside the guard: a slow reply is slow in its body.
+            val resp = cancelledWith(call) {
+                call.execute().use { r -> Reply(r.code, r.message, r.request.url.toString(), r.priorResponse != null, r.headers, readCapped(r)) }
             }
+            val bytes = resp.bytes
+            if (isChallenge(resp.code, resp.headers, bytes)) {
+                // Cloudflare reads more than cookies, so a browser check can't
+                // hand this client a pass: ask through the browser instead.
+                SiteChecks.needsBrowser(url)
+                viaBrowser(url, method, headers, r["body"] as? JsonObject)?.let { return@withContext it }
+                challengedUrl = url
+            } else if (resp.code in 200..299) {
+                // It answered us plainly: it no longer needs the long way round.
+                SiteChecks.plainAgain(url)
+            }
+            val id = responseSeq.incrementAndGet()
+            synchronized(responseBodies) { responseBodies[id] = bytes }
+            // Like fetch's Response.text(): UTF-8 unless the caller (fetchText) asks.
+            val encoding = r["encoding"]?.jsonPrimitive?.contentOrNull
+            buildJsonObject {
+                put("status", resp.code)
+                put("statusText", resp.message)
+                put("url", resp.url)
+                put("redirected", resp.redirected)
+                put("headers", buildJsonObject {
+                    for (name in resp.headers.names()) put(name.lowercase(), resp.headers.values(name).joinToString(", "))
+                })
+                put("text", String(bytes, charset(encoding)))
+                put("bodyId", id.toString())
+            }.toString()
+        } catch (e: kotlinx.coroutines.CancellationException) {
+            throw e
         } catch (e: Exception) {
+            // A request cut off because the call was cancelled fails as an I/O
+            // error; the cancellation is what to report, not the error.
+            coroutineContext.ensureActive()
             buildJsonObject { put("error", e.message ?: e.javaClass.simpleName) }.toString()
+        }
+    }
+
+    /** A reply read whole, ready to be handed to the plugin. */
+    private class Reply(
+        val code: Int,
+        val message: String,
+        val url: String,
+        val redirected: Boolean,
+        val headers: okhttp3.Headers,
+        val bytes: ByteArray,
+    )
+
+    /**
+     * Run [block] (a blocking request and its reading) so that cancelling this
+     * coroutine cancels [call] at once. Blocking code never reaches a suspension
+     * point, so cancellation alone would leave the request running, reading
+     * whatever the server still sends, for as long as it sends it.
+     */
+    private suspend fun <T> cancelledWith(call: okhttp3.Call, block: () -> T): T = coroutineScope {
+        inFlight += call
+        val watcher = launch(start = kotlinx.coroutines.CoroutineStart.UNDISPATCHED) {
+            // Cancelled with this coroutine, or once the block is done (when
+            // cancelling a finished call does nothing).
+            try { awaitCancellation() } finally { call.cancel() }
+        }
+        try {
+            withContext(Dispatchers.IO) { block() }
+        } finally {
+            watcher.cancel()
+            inFlight -= call
         }
     }
 
