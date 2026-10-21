@@ -217,6 +217,9 @@ kotlin {
         getByName("desktopTest") {
             dependencies {
                 implementation(kotlin("test"))
+                // A real https server on localhost, for what follows (or doesn't) a redirect.
+                implementation("com.squareup.okhttp3:okhttp-tls:4.12.0")
+                implementation("com.squareup.okhttp3:mockwebserver:4.12.0")
             }
         }
         getByName("androidHostTest") {

@@ -70,6 +70,8 @@ object Extensions {
 
     private const val TAG = "Extensions"
     private const val MAX_RUNNING = 4
+    /** The largest repository index or plugin code accepted (both are kilobytes). */
+    private const val MAX_REPO_BYTES = 8L * 1024 * 1024
 
     /** Where evicted runtimes are closed, once they go idle. */
     private val evicting = CoroutineScope(SupervisorJob() + Dispatchers.Default)
@@ -82,6 +84,9 @@ object Extensions {
     /** Downloads plugin code and indexes, and is what plugins fetch through: its
      *  own cookie jar, like a browser's, separate from the server login. */
     lateinit var http: OkHttpClient
+
+    /** [http], never changing scheme on a redirect: for repositories and plugin code ([get]). */
+    private lateinit var repoHttp: OkHttpClient
         private set
 
     /** The cookies sources set while plugins browse them (and what a browser
@@ -109,6 +114,7 @@ object Extensions {
             .connectTimeout(20, TimeUnit.SECONDS)
             .readTimeout(40, TimeUnit.SECONDS)
             .build()
+        repoHttp = http.newBuilder().followSslRedirects(false).build()
         _repos.value = prefs.getString("repos", null)
             ?.let { runCatching { json.decodeFromString(ListSerializer(String.serializer()), it) }.getOrNull() }
             ?: emptyList()
@@ -391,11 +397,25 @@ object Extensions {
               "between here and that server decides what runs.")
     }
 
-    private fun get(url: String): String =
-        requireTrustworthyOrigin(url).let { http.newCall(Request.Builder().url(url).header("User-Agent", browserUserAgent).build()).execute().use { r ->
+    /**
+     * A repository index or a plugin's code. Checking only the address asked
+     * for was not enough: the client followed a redirect from https to plain
+     * http, so a repository could hand its code over in the clear after all.
+     * This client never changes scheme on a redirect. Read with a ceiling,
+     * since the whole body is held in memory.
+     */
+    private fun get(url: String): String {
+        requireTrustworthyOrigin(url)
+        val request = Request.Builder().url(url).header("User-Agent", browserUserAgent).build()
+        return repoHttp.newCall(request).execute().use { r ->
+            if (r.isRedirect) error("$url redirects to ${r.header("Location")}, which this won't follow: not over https")
             if (!r.isSuccessful) error("HTTP ${r.code}")
-            r.body?.string() ?: error("empty response")
-        } }
+            val source = r.body?.source() ?: error("empty response")
+            source.request(MAX_REPO_BYTES + 1)
+            if (source.buffer.size > MAX_REPO_BYTES) error("$url is over ${MAX_REPO_BYTES / (1024 * 1024)} MiB")
+            source.buffer.readUtf8()
+        }
+    }
 }
 
 /** Compare dotted version strings numerically ("2.10.0" > "2.9.1"). */
