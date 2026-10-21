@@ -153,7 +153,25 @@ class LanSync internal constructor(
     val state: StateFlow<State> = _state.asStateFlow()
 
     private val peers = ConcurrentHashMap<String, Peer>()
-    private val sessions = Any()
+    /**
+     * Held for a whole meeting, so two never read and write the folder at once.
+     * Never waited for while the other device might be waiting in turn: the
+     * side that connects takes it before connecting (holding nothing of the
+     * other's yet), and the side connected to only takes it if it is free,
+     * answering "busy" otherwise. Both used to wait, and two devices meeting
+     * at once each held their own while waiting for the other's, until both
+     * gave up on the read timeout.
+     */
+    private val meeting = java.util.concurrent.locks.ReentrantLock()
+
+    /** Devices an exchange is under way with, so an announcement doesn't start another. */
+    private val exchanging = ConcurrentHashMap.newKeySet<String>()
+
+    /** Bumped by every [start]: an announce loop from before a quick stop and start ends. */
+    @Volatile private var generation = 0
+
+    /** Announce loops running now (tests). */
+    internal val announcing = java.util.concurrent.atomic.AtomicInteger()
     @Volatile private var server: ServerSocket? = null
     @Volatile private var udp: DatagramSocket? = null
     @Volatile private var running = false
@@ -178,7 +196,8 @@ class LanSync internal constructor(
             }
         }.onFailure { Log.w(TAG, "not listening for other devices: ${it.message}") }.getOrNull()
         udp?.let { u -> daemon("lan-listen") { listen(u) } }
-        daemon("lan-announce") { announceLoop() }
+        val gen = ++generation
+        daemon("lan-announce") { announceLoop(gen) }
         publish()
     }
 
@@ -205,10 +224,11 @@ class LanSync internal constructor(
 
     private fun window() = now() / TAG_WINDOW_MS
 
-    private fun announceLoop() {
+    private fun announceLoop(gen: Int) {
+        announcing.incrementAndGet()
         val socket = DatagramSocket().apply { broadcast = true }
-        socket.use {
-            while (running) {
+        try { socket.use {
+            while (running && gen == generation) {
                 val port = port
                 if (port > 0) {
                     val msg = buildJsonObject {
@@ -222,6 +242,8 @@ class LanSync internal constructor(
                 }
                 Thread.sleep(ANNOUNCE_MS)
             }
+        } } finally {
+            announcing.decrementAndGet()
         }
     }
 
@@ -256,17 +278,38 @@ class LanSync internal constructor(
             val known = peers[other]
             peers[other] = Peer(other, msg.str("name") ?: "Another device", address, now(), known?.lastSync ?: 0)
             publish()
-            // Newly met, or not swapped with for a while: do it now.
-            if (known == null || now() - known.lastSync > RESYNC_MS) {
-                daemon("lan-exchange") { runCatching { exchange(packet.address.hostAddress, port) } }
+            // Newly met, or not swapped with for a while: do it now, unless a
+            // meeting with it is already under way. A moment's random wait
+            // first: the other device has usually just heard this one too, and
+            // two meetings started at the same instant both come back "busy".
+            if ((known == null || now() - known.lastSync > RESYNC_MS) && exchanging.add(other)) {
+                val host = packet.address.hostAddress
+                daemon("lan-exchange") {
+                    try {
+                        Thread.sleep(kotlin.random.Random.nextLong(JITTER_MS))
+                        runCatching { exchange(host, port) }
+                    } finally {
+                        exchanging.remove(other)
+                    }
+                }
             }
         }
     }
 
     // --- one meeting: the side that connected --------------------------------------------
 
-    /** Connect to another device and swap files. False if it isn't there or isn't ours. */
+    /** Connect to another device and swap files. False if it isn't there, isn't
+     *  ours, or is busy with another meeting (try again later). */
     internal fun exchange(host: String, port: Int): Boolean {
+        meeting.lock()
+        try {
+            return exchangeLocked(host, port)
+        } finally {
+            meeting.unlock()
+        }
+    }
+
+    private fun exchangeLocked(host: String, port: Int): Boolean {
         Socket().use { s ->
             s.connect(InetSocketAddress(host, port), CONNECT_MS)
             s.soTimeout = READ_MS
@@ -286,32 +329,30 @@ class LanSync internal constructor(
             if (io.receive().str("t") != "ok") return false
 
             var received = false
-            synchronized(sessions) {
-                io.send(buildJsonObject { put("t", "list") })
-                val theirs = entries(io.receive()["files"]?.jsonArray)
-                val mine = localEntries()
-                val floors = Replication.floors(mine.values, theirs)
-                for (e in Replication.wanted(mine, device, theirs, other, floors)) {
-                    io.send(buildJsonObject { put("t", "get"); put("name", e.name) })
-                    val reply = io.receive()
-                    if (reply.str("t") != "file") continue
-                    val bytes = io.receiveBytes()
-                    if (sha(bytes) != e.sha) continue
-                    folder.writeNow(e.name, bytes)
-                    received = true
-                }
-                val theirsByName = theirs.associateBy { it.name }
-                for (e in Replication.wanted(theirsByName, other, mine.values, device, floors)) {
-                    val bytes = folder.readNow(e.name) ?: continue
-                    io.send(buildJsonObject { put("t", "put"); put("name", e.name) })
-                    io.sendBytes(bytes)
-                    io.receive()
-                }
-                io.send(buildJsonObject { put("t", "bye") })
-                // The other side has finished with what it took when it says so.
-                io.receive()
-                prune(floors)
+            io.send(buildJsonObject { put("t", "list") })
+            val theirs = entries(io.receive()["files"]?.jsonArray)
+            val mine = localEntries()
+            val floors = Replication.floors(mine.values, theirs)
+            for (e in Replication.wanted(mine, device, theirs, other, floors)) {
+                io.send(buildJsonObject { put("t", "get"); put("name", e.name) })
+                val reply = io.receive()
+                if (reply.str("t") != "file") continue
+                val bytes = io.receiveBytes()
+                if (sha(bytes) != e.sha) continue
+                folder.writeNow(e.name, bytes)
+                received = true
             }
+            val theirsByName = theirs.associateBy { it.name }
+            for (e in Replication.wanted(theirsByName, other, mine.values, device, floors)) {
+                val bytes = folder.readNow(e.name) ?: continue
+                io.send(buildJsonObject { put("t", "put"); put("name", e.name) })
+                io.sendBytes(bytes)
+                io.receive()
+            }
+            io.send(buildJsonObject { put("t", "bye") })
+            // The other side has finished with what it took when it says so.
+            io.receive()
+            prune(floors)
             met(other, hello.str("name"), "$host:$port")
             if (received) onReceived()
             return true
@@ -340,10 +381,15 @@ class LanSync internal constructor(
         })
         // The other side proves itself before anything is listed or taken.
         if (io.receive().str("proof") != keys.proof("client", nonce, other)) return
-        io.send(buildJsonObject { put("t", "ok") })
-
+        // Busy with another meeting: say so rather than wait, since that one
+        // may be waiting on this device's own (see [meeting]).
+        if (!meeting.tryLock()) {
+            io.send(buildJsonObject { put("t", "busy") })
+            return
+        }
         var received = false
-        synchronized(sessions) {
+        try {
+            io.send(buildJsonObject { put("t", "ok") })
             var floors = Replication.floors(localEntries().values)
             while (true) {
                 val req = io.receive()
@@ -378,6 +424,8 @@ class LanSync internal constructor(
                     }
                 }
             }
+        } finally {
+            meeting.unlock()
         }
         // Where the other device can be reached in turn: its address, and the
         // port its own server said it has.
@@ -453,6 +501,7 @@ class LanSync internal constructor(
         private const val TAG_WINDOW_MS = 10 * 60_000L
         private const val PEER_TTL_MS = 2 * 60_000L
         private const val RESYNC_MS = 30_000L
+        private const val JITTER_MS = 2_000L
         private const val CONNECT_MS = 3_000
         private const val READ_MS = 20_000
         private const val MAX_FRAME = 17 * 1024 * 1024

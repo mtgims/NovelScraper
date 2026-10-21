@@ -209,5 +209,48 @@ class LanSyncTest {
         assertTrue(Replication.wanted(emptyMap(), "me", listOf(e(SyncFiles.MANIFEST)), "w", emptyMap()).isEmpty())
     }
 
+    /**
+     * Discovery is a broadcast, so two devices usually hear each other within
+     * moments and both connect. Each side used to hold its one lock while
+     * waiting on the other's, so both sat out the full read timeout (20 s),
+     * the meeting failed, and the next announcement started it all again.
+     */
+    @Test
+    fun twoDevicesMeetingAtOnceDoNotStallEachOther() = runBlocking<Unit> {
+        val a = Device(code); val b = Device(code)
+        for ((d, path) in listOf(a to "na", b to "nb")) {
+            val id = d.lib.openSource("fake", path, "Novel $path", null)
+            d.lib.refresh(id); d.lib.setInLibrary(id, true); d.sync()
+        }
+        repeat(3) { round ->
+            val go = java.util.concurrent.CountDownLatch(1)
+            val took = LongArray(2)
+            val meetings = listOf(a to b, b to a).mapIndexed { i, (from, to) ->
+                kotlin.concurrent.thread {
+                    go.await()
+                    val t0 = System.currentTimeMillis()
+                    runCatching { from.meet(to) }
+                    took[i] = System.currentTimeMillis() - t0
+                }
+            }
+            go.countDown()
+            meetings.forEach { it.join() }
+            assertTrue(took.max() < 8_000, "round $round: the two meetings took ${took.toList()} ms")
+        }
+        // One at a time, they converge as always.
+        assertTrue(a.meet(b)); assertTrue(b.meet(a))
+        a.sync(); b.sync()
+        assertEquals(2, libraryOf(a).size)
+        assertEquals(2, libraryOf(b).size)
+    }
+
+    @Test
+    fun aQuickStopAndStartLeavesOneAnnouncer() {
+        val a = Device(code)
+        a.lan.stop(); a.lan.start()   // well inside the announcer's 5 s sleep
+        Thread.sleep(6_000)           // long enough for the old one to wake
+        assertEquals(1, a.lan.announcing.get(), "one device, one announcement loop")
+    }
+
     private fun freeUdpPort() = DatagramSocket(0).use { it.localPort }
 }
