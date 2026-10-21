@@ -98,11 +98,25 @@ internal class SyncCodec(private val key: SecretKey?) {
             key == null && !sealed -> bytes
             else -> throw BadBatchException(if (sealed) "encrypted, folder is not" else "plain, folder is encrypted")
         }
-        val lines = try {
-            GZIPInputStream(ByteArrayInputStream(plain)).bufferedReader().readLines()
+        // Bounded: a few kilobytes of gzip can unpack to gigabytes, and a shared
+        // folder without a key takes files from anyone who can write to it.
+        val unpacked = try {
+            val gz = GZIPInputStream(ByteArrayInputStream(plain))
+            val out = ByteArrayOutputStream()
+            val buf = ByteArray(64 * 1024)
+            while (true) {
+                val n = gz.read(buf)
+                if (n < 0) break
+                out.write(buf, 0, n)
+                if (out.size() > MAX_UNPACKED) {
+                    throw BadBatchException("unpacks to over ${MAX_UNPACKED / (1024 * 1024)} MiB")
+                }
+            }
+            out.toByteArray()
         } catch (e: java.io.IOException) {
             throw BadBatchException("not gzip: ${e.message}")
         }
+        val lines = unpacked.decodeToString().lines()
         val header = lines.firstOrNull()
             ?.let { runCatching { json.decodeFromString(Header.serializer(), it) }.getOrNull() }
             ?: throw BadBatchException("no header")
@@ -118,6 +132,8 @@ internal class SyncCodec(private val key: SecretKey?) {
     }
 
     companion object {
+        /** A batch is a few hundred records; this is far more than one can need. */
+        private const val MAX_UNPACKED = 64 * 1024 * 1024
         private val json = Json { ignoreUnknownKeys = true; encodeDefaults = true }
         private val MAGIC = "NSE1".toByteArray()
         private const val NONCE = 12
