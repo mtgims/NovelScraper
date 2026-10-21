@@ -73,23 +73,30 @@ internal class SyncRecords(
     private val shelves get() = db.collectionQueries
 
     /** This device's id (made on first use). */
-    fun device(): String {
+    fun device(): String = state().device
+
+    /**
+     * The sync state row, made on first use. Read once per use: every record
+     * used to make it again (an insert, with a fresh id that was then thrown
+     * away) and read it two or three times over, eight statements a record.
+     */
+    private fun state() = q.state().executeAsOneOrNull() ?: run {
         q.initState(UUID.randomUUID().toString())
-        return q.state().executeAsOne().device
+        q.state().executeAsOne()
     }
 
-    /** The next clock value: never behind the wall clock, always past anything
-     *  seen, so a change here is ordered after the ones it follows. */
-    private fun tick(): Long {
-        device()
-        val s = q.state().executeAsOne()
+    /** The next clock value, with this device's id: never behind the wall clock,
+     *  always past anything seen, so a change here is ordered after the ones it
+     *  follows. */
+    private fun stamp(): Pair<Long, String> {
+        val s = state()
         // Saturating, not wrapping. A clock at Long.MAX_VALUE plus one is
         // Long.MIN_VALUE, and every comparison in last-writer-wins would
         // silently invert from then on.
         val stepped = if (s.clock == Long.MAX_VALUE) s.clock else s.clock + 1
         val t = maxOf(now(), stepped)
         q.setClock(t)
-        return t
+        return t to s.device
     }
 
     /**
@@ -103,8 +110,7 @@ internal class SyncRecords(
      * real clocks need and far less than a wrong one asks for.
      */
     private fun observe(ts: Long) {
-        device()
-        val s = q.state().executeAsOne()
+        val s = state()
         val accepted = minOf(ts, now() + MAX_CLOCK_DRIFT_MS)
         if (accepted > s.clock) q.setClock(accepted)
     }
@@ -112,8 +118,8 @@ internal class SyncRecords(
     fun <T> emit(kind: String, key: String, serializer: KSerializer<T>, value: T, ts: Long? = null) {
         // Enrollment only fills in: a record written here already keeps its clock.
         if (ts == ENROLL_TS && q.meta(kind, key).executeAsOneOrNull() != null) return
-        val t = ts ?: tick()
-        q.putMeta(kind, key, json.encodeToString(serializer, value), t, device())
+        val (t, me) = if (ts == null) stamp() else ts to device()
+        q.putMeta(kind, key, json.encodeToString(serializer, value), t, me)
         q.markPending(kind, key)
     }
 
@@ -173,8 +179,7 @@ internal class SyncRecords(
      *  whole library, at a clock just above the server's seed and below any real
      *  change, so it fills gaps without undoing newer changes from elsewhere. */
     fun enroll() {
-        device()
-        if (q.state().executeAsOne().enrolled != 0L) return
+        if (state().enrolled != 0L) return
         fillGaps()
         q.setEnrolled(1)
     }
@@ -327,7 +332,7 @@ internal class SyncRecords(
 
     fun sent(changes: List<SyncChange>) = changes.forEach { q.sent(it.kind, it.key, it.ts) }
 
-    fun cursor(): Long { device(); return q.state().executeAsOne().cursor }
+    fun cursor(): Long = state().cursor
     fun setCursor(c: Long) = q.setCursor(c)
     fun pendingCount(): Long = q.pendingCount().executeAsOne()
     fun reset() = q.reset()
@@ -343,12 +348,12 @@ internal class SyncRecords(
     fun peerCursors(): Map<String, Long> = q.peers().executeAsList().associate { it.device to it.seq }
     fun setPeerCursor(device: String, seq: Long) = q.setPeer(device, seq)
 
-    fun outSeq(): Long { device(); return q.state().executeAsOne().out_seq }
+    fun outSeq(): Long = state().out_seq
     fun setOutSeq(seq: Long) = q.setOutSeq(seq)
-    fun snapSeq(): Long { device(); return q.state().executeAsOne().snap_seq }
+    fun snapSeq(): Long = state().snap_seq
     fun setSnapSeq(seq: Long) = q.setSnapSeq(seq)
     /** The nonce of the batch being uploaded, recorded before the upload. */
-    fun outNonce(): String? { device(); return q.state().executeAsOne().out_nonce }
+    fun outNonce(): String? = state().out_nonce
     fun setOutNonce(nonce: String?) = q.setOutNonce(nonce)
 
     /** Another copy of this database writes under this id: take a new one. */
