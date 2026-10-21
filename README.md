@@ -92,7 +92,7 @@ lives in `app/composeApp/pluginHost/`.
 
 ## Sync
 
-The app doesn't need an account. Though if you create one you can sync between devices.
+There is no account and no server. Devices paired with a sync code keep each other in step whenever they are on the same Wi-Fi: the library, what has been read, categories, ratings and where reading stopped, encrypted with the code. A WebDAV server can be used instead.
 
 ## Cloudflare
 
