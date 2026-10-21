@@ -284,7 +284,7 @@ object Epub {
             .replace(Regex("<[^>]*>"), " ")
             .let { unescape(it) }.isBlank()
 
-    private fun escape(s: String) = s
+    private fun escape(s: String) = xmlSafe(s)
         .replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;").replace("\"", "&quot;")
 
     /**
@@ -432,7 +432,39 @@ object Epub {
      * server used to build; it works offline now, for any novel whose chapters
      * are on the device.
      */
-    fun write(title: String, author: String, chapters: List<Chapter>, out: OutputStream) {
+    /** A cover image for [write]: its bytes and their media type. */
+    class Cover(val bytes: ByteArray, val mediaType: String) {
+        val extension: String get() = when (mediaType) {
+            "image/png" -> "png"; "image/gif" -> "gif"; "image/webp" -> "webp"; else -> "jpg"
+        }
+    }
+
+    /**
+     * An EPUB language code for a source's language as its repository gives it,
+     * a name ("English") or a code ("en"). Unknown or missing: English, as every
+     * export used to say regardless.
+     */
+    fun languageCode(language: String?): String {
+        val l = language?.trim().orEmpty()
+        if (l.isEmpty()) return "en"
+        if (l.length in 2..3 && l.all { it.isLetter() }) return l.lowercase()
+        return java.util.Locale.getAvailableLocales()
+            .firstOrNull { it.getDisplayLanguage(java.util.Locale.ENGLISH).equals(l, ignoreCase = true) }
+            ?.language?.takeIf { it.isNotEmpty() } ?: "en"
+    }
+
+    /**
+     * [chapters] as an EPUB 3, in [language] (an EPUB code, see [languageCode]),
+     * with [cover] when there is one.
+     */
+    fun write(
+        title: String,
+        author: String,
+        chapters: List<Chapter>,
+        out: OutputStream,
+        language: String = "en",
+        cover: Cover? = null,
+    ) {
         ZipOutputStream(out).use { zip ->
             // "mimetype" must come first and be stored, not deflated.
             val mime = "application/epub+zip".toByteArray(Charsets.US_ASCII)
@@ -469,17 +501,29 @@ ${xhtmlBody(c.html)}
                 """<item id="ch${it + 1}" href="ch${it + 1}.xhtml" media-type="application/xhtml+xml"/>"""
             }
             val spine = chapters.indices.joinToString("\n    ") { """<itemref idref="ch${it + 1}"/>""" }
+            cover?.let { c ->
+                zip.putNextEntry(ZipEntry("OEBPS/cover.${c.extension}"))
+                zip.write(c.bytes)
+                zip.closeEntry()
+            }
+            // EPUB 3 marks the cover in the manifest; older readers look for the meta.
+            val coverItem = cover?.let {
+                """<item id="cover-image" href="cover.${it.extension}" media-type="${it.mediaType}" properties="cover-image"/>"""
+            }.orEmpty()
+            val coverMeta = if (cover != null) """<meta name="cover" content="cover-image"/>""" else ""
             put("OEBPS/content.opf", """<?xml version="1.0" encoding="UTF-8"?>
 <package xmlns="http://www.idpf.org/2007/opf" version="3.0" unique-identifier="bookid">
   <metadata xmlns:dc="http://purl.org/dc/elements/1.1/">
     <dc:identifier id="bookid">novelscraper:${title.hashCode().toUInt()}</dc:identifier>
     <dc:title>${escape(title)}</dc:title>
     <dc:creator>${escape(author.ifBlank { "Unknown" })}</dc:creator>
-    <dc:language>en</dc:language>
+    <dc:language>${escape(language)}</dc:language>
     <meta property="dcterms:modified">1970-01-01T00:00:00Z</meta>
+    $coverMeta
   </metadata>
   <manifest>
     <item id="nav" href="nav.xhtml" media-type="application/xhtml+xml" properties="nav"/>
+    $coverItem
     $manifest
   </manifest>
   <spine>
@@ -515,6 +559,8 @@ ${xhtmlBody(c.html)}
         numbers: List<Int>,
         volume: suspend (Int) -> Volume,
         out: OutputStream,
+        language: String = "en",
+        cover: Cover? = null,
     ) {
         ZipOutputStream(out).use { zip ->
             for (n in numbers) {
@@ -522,7 +568,7 @@ ${xhtmlBody(c.html)}
                 zip.putNextEntry(ZipEntry(epubFileName(slug, v.number)))
                 // The volume's own title, so the file says which part it holds.
                 ByteArrayOutputStream().also { buf ->
-                    write("$title - Volume ${v.number}", author, v.chapters, buf)
+                    write("$title - Volume ${v.number}", author, v.chapters, buf, language, cover)
                 }.let { zip.write(it.toByteArray()) }
                 zip.closeEntry()
             }
@@ -604,6 +650,12 @@ ${xhtmlBody(c.html)}
         "zeta" to "\u03B6", "zwj" to "\u200D", "zwnj" to "\u200C",
     )
     private val XML_PREDEFINED = setOf("amp", "lt", "gt", "quot", "apos")
+
+    /** Characters XML forbids outright. Pages carry stray ones, and a strict
+     *  reader refuses the whole book over a single one. */
+    private val XML_ILLEGAL = Regex("[\\u0000-\\u0008\\u000B\\u000C\\u000E-\\u001F\\uFFFE\\uFFFF]")
+
+    private fun xmlSafe(s: String) = s.replace(XML_ILLEGAL, "")
     private val ENTITY_OR_AMP = Regex("&(#[0-9]+|#[xX][0-9a-fA-F]+|[a-zA-Z][a-zA-Z0-9]{1,31});|&")
 
     private fun xmlEntities(s: String): String = ENTITY_OR_AMP.replace(s) { m ->
@@ -619,7 +671,7 @@ ${xhtmlBody(c.html)}
     /** Stored chapter HTML is a fragment, and not necessarily well-formed XML.
      *  Close the void tags XHTML insists on and drop anything unrecognised. */
     private fun xhtmlBody(html: String): String =
-        replaceTags(xmlEntities(html)) { closing, name, attrs ->
+        replaceTags(xmlEntities(xmlSafe(html))) { closing, name, attrs ->
             when {
                 name !in KEEP -> ""
                 name == "br" || name == "hr" -> "<$name/>"

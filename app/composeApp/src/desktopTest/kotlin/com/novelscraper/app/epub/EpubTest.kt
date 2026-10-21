@@ -169,4 +169,46 @@ class EpubTest {
         }.toByteArray()
         assertFailsWith<Epub.Invalid> { Epub.read(ByteArrayInputStream(plainZip)) }
     }
+
+    /** Every file in an exported EPUB, by name. */
+    private fun entries(epub: ByteArray): Map<String, ByteArray> = buildMap {
+        ZipInputStream(ByteArrayInputStream(epub)).use { z ->
+            while (true) { val e = z.nextEntry ?: break; put(e.name, z.readBytes()) }
+        }
+    }
+
+    /** Text pages often carry stray control characters, which XML forbids: a
+     *  strict reader refuses the whole book over one. */
+    @Test fun controlCharactersDoNotBreakTheBook() {
+        val out = ByteArrayOutputStream()
+        Epub.write("A\u0002 Title", "An\u0001 Author", listOf(Epub.Chapter("One\u0007", "<p>a\u0001b\u000Bc</p>")), out)
+        for ((name, bytes) in entries(out.toByteArray())) {
+            if (!name.endsWith(".xhtml") && !name.endsWith(".opf")) continue
+            javax.xml.parsers.DocumentBuilderFactory.newInstance().newDocumentBuilder()
+                .parse(ByteArrayInputStream(bytes))   // throws if not well-formed
+        }
+        assertTrue("abc" in Epub.read(ByteArrayInputStream(out.toByteArray())).chapters.single().html)
+    }
+
+    @Test fun anExportCarriesItsLanguageAndCover() {
+        val png = ByteArray(80) { it.toByte() }
+        val out = ByteArrayOutputStream()
+        Epub.write("T", "A", listOf(Epub.Chapter("One", "<p>x</p>")), out,
+            language = Epub.languageCode("Japanese"), cover = Epub.Cover(png, "image/png"))
+        val files = entries(out.toByteArray())
+        val opf = files.getValue("OEBPS/content.opf").decodeToString()
+        assertTrue("<dc:language>ja</dc:language>" in opf, opf)
+        assertTrue(files.getValue("OEBPS/cover.png").contentEquals(png))
+        // Read back by the app's own importer, which looks for it either way.
+        val back = Epub.read(ByteArrayInputStream(out.toByteArray())).cover
+        assertEquals("data:image/png;base64," + java.util.Base64.getEncoder().encodeToString(png), back)
+    }
+
+    @Test fun languagesAreNamedOrCoded() {
+        assertEquals("en", Epub.languageCode("English"))
+        assertEquals("es", Epub.languageCode("spanish"))
+        assertEquals("pt", Epub.languageCode("pt"))
+        assertEquals("en", Epub.languageCode(null))
+        assertEquals("en", Epub.languageCode("Klingonese"))
+    }
 }

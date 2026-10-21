@@ -8,21 +8,25 @@ import com.novelscraper.app.library.LibChapter
 import com.novelscraper.app.library.LibCollection
 import com.novelscraper.app.library.LibProgress
 import com.novelscraper.app.library.Library
+import com.novelscraper.app.extensions.Extensions
 import com.novelscraper.app.extensions.PluginNotInstalledException
 import com.novelscraper.app.net.Account
 import com.novelscraper.app.tts.AudiobookExport
 import com.novelscraper.app.epub.Epub
 import com.novelscraper.app.net.epubFileName
+import com.novelscraper.app.net.imageClient
 import com.novelscraper.app.net.zipFileName
 import com.novelscraper.app.platform.saveToDownloads
 import com.novelscraper.app.net.detail
 import com.novelscraper.app.ui.browse.describe
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import retrofit2.HttpException
 
 /** Which chapters "Download" takes. */
@@ -127,16 +131,20 @@ class BookViewModel(private val bookId: Int) : ViewModel() {
                 _action.value = "No chapters are on this device yet. Download some first."
                 return@launch
             }
+            val b = book.value
+            val language = Epub.languageCode(
+                b?.pluginId?.let { id -> Extensions.installed.value.firstOrNull { it.id == id }?.lang })
+            val cover = b?.let { coverForExport(it.cover, it.pluginId) }
             // One volume is a single EPUB; several travel as a zip of them.
             // Each volume's text is read as it is written, not all at once.
             val saved = runCatching {
                 if (volumes.size == 1) {
                     saveToDownloads(epubFileName(title), "application/epub+zip") { out ->
-                        Epub.write(title, author, lib.storedVolume(bookId, volumes.single()).chapters, out)
+                        Epub.write(title, author, lib.storedVolume(bookId, volumes.single()).chapters, out, language, cover)
                     }
                 } else {
                     saveToDownloads(zipFileName(title), "application/zip") { out ->
-                        Epub.writeZip(title, title, author, volumes, { lib.storedVolume(bookId, it) }, out)
+                        Epub.writeZip(title, title, author, volumes, { lib.storedVolume(bookId, it) }, out, language, cover)
                     }
                 }
             }.getOrNull()
@@ -146,6 +154,34 @@ class BookViewModel(private val bookId: Int) : ViewModel() {
                 else -> "Saved $saved (${volumes.size} volumes, $chapterCount chapters) to Downloads."
             }
         }
+    }
+
+    /**
+     * The cover to put in an exported EPUB: an imported book's own (a data URL),
+     * or a source's, fetched as the app shows it (the guarded image client, the
+     * source's image headers). Best effort: no cover rather than no export.
+     */
+    private suspend fun coverForExport(cover: String?, pluginId: String?): Epub.Cover? = withContext(Dispatchers.IO) {
+        runCatching {
+            val c = cover?.takeIf { it.isNotBlank() } ?: return@runCatching null
+            if (c.startsWith("data:")) {
+                val type = c.removePrefix("data:").substringBefore(';').takeIf { it.startsWith("image/") }
+                    ?: return@runCatching null
+                return@runCatching Epub.Cover(java.util.Base64.getDecoder().decode(c.substringAfter("base64,")), type)
+            }
+            val request = okhttp3.Request.Builder().url(c).apply {
+                Extensions.imageHeaders(pluginId).forEach { (k, v) -> header(k, v) }
+            }.build()
+            val client = imageClient().newBuilder().callTimeout(10, java.util.concurrent.TimeUnit.SECONDS).build()
+            client.newCall(request).execute().use { r ->
+                val type = r.body?.contentType()?.let { "${it.type}/${it.subtype}" }?.takeIf { it.startsWith("image/") }
+                if (!r.isSuccessful || type == null) return@use null
+                val source = r.body!!.source()
+                source.request(MAX_COVER_BYTES + 1)
+                if (source.buffer.size > MAX_COVER_BYTES) return@use null
+                Epub.Cover(source.buffer.readByteArray(), type)
+            }
+        }.getOrNull()
     }
 
     // --- progress --------------------------------------------------------------
@@ -243,3 +279,6 @@ class BookViewModel(private val bookId: Int) : ViewModel() {
         AudiobookExport.start(bookId, book.title, positions)
     }
 }
+
+/** The largest cover put in an exported EPUB. */
+private const val MAX_COVER_BYTES = 5L * 1024 * 1024
