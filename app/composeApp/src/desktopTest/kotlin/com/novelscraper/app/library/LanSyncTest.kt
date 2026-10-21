@@ -252,5 +252,38 @@ class LanSyncTest {
         assertEquals(1, a.lan.announcing.get(), "one device, one announcement loop")
     }
 
+    /** Whether the other end hangs up on [s] within [ms] (a read returns end of stream or fails). */
+    private fun hungUp(s: java.net.Socket, ms: Int): Boolean {
+        s.soTimeout = ms
+        return try { s.getInputStream().read() == -1 } catch (_: java.net.SocketTimeoutException) { false }
+            catch (_: java.io.IOException) { true }
+    }
+
+    /** Before it has proved it holds the code, a stranger may not make a
+     *  device set aside megabytes, or wait for them. */
+    @Test
+    fun aStrangerCannotAnnounceAHugeFrame() {
+        val a = Device(code)
+        java.net.Socket("127.0.0.1", a.lan.port).use { s ->
+            java.io.DataOutputStream(s.getOutputStream()).apply { writeInt(1024 * 1024); flush() }
+            assertTrue(hungUp(s, 2_000), "a 1 MiB frame before the proof is refused at once")
+        }
+    }
+
+    @Test
+    fun strangersCannotHoldOpenEveryConnection() {
+        val a = Device(code)
+        val idle = (1..8).map { java.net.Socket("127.0.0.1", a.lan.port) }
+        try {
+            Thread.sleep(300)
+            java.net.Socket("127.0.0.1", a.lan.port).use { ninth ->
+                assertTrue(hungUp(ninth, 2_000), "a ninth connection at once is turned away")
+            }
+            assertFalse(hungUp(idle.first(), 300), "the first eight are still being served")
+        } finally {
+            idle.forEach { it.close() }
+        }
+    }
+
     private fun freeUdpPort() = DatagramSocket(0).use { it.localPort }
 }

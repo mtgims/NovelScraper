@@ -327,6 +327,7 @@ class LanSync internal constructor(
             }
             io.send(buildJsonObject { put("t", "proof"); put("proof", keys.proof("client", hello.str("nonce").orEmpty(), device)) })
             if (io.receive().str("t") != "ok") return false
+            io.limit = MAX_FRAME
 
             var received = false
             io.send(buildJsonObject { put("t", "list") })
@@ -364,9 +365,24 @@ class LanSync internal constructor(
     private fun serve(server: ServerSocket) {
         while (running) {
             val s = try { server.accept() } catch (_: IOException) { break }
-            daemon("lan-session") { s.use { runCatching { session(it) }.onFailure { e -> Log.d(TAG, "session: ${e.message}") } } }
+            // A thread per connection, so a bounded number of them: anyone on
+            // the network can connect, proof or not.
+            if (!sessionSlots.tryAcquire()) {
+                runCatching { s.close() }
+                continue
+            }
+            daemon("lan-session") {
+                try {
+                    s.use { runCatching { session(it) }.onFailure { e -> Log.d(TAG, "session: ${e.message}") } }
+                } finally {
+                    sessionSlots.release()
+                }
+            }
         }
     }
+
+    /** Connections being served at once (see [serve]). */
+    private val sessionSlots = java.util.concurrent.Semaphore(MAX_SESSIONS)
 
     private fun session(s: Socket) {
         s.soTimeout = READ_MS
@@ -389,6 +405,7 @@ class LanSync internal constructor(
         }
         var received = false
         try {
+            io.limit = MAX_FRAME
             io.send(buildJsonObject { put("t", "ok") })
             var floors = Replication.floors(localEntries().values)
             while (true) {
@@ -486,9 +503,16 @@ class LanSync internal constructor(
 
         fun receive(): JsonObject = Json.parseToJsonElement(String(receiveBytes())).jsonObject
 
+        /**
+         * The largest frame accepted. Small until the other side has proved it
+         * holds the code: a stranger could otherwise make this device set aside
+         * megabytes per connection, and wait for them.
+         */
+        var limit = MAX_HELLO_FRAME
+
         fun receiveBytes(): ByteArray {
             val n = input.readInt()
-            if (n < 0 || n > MAX_FRAME) throw IOException("frame of $n bytes")
+            if (n < 0 || n > limit) throw IOException("frame of $n bytes")
             return ByteArray(n).also(input::readFully)
         }
     }
@@ -505,6 +529,9 @@ class LanSync internal constructor(
         private const val CONNECT_MS = 3_000
         private const val READ_MS = 20_000
         private const val MAX_FRAME = 17 * 1024 * 1024
+        /** Hello and proof are a few hundred bytes. */
+        private const val MAX_HELLO_FRAME = 64 * 1024
+        private const val MAX_SESSIONS = 8
         private val random = SecureRandom()
 
         private fun nonce() = ByteArray(16).also(random::nextBytes).joinToString("") { "%02x".format(it) }
