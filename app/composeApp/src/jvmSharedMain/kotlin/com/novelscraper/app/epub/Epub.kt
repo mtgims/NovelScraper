@@ -55,6 +55,8 @@ object Epub {
      *  database with no files to track or clean up. Anything larger than this is
      *  dropped rather than bloating the library. */
     private const val MAX_IMAGE_BYTES = 2 * 1024 * 1024
+    /** What all of a book's inlined images may add up to, counting each copy (see [ImageBudget]). */
+    internal const val MAX_BOOK_IMAGE_BYTES = 32L * 1024 * 1024
 
     /** Guards against a zip bomb: an EPUB of novel text is far under this. */
     /** Not const: a test lowers it, rather than building a quarter-gigabyte
@@ -90,6 +92,7 @@ object Epub {
         val cover = coverItem?.let { dataUrl(files[resolve(base, it.href)], it.type) }
 
         val chapters = ArrayList<Chapter>()
+        val images = ImageBudget()
         for (ref in pkg.elements("spine").flatMap { it.elements("itemref") }) {
             if (ref.getAttribute("linear") == "no") continue
             val item = manifest[ref.getAttribute("idref")] ?: continue
@@ -97,7 +100,7 @@ object Epub {
             val path = resolve(base, item.href)
             val raw = files[path]?.toString(Charsets.UTF_8) ?: continue
             val body = bodyOf(raw)
-            val html = sanitize(body, files, path.substringBeforeLast('/', ""))
+            val html = sanitize(body, files, path.substringBeforeLast('/', ""), images)
             if (plainIsEmpty(html)) continue           // a cover page or a blank divider
             chapters.add(Chapter(headingOf(body) ?: "Chapter ${chapters.size + 1}", html))
         }
@@ -191,6 +194,26 @@ object Epub {
         return parts.joinToString("/")
     }
 
+    /**
+     * The images one book inlines. Each chapter keeps its own copy of an image,
+     * as a data URL in its stored text, so an ornament shown in every chapter
+     * was stored once per chapter: a 1 MiB one in 100 chapters was 140 MB.
+     * Each image is now encoded once, and the copies are counted against
+     * [MAX_BOOK_IMAGE_BYTES]; past that, an image is dropped as an oversized
+     * one is.
+     */
+    private class ImageBudget {
+        private val encoded = HashMap<String, String?>()
+        private var spent = 0L
+
+        fun url(path: String, files: Map<String, ByteArray>, mediaType: String): String? {
+            val url = encoded.getOrPut(path) { dataUrl(files[path], mediaType) } ?: return null
+            if (spent + url.length > MAX_BOOK_IMAGE_BYTES) return null
+            spent += url.length
+            return url
+        }
+    }
+
     private fun dataUrl(bytes: ByteArray?, mediaType: String): String? {
         if (bytes == null || bytes.isEmpty() || bytes.size > MAX_IMAGE_BYTES) return null
         val type = mediaType.ifBlank { "image/jpeg" }
@@ -224,7 +247,7 @@ object Epub {
      * data URL from inside the EPUB. Scripts, styles, handlers, and links to
      * anywhere are gone: nothing here is fetched and nothing is executed.
      */
-    private fun sanitize(body: String, files: Map<String, ByteArray>, dir: String): String {
+    private fun sanitize(body: String, files: Map<String, ByteArray>, dir: String, images: ImageBudget): String {
         var s = DROP_BLOCK.replace(body, "")
         s = COMMENT.replace(s, "")
         return TAG.replace(s) { m ->
@@ -238,8 +261,7 @@ object Epub {
                         val src = SRC.find(attrs)?.groupValues?.get(1).orEmpty()
                         val alt = ALT.find(attrs)?.groupValues?.get(1).orEmpty()
                         val url = src.takeIf { it.isNotBlank() }
-                            ?.let { files[resolve(dir, it)] }
-                            ?.let { dataUrl(it, mediaTypeOf(src)) }
+                            ?.let { images.url(resolve(dir, it), files, mediaTypeOf(src)) }
                         // An image that cannot be shown is dropped whole: the
                         // reader maps placeholders to sources by position, so a
                         // srcless <img> would shift every later image.
