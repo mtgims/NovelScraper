@@ -267,17 +267,41 @@ object Extensions {
     // --- running plugins ------------------------------------------------------------
 
     /** The installed plugin, running (loaded on first use, a few kept warm). */
-    suspend fun runtime(id: String): PluginRuntime = mutex.withLock {
-        running[id]?.let { return@withLock it }
-        val file = codeFile(id)
-        if (!withContext(Dispatchers.IO) { file.exists() }) {
-            // Usually a novel synced from another device, whose source this one
-            // hasn't installed.
-            val name = _installed.value.firstOrNull { it.id == id }?.name ?: id
-            throw PluginNotInstalledException(name)
+    suspend fun runtime(id: String): PluginRuntime {
+        mutex.withLock { running[id]?.let { return it } }
+        // Loaded outside the lock. Loading runs the plugin's own code, and every
+        // source takes this lock to start, so one slow or looping plugin held
+        // under it stopped all the others.
+        while (true) {
+            val code = currentCode(id) ?: throw notInstalled(id)
+            val fresh = PluginRuntime.load(id, code, environment())
+            val registered = mutex.withLock {
+                running[id]?.let { existing ->
+                    // Another caller started it meanwhile: use theirs. This one
+                    // was never called, so closing it is safe.
+                    fresh.close()
+                    return existing
+                }
+                when (currentCode(id)) {
+                    null -> { fresh.close(); throw notInstalled(id) }   // uninstalled meanwhile
+                    code -> register(id, fresh)
+                    else -> { fresh.close(); null }                     // updated meanwhile: load the new one
+                }
+            }
+            if (registered != null) return registered
         }
-        val code = withContext(Dispatchers.IO) { file.readText() }
-        val rt = PluginRuntime.load(id, code, environment())
+    }
+
+    private suspend fun currentCode(id: String): String? = withContext(Dispatchers.IO) {
+        codeFile(id).takeIf { it.exists() }?.readText()
+    }
+
+    /** Usually a novel synced from another device, whose source this one hasn't installed. */
+    private fun notInstalled(id: String) =
+        PluginNotInstalledException(_installed.value.firstOrNull { it.id == id }?.name ?: id)
+
+    /** Put a loaded plugin in use (under [mutex]), making room by evicting the least used. */
+    private fun register(id: String, rt: PluginRuntime): PluginRuntime {
         running[id] = rt
         // Plugins installed before image headers were recorded get them now.
         val headers = headersOf(rt.info)
@@ -300,7 +324,7 @@ object Extensions {
             // the full plugin timeout, and block every other source meanwhile.
             evicting.launch { runCatching { evicted.closeWhenIdle() } }
         }
-        rt
+        return rt
     }
 
     /** Headers a source's images need (Referer, User-Agent); empty for most. */

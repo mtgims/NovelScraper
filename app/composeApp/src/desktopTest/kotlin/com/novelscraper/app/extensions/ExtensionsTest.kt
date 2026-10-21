@@ -10,6 +10,7 @@ import kotlin.test.BeforeTest
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFailsWith
+import kotlin.test.assertTrue
 
 /** The installed sources as the app runs them: several, at once, coming and going. */
 class ExtensionsTest {
@@ -53,5 +54,34 @@ class ExtensionsTest {
         val result = call.await()               // finished, not cut off
         assertEquals("answered", result.getOrThrow().single().name, "the call finished normally")
         assertFailsWith<PluginNotInstalledException> { Extensions.runtime("busy") }
+    }
+
+    /**
+     * Loading runs the plugin's own top-level code. Nothing bounded it, and it
+     * ran under the lock every source takes, so one plugin looping as it loaded
+     * stopped every other source from starting.
+     */
+    @Test
+    fun aPluginLoopingAsItLoadsHoldsUpNoOtherSource() = runBlocking<Unit> {
+        val previous = PluginRuntime.loadTimeoutMs
+        PluginRuntime.loadTimeoutMs = 2_000
+        try {
+            place("spinload", plugin("spinload", topLevel = spin(30_000)))
+            place("quick", plugin("quick"))
+            val stuck = async(Dispatchers.Default) { runCatching { Extensions.runtime("spinload") } }
+            delay(300)                          // the looping one is loading now
+
+            val started = System.currentTimeMillis()
+            val quick = Extensions.runtime("quick")
+            val waited = System.currentTimeMillis() - started
+            assertTrue(waited < 1_500, "another source started at once, not behind the loop: ${waited}ms")
+            assertEquals("answered", quick.popular(1).single().name)
+
+            val gaveUp = System.currentTimeMillis()
+            assertTrue(stuck.await().isFailure, "the looping one fails to load")
+            assertTrue(System.currentTimeMillis() - gaveUp < 10_000, "and is given up on, not waited out")
+        } finally {
+            PluginRuntime.loadTimeoutMs = previous
+        }
     }
 }

@@ -153,6 +153,8 @@ class PluginRuntime private constructor(
         private const val MAX_RESPONSE_BYTES = 16L * 1024 * 1024
         /** Not const: a test lowers it to prove a runaway plugin is stopped. */
         internal var callTimeoutMs = 90_000L
+        /** How long a plugin's own code may take to load. Not const, as above. */
+        internal var loadTimeoutMs = 30_000L
         private val json = Json { ignoreUnknownKeys = true; isLenient = true; coerceInputValues = true }
 
         private val prelude: String by lazy {
@@ -170,7 +172,21 @@ class PluginRuntime private constructor(
                 val rt = PluginRuntime(js, pluginId, env)
                 rt.bindNative()
                 js.evaluate<Any?>(prelude, "host.js", false)
-                val infoJson = js.evaluate<String>("__loadPlugin(${q(pluginId)}, ${q(code)})", "$pluginId.js", false)
+                // Loading runs the plugin's own top-level code, which can loop
+                // like any call can, so it is bounded the same way: the timeout
+                // gives up on it and the interrupt stops the interpreter.
+                val infoJson = try {
+                    withTimeout(loadTimeoutMs) {
+                        js.evaluate<String>("__loadPlugin(${q(pluginId)}, ${q(code)})", "$pluginId.js", false)
+                    }
+                } catch (e: TimeoutCancellationException) {
+                    js.interruptEvaluation()
+                    // Let the interrupted evaluation unwind before the context
+                    // is closed below: a trivial one queues behind it.
+                    runCatching { withTimeout(5_000) { js.evaluate<Any?>("0") } }
+                    // Not a cancellation: the caller was not cancelled, the plugin failed.
+                    throw IllegalStateException("The source $pluginId took too long to load.")
+                }
                 rt.info = json.decodeFromString(infoJson)
                 return rt
             } catch (t: Throwable) {

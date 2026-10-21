@@ -54,4 +54,18 @@ class RunawayPluginTest {
             PluginRuntime.callTimeoutMs = previous
         }
     }
+
+    @Test fun aPluginThatSpinsAsItLoadsIsStopped() = runBlocking<Unit> {
+        val previous = PluginRuntime.loadTimeoutMs
+        PluginRuntime.loadTimeoutMs = 2_000
+        try {
+            val atLoad = "{ const end = Date.now() + 30000; while (Date.now() < end) {} }\n" + spinner
+            val started = System.currentTimeMillis()
+            assertFailsWith<Exception> { PluginRuntime.load("spin", atLoad, env).close() }
+            val waited = System.currentTimeMillis() - started
+            assertTrue(waited < 15_000, "gave up on loading rather than waiting out its loop, in ${waited}ms")
+        } finally {
+            PluginRuntime.loadTimeoutMs = previous
+        }
+    }
 }
