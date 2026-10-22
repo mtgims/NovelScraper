@@ -43,7 +43,8 @@ licence varies from voice to voice. The voice's own model card states which.
 ## Runtimes and libraries
 
 The desktop and Android builds carry sherpa-onnx and ONNX Runtime for
-narration, QuickJS for running sources, and the usual Kotlin, Compose
+narration, QuickJS for running sources, ZXing for the sync code's QR code,
+AndroidX CameraX on Android for scanning it, and the usual Kotlin, Compose
 Multiplatform, OkHttp and SQLDelight stack. Their licences are declared in
 their own artifacts and resolved by Gradle; none of them are vendored into this
 repository.

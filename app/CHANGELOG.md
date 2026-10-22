@@ -3,6 +3,72 @@
 Newest first.
 
 
+## 1.2.0, 2026-10-22 · `versionCode 102`
+
+Accounts are gone, along with the server they signed in to. Sync is the sync
+code, now also a QR code a phone can scan, or a WebDAV folder. On the computer,
+narration can read dialogue in a voice of its own, as a beta. Most of the rest
+is an outside review's findings, fixed: sources kept further from the local
+network, downloads checked, and limits where a stranger could have exhausted
+memory.
+
+### Sync
+- **The sync code is also a QR code.** Settings, Sync, Show sync code draws it
+  above the code itself.
+- **Phones scan it.** Settings, Sync, Scan a code opens the camera inside the
+  app. The camera permission is asked for only then, and a phone without a
+  camera can still install the app. A scanned code fills in the pairing dialog,
+  so nothing pairs without a tap.
+- **Sign-in, accounts and the server-sync notice are removed.** The server was
+  switched off on 21 October. A session saved by an earlier version is deleted
+  from the device on first start.
+
+### Expressive reading (computer only, beta)
+- **Dialogue in a second voice**, with pauses that follow the punctuation,
+  stutters read as a cut-off start of the word ("V-Violet"), whispered lines
+  quieter and shouted ones louder. Off by default: Settings, Narration turns it
+  on, and a novel's ⋮ menu, Narration, sets its voices, dialogue marks and
+  stutter marks for that novel alone.
+- **LitRPG system messages in a voice of their own**, for whole bracketed lines
+  such as status windows; opt-in per novel. Names in brackets inside a sentence
+  are read normally.
+- **Saving a chapter as audio** sounds the way narration reads it.
+
+### Safer
+- **Sources reach only the public internet**, now checked against the address
+  actually connected to, not only the name looked up first, and also through
+  the browser used for site checks. Covers and chapter images follow the same
+  rule.
+- **Repositories are never followed from https to plain http**, and an index
+  or a source's code has a size limit.
+- **Voice models are checked against the published file** before they are
+  installed, and the downloaded Chrome against Google's checksum. That Chrome
+  is now kept up to date, checked at most weekly.
+- **The sync code stays out of Android's cloud backup.**
+- **A stranger on the same network can no longer tie up same-Wi-Fi sync**, nor
+  send a sync batch that unpacks to gigabytes.
+
+### Faster and lighter
+- **The reading position is saved once scrolling stops**, not on every frame,
+  and kept for the last 500 chapters.
+- **Sync costs about half the database work per change**, and a meeting of two
+  devices hashes each file once.
+- **Exporting a long novel to EPUB** holds one volume in memory at a time.
+- **A source that hangs while loading no longer holds up the others**; it is
+  stopped after 30 seconds.
+
+### Fixed
+- **A read or downloaded chapter a source dropped from its list** could share
+  its position with another chapter: opening it failed, and marking one read
+  marked both. Kept chapters now go after the ones the source lists.
+- **Two devices meeting at the same moment** could stall each other's sync.
+- **EPUB import** lost an image whose description held a ">", and some
+  characters written as entities (curly quotes, accents).
+- **An exported EPUB** now carries its language and cover, and stays valid
+  however odd the source's text.
+- **A category with a blank name** can no longer be made.
+
+
 ## 1.1.0, 2026-10-14 · `versionCode 101`
 
 Sync no longer needs a server, or an account. Pair your devices once with a sync

@@ -11,6 +11,35 @@ since moved to a repository of their own; this one holds the apps.
 
 ---
 
+## 2026-10-22
+
+- **1.2.0: accounts are gone.** Sign-in, registration, the account section and
+  the server-sync notice are removed with the Retrofit client they used; the
+  sync runner now follows the app's foreground itself. An old saved session is
+  deleted from the device on first start. Tests that synced through a fake
+  server now sync through a folder.
+
+- **The sync code as a QR code**, drawn with ZXing on every platform and
+  scanned on Android with CameraX, both without Google services. The camera
+  permission is asked for on "Scan a code" only, and a scan fills in the
+  pairing dialog rather than pairing by itself.
+
+- **Expressive reading, a desktop beta**, off by default and set per novel:
+  dialogue in a second voice, exact pauses, stutters, whispers and shouts, and
+  a system voice for wholly bracketed LitRPG lines.
+
+- **An outside review's findings, fixed** test-first: private-address checks
+  on the connected socket and through the browser, image loads guarded too,
+  https-only repository redirects and capped bodies, pinned voice-model
+  checksums, a verified and self-updating Chrome for Testing, limits on
+  unauthenticated same-Wi-Fi peers and on unpacked sync batches, and a series
+  of memory and database savings. CI actions are pinned by commit.
+
+## 2026-10-21
+
+- **The sync server is switched off**, its data deleted with no copy kept, and
+  the legal pages rewritten for an app with no accounts.
+
 ## 2026-10-14
 
 - **1.1.0: devices sync with each other, with no server.** A sync code pairs a

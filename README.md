@@ -64,7 +64,9 @@ contribute it.
   sherpa-onnx, with gapless playback across chapters, a sleep timer, a
   pronunciation dictionary,
   and audio export to WAV. Android plays in the background and on the lock
-  screen; Linux answers the keyboard's media keys through MPRIS.
+  screen; Linux answers the keyboard's media keys through MPRIS. On a computer,
+  expressive reading (a beta, set per novel) gives dialogue and LitRPG system
+  messages voices of their own, with pauses, stutters, whispers and shouts.
 - **Answers browser checks.** Sources behind Cloudflare or DDoS-Guard are
   fetched through a real browser: the phone's WebView, or on a computer one
   already installed (Chromium, Brave, Chrome, Edge or Vivaldi), or one the app
@@ -92,7 +94,7 @@ lives in `app/composeApp/pluginHost/`.
 
 ## Sync
 
-There is no account and no server. Devices paired with a sync code keep each other in step whenever they are on the same Wi-Fi: the library, what has been read, categories, ratings and where reading stopped, encrypted with the code. A WebDAV server can be used instead.
+There is no account and no server. Devices paired with a sync code keep each other in step whenever they are on the same Wi-Fi: the library, what has been read, categories, ratings and where reading stopped, encrypted with the code. The code is shown as a QR code too, and a phone pairs by scanning it from inside the app. A WebDAV server can be used instead.
 
 ## Cloudflare
 
