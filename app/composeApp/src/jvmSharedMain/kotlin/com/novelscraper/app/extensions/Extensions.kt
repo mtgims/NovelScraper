@@ -268,7 +268,24 @@ object Extensions {
         onInstalledChange?.invoke(_installed.value)
     }
 
-    private fun codeFile(id: String) = File(dir, id.replace(Regex("[^A-Za-z0-9._-]"), "_") + ".js")
+    /**
+     * Where a plugin's code is kept. An id is made a file name by replacing
+     * what a file name can't hold, so "a/b" and "a_b" were one file and
+     * installing one replaced the other's code. An id the replacing changes
+     * now gets a short hash of itself as well. Its code from before, under
+     * the shared name, is taken over, unless an installed plugin is called
+     * exactly that name.
+     */
+    internal fun codeFile(id: String): File {
+        val safe = id.replace(Regex("[^A-Za-z0-9._-]"), "_")
+        if (safe == id) return File(dir, "$id.js")
+        val hash = java.security.MessageDigest.getInstance("SHA-256").digest(id.toByteArray())
+            .take(4).joinToString("") { "%02x".format(it) }
+        val own = File(dir, "$safe-$hash.js")
+        val shared = File(dir, "$safe.js")
+        if (!own.exists() && shared.exists() && _installed.value.none { it.id == safe }) shared.renameTo(own)
+        return own
+    }
 
     // --- running plugins ------------------------------------------------------------
 

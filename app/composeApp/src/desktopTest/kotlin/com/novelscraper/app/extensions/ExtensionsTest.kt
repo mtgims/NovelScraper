@@ -101,4 +101,15 @@ class ExtensionsTest {
         assertTrue(loading.await().exceptionOrNull() is PluginNotInstalledException,
             "uninstalled while it loaded: not put in use")
     }
+
+    /** Ids were made file names by replacing odd characters, so "a/b" and "a_b"
+     *  were the same file: installing one replaced the other's code. */
+    @Test
+    fun twoIdsNeverShareACodeFile() = runBlocking<Unit> {
+        for (id in listOf("same/name", "same_name")) {
+            Extensions.codeFile(id).apply { parentFile.mkdirs() }.writeText(plugin(id))
+        }
+        assertEquals("same/name", Extensions.runtime("same/name").info.id)
+        assertEquals("same_name", Extensions.runtime("same_name").info.id)
+    }
 }
