@@ -23,7 +23,7 @@ class ExportVolumesTest {
     }
 
     @Test fun aLongNovelExportsAsVolumesThatReadBack() = runBlocking<Unit> {
-        val lib = LibraryStore(jdbcLibraryDriver(null), Source(), LibraryStoreTest.offlineServer())
+        val lib = LibraryStore(jdbcLibraryDriver(null), Source())
         val id = lib.openSource("fake", "n", "Long", null).also { lib.refresh(it) }
         lib.setInLibrary(id, true)
         lib.enqueueDownloads(id, null)

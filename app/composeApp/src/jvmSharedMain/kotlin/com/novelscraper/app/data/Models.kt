@@ -2,34 +2,8 @@ package com.novelscraper.app.data
 
 import kotlinx.serialization.Serializable
 
-// Wire models mirroring backend/app/schemas.py. Unknown/extra JSON fields are
-// ignored by the Json config in net/Network.kt, so the backend can add fields
-// without breaking the app.
-
-@Serializable
-data class LoginRequest(val username: String, val password: String)
-
-@Serializable
-data class RegisterRequest(
-    val username: String,
-    val password: String,
-    val invite_code: String? = null,
-)
-
-@Serializable
-data class UserRead(
-    val id: Int,
-    val username: String,
-    val is_admin: Boolean = false,
-    val disabled: Boolean = false,
-)
-
-@Serializable
-data class AuthConfig(val allow_open_signup: Boolean)
-
-/** Re-entering the password for something irreversible. */
-@Serializable
-data class PasswordConfirm(val password: String)
+// Plain models the screens and the library share. Their names follow the old
+// server's JSON, which is why some fields are snake_case.
 
 @Serializable
 data class BookStat(
@@ -66,7 +40,7 @@ data class ChapterRead(
     val has_next: Boolean,
 )
 
-// Library sync (POST /api/sync, backend app/services/sync.py).
+// One sync record (library/LibrarySync.kt), as same-Wi-Fi and folder sync carry it.
 
 @Serializable
 data class SyncChange(
@@ -76,9 +50,3 @@ data class SyncChange(
     val ts: Long,
     val device: String = "",
 )
-
-@Serializable
-data class SyncRequest(val cursor: Long, val device: String, val changes: List<SyncChange>)
-
-@Serializable
-data class SyncResponse(val cursor: Long, val changes: List<SyncChange> = emptyList(), val more: Boolean = false)

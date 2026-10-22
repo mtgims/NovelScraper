@@ -34,7 +34,7 @@ class LibraryReliabilityTest {
     }
 
     private fun store(source: SourceOrigin) =
-        LibraryStore(jdbcLibraryDriver(null), source, LibraryStoreTest.offlineServer())
+        LibraryStore(jdbcLibraryDriver(null), source)
 
     @Test
     fun aChapterThatKeepsFailingIsLeftAndTheRestGoOn() = runBlocking<Unit> {

@@ -32,7 +32,7 @@ class ChapterMergeTest {
     }
 
     private fun store(source: SourceOrigin) =
-        LibraryStore(jdbcLibraryDriver(null), source, LibraryStoreTest.offlineServer())
+        LibraryStore(jdbcLibraryDriver(null), source)
 
     private suspend fun LibraryStore.count(id: Int) = chaptersFlow(id).first().size
 

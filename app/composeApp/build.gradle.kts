@@ -129,19 +129,15 @@ kotlin {
                 implementation("org.jetbrains.androidx.lifecycle:lifecycle-runtime-compose:2.11.0")
                 implementation("org.jetbrains.androidx.navigation:navigation-compose:2.9.2")
 
-                // Networking: Retrofit + OkHttp + kotlinx-serialization JSON.
+                // Networking: OkHttp + kotlinx-serialization JSON.
                 implementation("org.jetbrains.kotlinx:kotlinx-serialization-json:1.11.0")
-                implementation("com.squareup.retrofit2:retrofit:2.11.0")
-                implementation("com.jakewharton.retrofit:retrofit2-kotlinx-serialization-converter:1.0.0")
                 implementation("com.squareup.okhttp3:okhttp:4.12.0")
-                implementation("com.squareup.okhttp3:logging-interceptor:4.12.0")
 
-                // Image loading (covers / inline chapter images), through the same
-                // OkHttp client as the API so requests carry the auth cookie.
+                // Image loading (covers / inline chapter images), through OkHttp.
                 implementation("io.coil-kt.coil3:coil-compose:3.6.3")
                 implementation("io.coil-kt.coil3:coil-network-okhttp:3.6.3")
-                // Honour the server's Cache-Control/ETag (covers: max-age=300), as Coil 2
-                // did by default; Coil 3 otherwise reuses a cached image forever.
+                // Honour a site's Cache-Control/ETag, as Coil 2 did by default; Coil 3
+                // otherwise reuses a cached image forever.
                 implementation("io.coil-kt.coil3:coil-network-cache-control:3.6.3")
 
                 // Drag-to-reorder for the library grid.

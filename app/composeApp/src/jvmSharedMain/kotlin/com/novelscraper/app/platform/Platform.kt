@@ -12,7 +12,7 @@ import java.io.InputStream
 /**
  * A small persistent key/value store. One store per name; on Android each is the
  * SharedPreferences file of the same name, so settings written by earlier versions
- * (the login cookie, the server address, reader prefs) are read back unchanged.
+ * (reader prefs, sync settings) are read back unchanged.
  * Writes are asynchronous, like SharedPreferences.apply().
  */
 interface KeyValueStore {

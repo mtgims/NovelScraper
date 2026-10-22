@@ -45,7 +45,7 @@ class LanSyncTest {
         discoveryPort: Int = 0,
         targets: List<InetSocketAddress> = emptyList(),
     ) {
-        val lib = LibraryStore(jdbcLibraryDriver(null), Source(), LibraryStoreTest.offlineServer(), now = { clock })
+        val lib = LibraryStore(jdbcLibraryDriver(null), Source(), now = { clock })
         val folder = LocalFolder(Files.createTempDirectory("lan").toFile().also { dirs += it })
         private val keys = PairKeys(code)
         private val cache = KeyCache()

@@ -57,7 +57,7 @@ fun StatsScreen() {
         scope.launch {
             val bytes = vm.export(format)
             if (bytes == null) {
-                showToast("Export failed — is the server reachable?", long = true)
+                showToast("Couldn't put the statistics together. Try again.", long = true)
                 return@launch
             }
             val ok = withContext(Dispatchers.IO) { target.write(bytes) }

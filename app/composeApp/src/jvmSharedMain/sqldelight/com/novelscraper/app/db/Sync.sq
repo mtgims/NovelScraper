@@ -46,9 +46,6 @@ SELECT * FROM sync_state WHERE id = 1;
 initState:
 INSERT OR IGNORE INTO sync_state (id, device) VALUES (1, ?);
 
-setCursor:
-UPDATE sync_state SET cursor = ? WHERE id = 1;
-
 setClock:
 UPDATE sync_state SET clock = ? WHERE id = 1;
 

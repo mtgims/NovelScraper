@@ -4,7 +4,6 @@ import com.novelscraper.app.db.openLibraryDriver
 import com.novelscraper.app.extensions.PluginException
 import com.novelscraper.app.extensions.SiteChallengeException
 import com.novelscraper.app.extensions.Extensions
-import com.novelscraper.app.net.Account
 import com.novelscraper.app.platform.Log
 import com.novelscraper.app.sync.FolderAuthException
 import com.novelscraper.app.sync.SyncNewerFormatException
@@ -31,9 +30,9 @@ object Library {
 
     val ready: Boolean get() = ::store.isInitialized
 
-    /** Open the database; call once at startup, after [Account.init]. */
+    /** Open the database; call once at startup. */
     fun init(store: LibraryStore = LibraryStore(
-        openLibraryDriver(), ExtensionSources, NetServer { Account.signedIn },
+        openLibraryDriver(), ExtensionSources,
         installedSources = { Extensions.installed.value.map { it.id to it.repo } },
     )) {
         this.store = store
@@ -145,9 +144,8 @@ object ChapterDownloads {
  * (changes in a burst go together), every minute while the app is in use, when
  * it comes back to the foreground, and once more as it leaves; with same-Wi-Fi
  * sync, also whenever another device brought something. Only while sync is set
- * up ([SyncSettings]) or, until accounts go, signed in to the server; the
- * former wins when both are. A failed sync (offline) just waits
- * for the next one, as nothing unsent is lost.
+ * up ([SyncSettings]). A failed sync (offline) just waits for the next one, as
+ * nothing unsent is lost.
  */
 object LibrarySyncRunner {
     private const val DEBOUNCE_MS = 2_000L
@@ -165,21 +163,25 @@ object LibrarySyncRunner {
         val syncing: Boolean = false,
         val lastSync: Long = 0,
         val error: Boolean = false,
-        /** The server answered, but has no sync in it: it needs updating. */
-        val unsupported: Boolean = false,
         /** Why the folder can't be synced, when waiting will not fix it. */
         val problem: String? = null,
     )
 
     /** Whether there is anywhere to sync to. */
-    val enabled: Boolean get() = SyncSettings.connected || Account.signedIn
+    val enabled: Boolean get() = SyncSettings.connected
+
+    /** The app came to the foreground: sync, if set up. */
+    fun onForeground() { if (enabled) start() }
+
+    /** The app went to the background: a last sync, if set up. */
+    fun onBackground() { if (enabled) stop() }
 
     /** The app is in use: sync now, then periodically. */
     @Synchronized
     fun start() {
         // Same Wi-Fi: listen for the other devices while the app is in use. Here
-        // and not only when the loop begins: sync set up while the loop is
-        // already running (for the server account) has to start it too.
+        // and not only when the loop begins: a start while the loop is already
+        // running (sync set up again) has to start it too.
         scope.launch {
             runCatching { SyncSettings.startLan(onReceived = ::soon) }
                 .onFailure { Log.w("Sync", "same-Wi-Fi sync didn't start: ${it.message}") }
@@ -232,31 +234,21 @@ object LibrarySyncRunner {
 
     private suspend fun runOnce(): Boolean {
         runs.incrementAndGet()
-        val folder = SyncSettings.folder()
-        if (folder == null && !Account.signedIn) return false
+        val folder = SyncSettings.folder() ?: return false
         _state.value = _state.value.copy(syncing = true)
         return try {
-            val ok = if (folder != null) {
-                Library.store.syncFolder(folder, SyncSettings.passphrase(), SyncSettings.keys, SyncSettings.codeKey())
-                // Same Wi-Fi: the folder is this device's own; now hand what
-                // changed to the devices around, and take theirs.
-                SyncSettings.lanExchange()
-                true
-            } else {
-                Library.store.syncNow()
-            }
+            Library.store.syncFolder(folder, SyncSettings.passphrase(), SyncSettings.keys, SyncSettings.codeKey())
+            // Same Wi-Fi: the folder is this device's own; now hand what
+            // changed to the devices around, and take theirs.
+            SyncSettings.lanExchange()
             _state.value = State(syncing = false, lastSync = System.currentTimeMillis(), error = false)
-            ok
+            true
         } catch (e: kotlinx.coroutines.CancellationException) {
             _state.value = _state.value.copy(syncing = false)
             throw e
-        } catch (e: LibraryStore.SyncUnsupportedException) {
-            Log.w("Sync", "the server has no sync endpoint (an older build)")
-            _state.value = _state.value.copy(syncing = false, error = true, unsupported = true)
-            false
         } catch (e: Exception) {
             Log.d("Sync", "sync failed: ${e.message}")
-            _state.value = _state.value.copy(syncing = false, error = true, unsupported = false, problem = problem(e))
+            _state.value = _state.value.copy(syncing = false, error = true, problem = problem(e))
             false
         }
     }

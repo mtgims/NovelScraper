@@ -1,7 +1,7 @@
 # R8 keep rules for the release build.
 #
-# Only the things R8 cannot see are kept. Everything else — Compose, Retrofit,
-# OkHttp, Coil, the app's own UI — ships with its own consumer rules or is
+# Only the things R8 cannot see are kept. Everything else (Compose,
+# OkHttp, Coil, the app's own UI) ships with its own consumer rules or is
 # reachable statically, so it is left to be shrunk and optimized normally.
 
 # --- sherpa-onnx (bundled .aar, JNI) ---------------------------------------
@@ -32,13 +32,10 @@
     *** Companion;
 }
 
-# --- Retrofit ---------------------------------------------------------------
-# The Api interface is implemented by a reflective proxy, and Retrofit reads the
-# generic signatures and annotations off its methods to build each call.
--keep,allowobfuscation interface com.novelscraper.app.net.Api
+# --- Reflection ------------------------------------------------------------
+# Generic signatures and annotations, which libraries reading them at run time
+# need (kept from when Retrofit was here, so nothing else loses them unnoticed).
 -keepattributes Signature, RuntimeVisibleAnnotations, AnnotationDefault
--if interface * { @retrofit2.http.* <methods>; }
--keep,allowobfuscation interface <1>
 
 # --- WebView bridges --------------------------------------------------------
 # The scrape relay and the NovelUpdates resolver drive offscreen WebViews; any

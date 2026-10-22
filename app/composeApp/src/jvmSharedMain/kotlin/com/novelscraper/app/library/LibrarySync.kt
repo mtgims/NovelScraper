@@ -29,7 +29,7 @@ internal data class NovelRec(
 @Serializable internal data class ReadRec(val read: Boolean = false)
 @Serializable internal data class CollectionRec(val name: String = "", val sort: Long = 0, val deleted: Boolean = false)
 @Serializable internal data class ShelfRec(val member: Boolean = false)
-/** An installed source extension, so the same sources follow the account. */
+/** An installed source extension, so the same sources follow the library. */
 @Serializable internal data class SourceRec(val repo: String = "", val enabled: Boolean = true)
 
 private const val TAG = "LibrarySync"
@@ -175,8 +175,8 @@ internal class SyncRecords(
 
     // --- enrollment: this device's library, once ---------------------------------
 
-    /** The first sync of this device (or after an account change): send the
-     *  whole library, at a clock just above the server's seed and below any real
+    /** The first sync of this device (or after reconnecting): send the
+     *  whole library, at a clock just above the old server's seed and below any real
      *  change, so it fills gaps without undoing newer changes from elsewhere. */
     fun enroll() {
         if (state().enrolled != 0L) return
@@ -332,8 +332,6 @@ internal class SyncRecords(
 
     fun sent(changes: List<SyncChange>) = changes.forEach { q.sent(it.kind, it.key, it.ts) }
 
-    fun cursor(): Long = state().cursor
-    fun setCursor(c: Long) = q.setCursor(c)
     fun pendingCount(): Long = q.pendingCount().executeAsOne()
     fun reset() = q.reset()
 

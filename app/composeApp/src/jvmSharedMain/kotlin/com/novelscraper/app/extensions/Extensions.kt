@@ -82,7 +82,7 @@ object Extensions {
     private lateinit var dir: File
 
     /** Downloads plugin code and indexes, and is what plugins fetch through: its
-     *  own cookie jar, like a browser's, separate from the server login. */
+     *  own cookie jar, like a browser's. */
     lateinit var http: OkHttpClient
 
     /** [http], never changing scheme on a redirect: for repositories and plugin code ([get]). */

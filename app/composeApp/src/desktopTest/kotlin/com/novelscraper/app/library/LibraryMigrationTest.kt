@@ -1,9 +1,9 @@
 package com.novelscraper.app.library
 
-import com.novelscraper.app.data.SyncRequest
-import com.novelscraper.app.data.SyncResponse
 import com.novelscraper.app.db.jdbcLibraryDriver
 import com.novelscraper.app.extensions.SourceNovel
+import com.novelscraper.app.sync.FakeFolder
+import com.novelscraper.app.sync.KeyCache
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.runBlocking
 import java.io.File
@@ -23,11 +23,6 @@ class LibraryMigrationTest {
         override suspend fun novel(pluginId: String, path: String) = SourceNovel()
         override suspend fun chapter(pluginId: String, path: String) = ""
         override suspend fun webUrl(pluginId: String, path: String) = null
-    }
-
-    private class SyncOnly(val store: LibraryStoreTest.FakeSync) : ServerOrigin {
-        override val enabled = true
-        override suspend fun sync(request: SyncRequest) = store.sync(request)
     }
 
     @Test
@@ -51,8 +46,7 @@ class LibraryMigrationTest {
             }
         }
 
-        val server = LibraryStoreTest.FakeSync()
-        val lib = LibraryStore(jdbcLibraryDriver(file), NoSource, SyncOnly(server))
+        val lib = LibraryStore(jdbcLibraryDriver(file), NoSource)
         val grid = lib.libraryFlow().first()
         assertEquals(listOf("Source B"), grid.map { it.title }, "the source novel is untouched")
         assertEquals(1, grid[0].downloadedCount)
@@ -61,8 +55,9 @@ class LibraryMigrationTest {
         assertEquals(listOf("Server shelf", "Local shelf"),
             lib.collectionsFlow().first().map { it.name })
 
-        lib.syncNow()
-        val keys = server.records.keys
+        lib.syncFolder(FakeFolder(), null, KeyCache())
+        val sent = lib.sync.snapshot()
+        val keys = sent.map { it.kind to it.key }
         assertTrue(keys.none { it.second.startsWith("srv:") || "\tsrv:" in it.second },
             "nothing names a novel the server used to hold: $keys")
         assertTrue("novel" to "src:rr\tfiction/5" in keys)
@@ -70,12 +65,12 @@ class LibraryMigrationTest {
         assertTrue("read" to "src:rr\tfiction/5\tfiction/5/1" in keys)
         val local = keys.filter { it.first == "shelf" }.single().second
         assertTrue(local.endsWith("\tsrc:rr\tfiction/5") && !local.startsWith("srv:"), local)
-        assertTrue(server.records.values.all { it.c.ts == LibrarySyncEnrollTs }, "enrolled at the enrollment clock")
+        assertTrue(sent.all { it.ts == LibrarySyncEnrollTs }, "enrolled at the enrollment clock")
         file.delete()
     }
 
     /** A 1.0 library (schema 4) gains folder sync's state and keeps its records,
-     *  so the first snapshot it writes carries everything the server gave it. */
+     *  so the first snapshot it writes carries everything the old server gave it. */
     @Test
     fun aVersionFourLibraryKeepsItsRecordsForFolderSync() = runBlocking<Unit> {
         val file = Files.createTempFile("library-v4", ".db").toFile()
@@ -88,7 +83,7 @@ class LibraryMigrationTest {
             }
         }
 
-        val lib = LibraryStore(jdbcLibraryDriver(file), NoSource, SyncOnly(LibraryStoreTest.FakeSync()))
+        val lib = LibraryStore(jdbcLibraryDriver(file), NoSource)
         assertEquals("dev-a", lib.sync.device())
         assertEquals(0L, lib.sync.outSeq())
         assertEquals(0L, lib.sync.snapSeq())

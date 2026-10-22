@@ -44,10 +44,9 @@ class FolderSyncTest {
         var clock: Long = 1_000_000,
         var passphrase: String? = null,
         file: File? = null,
-        server: ServerOrigin = LibraryStoreTest.offlineServer(),
     ) {
         private val keys = KeyCache()
-        val lib = LibraryStore(jdbcLibraryDriver(file), Source(), server, now = { clock })
+        val lib = LibraryStore(jdbcLibraryDriver(file), Source(), now = { clock })
         suspend fun sync() = lib.syncFolder(folder, passphrase?.toCharArray(), keys)
         val id get() = lib.sync.device()
     }
@@ -289,20 +288,5 @@ class FolderSyncTest {
         } finally {
             fileA.delete(); fileB.delete()
         }
-    }
-
-    @Test
-    fun aLibrarySyncedThroughTheServerMovesWhole() = runBlocking<Unit> {
-        val server = LibraryStoreTest.FakeSync()
-        val old = Device(folder, server = LibraryStoreTest.FakeServer(server))
-        val mover = Device(folder, server = LibraryStoreTest.FakeServer(server))
-        val idOld = addNovel(old); old.lib.setRating(idOld, 4); old.lib.syncNow()
-        mover.lib.syncNow()
-        assertEquals(1, libraryOf(mover).size)
-
-        // The mover switches to the folder; the old device never does.
-        mover.sync()
-        val fresh = Device(folder); fresh.sync()
-        assertEquals(4, libraryOf(fresh).single().rating, "what the server gave the mover arrives whole")
     }
 }

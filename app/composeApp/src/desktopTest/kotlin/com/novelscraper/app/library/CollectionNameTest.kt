@@ -18,7 +18,7 @@ class CollectionNameTest {
     }
 
     @Test fun aBlankNameIsRefused() = runBlocking<Unit> {
-        val lib = LibraryStore(jdbcLibraryDriver(null), Source(), LibraryStoreTest.offlineServer())
+        val lib = LibraryStore(jdbcLibraryDriver(null), Source())
         assertFailsWith<IllegalArgumentException> { lib.createCollection("   ") }
         val id = lib.createCollection("Cultivation")
         lib.renameCollection(id, "  ")

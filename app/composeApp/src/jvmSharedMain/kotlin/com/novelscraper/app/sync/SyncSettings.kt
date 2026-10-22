@@ -13,18 +13,15 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
-import okhttp3.CookieJar
 import java.io.File
 
 /**
  * Where the library syncs: straight between the devices on the same Wi-Fi,
  * paired by a sync code ([LanSync]), or through a WebDAV folder of the
- * reader's own. Optional, like the server account it replaces; nothing else in
- * the app needs it.
+ * reader's own. Optional; nothing else in the app needs it.
  *
  * The code, or the WebDAV sign-in and passphrase, are kept in this app's
- * private settings, as the server session was, so a sync can run without
- * asking.
+ * private settings, so a sync can run without asking.
  */
 object SyncSettings {
 
@@ -207,8 +204,8 @@ object SyncSettings {
         _state.value = null
     }
 
-    /** The app's client without its cookies: those belong to the server account. */
-    private fun client() = Net.client.newBuilder().cookieJar(CookieJar.NO_COOKIES).build()
+    /** WebDAV's client: the app's own, which keeps no cookies. */
+    private fun client() = Net.client
 
     private const val KEY_PROVIDER = "provider"
     private const val KEY_CODE = "lan_code"

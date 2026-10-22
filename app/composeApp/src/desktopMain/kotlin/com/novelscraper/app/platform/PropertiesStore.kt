@@ -15,11 +15,11 @@ import java.util.concurrent.TimeUnit
 
 /**
  * A [KeyValueStore] kept as a `.properties` file (one per store name, e.g.
- * ~/.config/novelscraper/ns.properties). Reads come from memory. Writes update
+ * ~/.config/novelscraper/reader.properties). Reads come from memory. Writes update
  * memory at once and are saved on a background thread, like SharedPreferences'
  * apply(); each save writes the whole file to a temp file and moves it into place,
  * so a crash never leaves a half-written file. Files are readable by the user only
- * (the "ns" store holds the login cookie). String sets are stored as JSON arrays.
+ * (the "sync" store holds the sync code). String sets are stored as JSON arrays.
  */
 class PropertiesStore(private val file: File) : KeyValueStore {
     private val props = Properties()

@@ -23,8 +23,8 @@ import kotlin.coroutines.coroutineContext
  * One novel at a time with a pause between them: a library of eighty novels must
  * not arrive at a source as a burst of eighty requests. Novels whose source
  * isn't installed here are skipped, and a source that fails (offline, a browser
- * check) is counted and passed over rather than stopping the run. Novels stored
- * on the server are left alone: the server updates those itself.
+ * check) is counted and passed over rather than stopping the run. Imported
+ * novels have no source, so they are left alone.
  *
  * It runs when the library is opened, at most every [MIN_HOURS] hours, and
  * whenever the reader asks for it.

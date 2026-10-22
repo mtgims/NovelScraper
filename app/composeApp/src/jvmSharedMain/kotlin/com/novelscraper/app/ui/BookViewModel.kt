@@ -10,14 +10,12 @@ import com.novelscraper.app.library.LibProgress
 import com.novelscraper.app.library.Library
 import com.novelscraper.app.extensions.Extensions
 import com.novelscraper.app.extensions.PluginNotInstalledException
-import com.novelscraper.app.net.Account
 import com.novelscraper.app.tts.AudiobookExport
 import com.novelscraper.app.epub.Epub
 import com.novelscraper.app.net.epubFileName
 import com.novelscraper.app.net.imageClient
 import com.novelscraper.app.net.zipFileName
 import com.novelscraper.app.platform.saveToDownloads
-import com.novelscraper.app.net.detail
 import com.novelscraper.app.ui.browse.describe
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -27,7 +25,6 @@ import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
-import retrofit2.HttpException
 
 /** Which chapters "Download" takes. */
 enum class DownloadChoice { All, Unread, Next10 }
@@ -36,7 +33,7 @@ enum class DownloadChoice { All, Unread, Next10 }
 enum class AudioRange { ThisChapter, Next10, All }
 
 /** A novel's page: details, chapters and progress from the local library, kept
- *  up to date from its source or the server. */
+ *  up to date from its source. */
 class BookViewModel(private val bookId: Int) : ViewModel() {
     private val lib = Library.store
 
@@ -65,8 +62,7 @@ class BookViewModel(private val bookId: Int) : ViewModel() {
     init {
         viewModelScope.launch {
             val b = lib.book(bookId) ?: return@launch
-            // A source novel is fetched the first time it is opened; a server one
-            // on every open, as its chapters and progress may have moved on there.
+            // A source novel is fetched the first time it is opened.
             if (b.checkedAt == 0L) refresh()
         }
     }
@@ -93,8 +89,7 @@ class BookViewModel(private val bookId: Int) : ViewModel() {
         }
     }
 
-    /** Source novels: fetch the chapter list again. Server novels: ask the server
-     *  to scrape new chapters (routed through this device for gated sites). */
+    /** Source novels: fetch the chapter list again. */
     fun checkForNewChapters() {
         val b = book.value ?: return
         if (b.isSource) {
@@ -119,9 +114,8 @@ class BookViewModel(private val bookId: Int) : ViewModel() {
         _action.value = "This novel was imported, so there is nothing to check."
     }
 
-    /** Write the novel to an EPUB in the user's Downloads. The server used to
-     *  build this file; it is made here now, from the chapters held on the
-     *  device, so it works offline and needs no account. */
+    /** Write the novel to an EPUB in the user's Downloads, from the chapters
+     *  held on the device, so it works offline. */
     fun saveEpub(title: String, author: String) {
         viewModelScope.launch {
             val positions = lib.storedPositions(bookId)
@@ -221,7 +215,8 @@ class BookViewModel(private val bookId: Int) : ViewModel() {
         }
     }
 
-    /** Delete a server novel (here and on the server), then [onDeleted]. */
+    /** Delete an imported novel, which has no source to find it again, then
+     *  [onDeleted]. */
     fun delete(onDeleted: () -> Unit) {
         viewModelScope.launch {
             lib.delete(bookId)

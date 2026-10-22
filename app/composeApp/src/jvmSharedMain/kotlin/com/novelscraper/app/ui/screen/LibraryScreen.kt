@@ -53,7 +53,6 @@ import com.novelscraper.app.platform.showToast
 import com.novelscraper.app.ui.ImportUi
 import com.novelscraper.app.ui.ImportViewModel
 import com.novelscraper.app.library.LibBook
-import com.novelscraper.app.net.Account
 import androidx.compose.foundation.layout.fillMaxHeight
 import com.novelscraper.app.ui.components.GridScrollbar
 import com.novelscraper.app.ui.components.MenuAction
@@ -72,8 +71,8 @@ import sh.calvin.reorderable.rememberReorderableLazyGridState
 @Composable
 fun LibraryScreen(onOpenBook: (Int) -> Unit) {
     val vm: LibraryViewModel = viewModel { LibraryViewModel() }
-    // New novels on the server (scraped or imported there) come in on entry,
-    // deferred past the slide transition so the grid doesn't recompose mid-animation.
+    // New chapters and what the other devices changed come in on entry, deferred
+    // past the slide transition so the grid doesn't recompose mid-animation.
     LaunchedEffect(Unit) { kotlinx.coroutines.delay(300); vm.refresh(force = false) }
     val loaded by vm.books.collectAsState()
     val dragOrder by vm.dragOrder.collectAsState()
@@ -81,7 +80,6 @@ fun LibraryScreen(onOpenBook: (Int) -> Unit) {
     val tab by vm.tab.collectAsState()
     val refreshing by vm.refreshing.collectAsState()
     val updates by vm.updates.collectAsState()
-    val account by Account.state.collectAsState()
 
     val books = loaded.orEmpty().let { list ->
         val order = dragOrder ?: return@let list
@@ -99,8 +97,7 @@ fun LibraryScreen(onOpenBook: (Int) -> Unit) {
 
     Column(Modifier.fillMaxSize()) {
         val coverWidth by LibraryPrefs.coverWidth.collectAsState()
-        // Importing an EPUB reads the file here on the device; it used to be an
-        // upload to the server, and needed an account.
+        // Importing an EPUB reads the file here on the device.
         val importVm: ImportViewModel = viewModel { ImportViewModel() }
         val importUi by importVm.ui.collectAsState()
         val pickEpubs = rememberEpubPicker { files -> importVm.importEpubs(files) }
@@ -158,7 +155,7 @@ fun LibraryScreen(onOpenBook: (Int) -> Unit) {
             )
             Box(Modifier.fillMaxSize()) {
                 when {
-                    // Also while the server's library is being brought in for the first time.
+                    // Also while another device's library is being brought in for the first time.
                     loaded == null || (books.isEmpty() && refreshing) ->
                         CircularProgressIndicator(Modifier.align(Alignment.Center))
                     display.isEmpty() -> Text(

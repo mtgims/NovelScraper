@@ -1,10 +1,7 @@
 package com.novelscraper.app.library
 
-import com.novelscraper.app.data.SyncRequest
-import com.novelscraper.app.data.SyncResponse
 import com.novelscraper.app.extensions.Extensions
 import com.novelscraper.app.extensions.SourceNovel
-import com.novelscraper.app.net.Net
 
 /** Where novels come from: the installed extensions. */
 interface SourceOrigin {
@@ -15,14 +12,6 @@ interface SourceOrigin {
     suspend fun chapter(pluginId: String, path: String): String
     /** The novel's web page. */
     suspend fun webUrl(pluginId: String, path: String): String?
-}
-
-/** The account's sync endpoint. The server holds no novels, only the records
- *  that keep a library in step across devices. */
-interface ServerOrigin {
-    /** True while an account is signed in (calls may still fail offline). */
-    val enabled: Boolean
-    suspend fun sync(request: SyncRequest): SyncResponse
 }
 
 /** Paged chapter lists are fetched to the end, up to this many pages. */
@@ -53,10 +42,4 @@ object ExtensionSources : SourceOrigin {
         return if (rt.info.hasResolveUrl) runCatching { rt.resolveUrl(path, isNovel = true) }.getOrNull()
         else rt.info.site.trimEnd('/') + "/" + path.trimStart('/')
     }
-}
-
-/** The server through [Net.api]; [enabled] follows the account. */
-class NetServer(private val signedIn: () -> Boolean) : ServerOrigin {
-    override val enabled: Boolean get() = signedIn()
-    override suspend fun sync(request: SyncRequest) = Net.api.sync(request)
 }

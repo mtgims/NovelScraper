@@ -1,11 +1,10 @@
 package com.novelscraper.app.library
 
-import com.novelscraper.app.data.SyncChange
-import com.novelscraper.app.data.SyncRequest
-import com.novelscraper.app.data.SyncResponse
 import com.novelscraper.app.db.jdbcLibraryDriver
 import com.novelscraper.app.extensions.ChapterItem
 import com.novelscraper.app.extensions.SourceNovel
+import com.novelscraper.app.sync.FakeFolder
+import com.novelscraper.app.sync.KeyCache
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.runBlocking
 import java.io.IOException
@@ -31,51 +30,18 @@ class LibraryStoreTest {
         override suspend fun webUrl(pluginId: String, path: String) = "https://fake/$path"
     }
 
-    /** The server's sync records, shared by every device (like /api/sync). */
-    class FakeSync {
-        data class Rec(val c: SyncChange, val seq: Long)
-        val records = LinkedHashMap<Pair<String, String>, Rec>()
-        private var seq = 0L
-
-        /** What the server's seed makes from its own tables (clock 1). */
-        fun seed(kind: String, key: String, value: String) {
-            records[kind to key] = Rec(SyncChange(kind, key, value, 1, "seed"), ++seq)
-        }
-
-        fun sync(r: SyncRequest): SyncResponse {
-            for (c in r.changes) {
-                val dev = c.device.ifEmpty { r.device }
-                val old = records[c.kind to c.key]?.c
-                if (old == null || c.ts > old.ts || (c.ts == old.ts && dev > old.device))
-                    records[c.kind to c.key] = Rec(c.copy(device = dev), ++seq)
-            }
-            val out = records.values.filter { it.seq > r.cursor }.sortedBy { it.seq }
-            return SyncResponse(out.lastOrNull()?.seq ?: r.cursor, out.map { it.c }, false)
-        }
-
-        fun value(kind: String, key: String) = records[kind to key]?.c?.value
-    }
-
-    /** The sync endpoint; can be taken offline. */
-    class FakeServer(val syncStore: FakeSync = FakeSync()) : ServerOrigin {
-        override var enabled = true
-        var offline = false
-
-        override suspend fun sync(request: SyncRequest): SyncResponse {
-            if (offline) throw IOException("offline")
-            return syncStore.sync(request)
-        }
-    }
-
-    companion object {
-        /** A server that is never signed in (for tests that only use sources). */
-        fun offlineServer(): ServerOrigin = FakeServer().also { it.enabled = false }
-    }
-
     private var clock = 1_000L
     private val source = FakeSource()
-    private val server = FakeServer()
-    private val lib = LibraryStore(jdbcLibraryDriver(null), source, server, now = { clock++ })
+    private val folder = FakeFolder()
+    private val keys = KeyCache()
+    private val lib = LibraryStore(jdbcLibraryDriver(null), source, now = { clock++ })
+    private suspend fun sync() = lib.syncFolder(folder, null, keys)
+    /** What this device has written to the folder, as another device reads it. */
+    private suspend fun synced(kind: String, key: String): String? {
+        val other = LibraryStore(jdbcLibraryDriver(null), source)
+        other.syncFolder(folder, null, KeyCache())
+        return other.sync.snapshot().firstOrNull { it.kind == kind && it.key == key }?.value
+    }
 
     @Test
     fun sourceNovelIsOpenedRefreshedAndAdded() = runBlocking {
@@ -180,15 +146,15 @@ class LibraryStoreTest {
             "novelscraper.royalroad" to "https://example.invalid/index.json",
             "novelscraper.scribblehub" to "https://example.invalid/index.json",
         ))
-        assertTrue(lib.syncNow())
+        sync()
         lib.noteInstalledSources(listOf("novelscraper.royalroad" to "https://example.invalid/index.json"))
-        assertTrue(lib.syncNow())
+        sync()
 
-        // What the account now holds: the one still installed, and the other
-        // marked disabled rather than deleted (a deleted record would just be
-        // re-sent by whichever device still has it).
-        val kept = server.syncStore.value("source", "novelscraper.royalroad")
-        val gone = server.syncStore.value("source", "novelscraper.scribblehub")
+        // What the other devices now read: the one still installed, and the
+        // other marked disabled rather than deleted (a deleted record would just
+        // be re-sent by whichever device still has it).
+        val kept = synced("source", "novelscraper.royalroad")
+        val gone = synced("source", "novelscraper.scribblehub")
         assertTrue(kept != null && "\"enabled\":true" in kept, kept.orEmpty())
         assertTrue(gone != null && "\"enabled\":false" in gone, gone.orEmpty())
 
@@ -197,58 +163,22 @@ class LibraryStoreTest {
     }
 
     @Test
-    fun recordsFromAnotherDeviceArriveAndApply() = runBlocking {
-        // What another device has already synced about a novel this one has never seen.
-        val key = "src:fake\tn"
-        val sync = server.syncStore
-        sync.seed("novel", key, """{"plugin":"fake","path":"n","title":"The Novel","author":"Someone","in_library":true}""")
-        sync.seed("progress", key, """{"chapter":"n/c3","scroll":0.5,"sentence":12}""")
-        for (p in 1..3) sync.seed("read", "$key\tn/c$p", """{"read":true}""")
-        sync.seed("collection", "c-fav", """{"name":"Favourites","sort":1,"deleted":false}""")
-        sync.seed("shelf", "c-fav\t$key", """{"member":true}""")
-
-        // The novel arrives before its chapters; refreshing fetches them and the
-        // waiting records then apply.
-        assertTrue(lib.syncNow())
-        val a = lib.libraryFlow().first().single()
-        assertEquals("The Novel", a.title)
-        lib.refresh(a.id)
-
-        val p = lib.progress(a.id)
-        assertEquals(setOf(1, 2, 3), p.readPositions); assertEquals(3, p.lastPosition)
-        assertEquals(0.5f, p.scroll); assertEquals(12, p.sentence)
-        val fav = lib.collectionsFlow().first().single()
-        assertEquals("Favourites", fav.name)
-        assertEquals(listOf(fav.id), lib.book(a.id)!!.collectionIds)
-        assertEquals(1, lib.libraryFlow().first().size, "one row, however it arrived")
-    }
-
-    @Test
     fun changesMadeOfflineAreSentLater() = runBlocking {
         val id = lib.openSource("fake", "n", "The Novel", null).also { lib.refresh(it) }
         lib.setInLibrary(id, true)
-        assertTrue(lib.syncNow())
+        sync()
 
-        server.offline = true
+        folder.offline = true
         lib.markOpened(id, 4)
         lib.setRating(id, 2)
-        assertFailsWith<IOException> { lib.syncNow() }
+        assertFailsWith<IOException> { sync() }
         assertTrue(lib.pendingSyncCount() > 0)
         assertEquals(setOf(4), lib.progress(id).readPositions, "kept here meanwhile")
 
-        server.offline = false
-        assertTrue(lib.syncNow())
+        folder.offline = false
+        sync()
         assertEquals(0L, lib.pendingSyncCount())
-        assertEquals("""{"read":true}""", server.syncStore.value("read", "src:fake\tn\tn/c4"))
-        assertEquals("""{"rating":2}""", server.syncStore.value("rating", "src:fake\tn"))
-    }
-
-    @Test
-    fun signedOutMeansNoSync() = runBlocking {
-        server.enabled = false
-        val id = lib.openSource("fake", "n", "The Novel", null).also { lib.refresh(it) }
-        lib.setInLibrary(id, true)
-        assertFalse(lib.syncNow())
-        assertTrue(server.syncStore.records.isEmpty(), "nothing was sent")
+        assertEquals("""{"read":true}""", synced("read", "src:fake\tn\tn/c4"))
+        assertEquals("""{"rating":2}""", synced("rating", "src:fake\tn"))
     }
 }

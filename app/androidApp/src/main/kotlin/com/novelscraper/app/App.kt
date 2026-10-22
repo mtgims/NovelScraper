@@ -12,7 +12,7 @@ import com.novelscraper.app.update.AppUpdates
 import com.novelscraper.app.extensions.Extensions
 import com.novelscraper.app.library.DownloadKeeper
 import com.novelscraper.app.library.Library
-import com.novelscraper.app.net.Account
+import com.novelscraper.app.library.LibrarySyncRunner
 import com.novelscraper.app.net.Net
 import com.novelscraper.app.net.buildImageLoader
 import com.novelscraper.app.platform.initPlatform
@@ -26,7 +26,6 @@ class App : Application(), SingletonImageLoader.Factory {
         super.onCreate()
         initPlatform(this, BuildConfig.DEBUG)  // first: the shared code's settings/files/toasts need it
         Net.init()
-        Account.init()
         SyncSettings.init()
         Extensions.init(Net.client)
         AppUpdates.init(Net.client)
@@ -48,10 +47,10 @@ class App : Application(), SingletonImageLoader.Factory {
     private object ForegroundSync : ActivityLifecycleCallbacks {
         private var started = 0
         override fun onActivityStarted(activity: Activity) {
-            if (started++ == 0) Account.onForeground()
+            if (started++ == 0) LibrarySyncRunner.onForeground()
         }
         override fun onActivityStopped(activity: Activity) {
-            if (--started <= 0) { started = 0; Account.onBackground() }
+            if (--started <= 0) { started = 0; LibrarySyncRunner.onBackground() }
         }
         override fun onActivityCreated(activity: Activity, savedInstanceState: Bundle?) {}
         override fun onActivityResumed(activity: Activity) {}

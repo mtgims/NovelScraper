@@ -64,10 +64,7 @@ import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.platform.LocalClipboardManager
 import androidx.compose.ui.text.input.VisualTransformation
 import androidx.compose.material3.ButtonDefaults
-import retrofit2.HttpException
-import com.novelscraper.app.net.detail
 import com.novelscraper.app.platform.showToast
-import com.novelscraper.app.net.Account
 import com.novelscraper.app.net.Net
 import com.novelscraper.app.sync.FolderAuthException
 import com.novelscraper.app.sync.SyncNewerFormatException
@@ -88,30 +85,17 @@ import com.novelscraper.app.ui.theme.THEMES
 import com.novelscraper.app.ui.theme.ThemeController
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
-import kotlinx.coroutines.flow.first
-import androidx.compose.runtime.snapshotFlow
 import kotlinx.coroutines.withContext
 import androidx.compose.runtime.produceState
 import androidx.compose.foundation.text.selection.SelectionContainer
 
 @Composable
-fun SettingsScreen(onLogout: () -> Unit) {
-    val account by Account.state.collectAsState()
-    val folder by SyncSettings.state.collectAsState()
-    var deleting by remember { mutableStateOf(false) }
+fun SettingsScreen() {
     val theme by ThemeController.theme.collectAsState()
     val rate by ReaderPrefs.ttsRate.collectAsState()
     val fontScale by ReaderPrefs.fontScale.collectAsState()
 
     val scroll = rememberScrollState()
-    // Sent here to set sync up (the server sync notice): go down to it.
-    LaunchedEffect(Unit) {
-        if (SettingsHooks.jumpToSync) {
-            SettingsHooks.jumpToSync = false
-            snapshotFlow { scroll.maxValue }.first { it > 0 && it != Int.MAX_VALUE }
-            scroll.animateScrollTo(scroll.maxValue)
-        }
-    }
     Box(Modifier.fillMaxSize()) {
       ContentWidth(Modifier.statusBarsPadding().verticalScroll(scroll)) {
       Column(
@@ -168,28 +152,6 @@ fun SettingsScreen(onLogout: () -> Unit) {
         Section("SYNC")
         FolderSyncSection()
 
-        // Accounts are on their way out: shown only to someone still signed in.
-        (account as? Account.State.SignedIn)?.let { a ->
-            Section("SERVER ACCOUNT")
-            Text(a.username.ifBlank { "Signed in" }, style = MaterialTheme.typography.titleMedium,
-                fontWeight = FontWeight.SemiBold)
-            Text(Net.baseUrl + if (a.online) "" else " · not reached yet", style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant)
-            if (folder == null) SyncStatus()
-            Row(
-                Modifier.padding(top = 16.dp),
-                horizontalArrangement = Arrangement.spacedBy(8.dp),
-                verticalAlignment = Alignment.CenterVertically,
-            ) {
-                Button(onClick = onLogout) { Text("Sign out") }
-                TextButton(
-                    onClick = { deleting = true },
-                    colors = ButtonDefaults.textButtonColors(
-                        contentColor = MaterialTheme.colorScheme.error),
-                ) { Text("Delete account") }
-            }
-        }
-        if (deleting) DeleteAccountDialog(onDismiss = { deleting = false })
     }
       }
       ColumnScrollbar(scroll, Modifier.align(Alignment.CenterEnd).fillMaxHeight())
@@ -200,8 +162,6 @@ fun SettingsScreen(onLogout: () -> Unit) {
  *  (the desktop's GPU narration). */
 object SettingsHooks {
     var narration: (@Composable () -> Unit)? = null
-    /** Set before opening Settings to land on the Sync section. */
-    var jumpToSync = false
 }
 
 /**
@@ -611,87 +571,6 @@ private fun DeleteSyncedDataDialog(c: SyncSettings.Connection, onDismiss: () -> 
 }
 
 /**
- * Deleting the account for good. The password is asked for again because a
- * session left open is not enough for something irreversible, and the server
- * requires it too.
- */
-@Composable
-private fun DeleteAccountDialog(onDismiss: () -> Unit) {
-    val scope = rememberCoroutineScope()
-    var password by remember { mutableStateOf("") }
-    var busy by remember { mutableStateOf(false) }
-    var error by remember { mutableStateOf<String?>(null) }
-
-    AlertDialog(
-        onDismissRequest = { if (!busy) onDismiss() },
-        title = { Text("Delete this account?") },
-        text = {
-            Column {
-                Text(
-                    "The account and everything it syncs are deleted from the server, " +
-                        "for good. This cannot be undone.",
-                    style = MaterialTheme.typography.bodyMedium,
-                )
-                Text(
-                    "Your library stays on this device and goes on working without an " +
-                        "account. Your other devices keep what they already have, but " +
-                        "will stop syncing.",
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    modifier = Modifier.padding(top = 10.dp),
-                )
-                OutlinedTextField(
-                    value = password,
-                    onValueChange = { password = it; error = null },
-                    label = { Text("Your password") },
-                    singleLine = true,
-                    enabled = !busy,
-                    isError = error != null,
-                    visualTransformation = PasswordVisualTransformation(),
-                    modifier = Modifier.fillMaxWidth().padding(top = 16.dp),
-                )
-                error?.let {
-                    Text(it, color = MaterialTheme.colorScheme.error,
-                        style = MaterialTheme.typography.bodySmall,
-                        modifier = Modifier.padding(top = 8.dp))
-                }
-            }
-        },
-        confirmButton = {
-            TextButton(
-                enabled = !busy && password.isNotBlank(),
-                colors = ButtonDefaults.textButtonColors(
-                    contentColor = MaterialTheme.colorScheme.error),
-                onClick = {
-                    busy = true
-                    error = null
-                    scope.launch {
-                        try {
-                            Account.deleteAccount(password)
-                            showToast("Account deleted.")
-                            onDismiss()
-                        } catch (e: HttpException) {
-                            error = e.detail() ?: when (e.code()) {
-                                401 -> "That password is not right."
-                                400 -> "This is the last administrator account."
-                                else -> "Couldn't delete the account (${e.code()})."
-                            }
-                        } catch (e: Exception) {
-                            error = "Can't reach the server."
-                        } finally {
-                            busy = false
-                        }
-                    }
-                },
-            ) { Text(if (busy) "Deleting…" else "Delete for good") }
-        },
-        dismissButton = {
-            TextButton(onClick = onDismiss, enabled = !busy) { Text("Cancel") }
-        },
-    )
-}
-
-/**
  * Engine picker (the device's own voice, Kokoro, Supertonic, Piper) plus each
  * neural engine's model download. Downloading runs off the main thread;
  * progress is mirrored back to Compose state.
@@ -934,12 +813,8 @@ private fun SyncStatus() {
     }
     val text = when {
         sync.syncing -> "Syncing…"
-        sync.unsupported ->
-            "Not synced: this server is an older build without sync. Update the server, then it will " +
-                "catch up on its own. Nothing is lost meanwhile."
         sync.problem != null -> "Not synced. " + sync.problem
-        sync.error -> "Not synced: can't reach " + (if (SyncSettings.connected) "the storage" else "the server") +
-            ". Changes are kept and sent later."
+        sync.error -> "Not synced: can't reach the storage. Changes are kept and sent later."
         sync.lastSync == 0L -> "Library sync: waiting for the first sync."
         else -> {
             val mins = ((now - sync.lastSync) / 60_000).toInt()

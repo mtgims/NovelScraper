@@ -5,7 +5,6 @@ import app.cash.sqldelight.coroutines.mapToList
 import app.cash.sqldelight.coroutines.mapToOneOrNull
 import app.cash.sqldelight.db.SqlDriver
 import com.novelscraper.app.data.ChapterRead
-import com.novelscraper.app.data.SyncRequest
 import com.novelscraper.app.db.Book
 import com.novelscraper.app.db.LibraryDb
 import com.novelscraper.app.db.SelectLibrary
@@ -31,22 +30,21 @@ import kotlinx.serialization.json.Json
 /**
  * The library, kept on this device: every novel, its chapter list, downloaded and
  * recently read chapter text, reading progress, ratings and collections. Screens
- * and narration read and write here; nothing waits for a server.
+ * and narration read and write here; nothing waits for the network.
  *
  * Chapter text comes from the novel's extension ([SourceOrigin]) when it is not
  * stored yet. Text read while streaming is cached (the newest [CACHE_CHAPTERS]
  * chapters); downloads stay.
  *
- * Signed in, the library syncs with the user's other devices ([syncNow], see
- * [SyncRecords]): novels in the library, their order, ratings, reading position
- * (to the sentence), read marks, collections and which sources are installed.
- * Never chapter text: the server stores no novels, and a book imported here
- * from an EPUB stays on this device.
+ * With sync set up, the library syncs with the user's other devices
+ * ([syncFolder], see [SyncRecords]): novels in the library, their order,
+ * ratings, reading position (to the sentence), read marks, collections and which
+ * sources are installed. Never chapter text: a book imported here from an EPUB
+ * stays on this device.
  */
 class LibraryStore(
     driver: SqlDriver,
     private val sources: SourceOrigin,
-    private val server: ServerOrigin,
     private val now: () -> Long = System::currentTimeMillis,
     /** This device's installed sources, as (plugin id, repository). */
     private val installedSources: () -> List<Pair<String, String>> = { emptyList() },
@@ -61,7 +59,7 @@ class LibraryStore(
     // encodeDefaults: a sync record spells out every field, so "read: false"
     // travels as {"read":false} rather than an empty object.
     private val json = Json { ignoreUnknownKeys = true; explicitNulls = false; encodeDefaults = true }
-    private val serverMutex = Mutex()
+    private val syncMutex = Mutex()
 
     // --- reading the library -------------------------------------------------
 
@@ -363,7 +361,7 @@ class LibraryStore(
         }
     }
 
-    /** Sources the account's devices have, as (plugin id, repository). Includes
+    /** Sources the synced devices have, as (plugin id, repository). Includes
      *  this device's own; the caller filters out what is already installed. */
     suspend fun syncedSources(): List<Pair<String, String>> = io { sync.syncedSources() }
 
@@ -520,52 +518,18 @@ class LibraryStore(
         if (sync.isSyncable(b)) block(b)
     }
 
-    /** Raised when the server answers, but has no sync in it: an older build. */
-    class SyncUnsupportedException : Exception("This server doesn't have sync yet.")
-
     /**
-     * Sync with the server: send what changed here (the whole library, the first
-     * time), and apply what changed on the other devices. Returns false if not
-     * signed in; throws if the server can't be reached (nothing is lost: what
-     * wasn't accepted is sent next time).
-     */
-    suspend fun syncNow(): Boolean = serverMutex.withLock {
-        if (!server.enabled) return false
-        io { db.transaction { sync.enroll() } }
-        repeat(MAX_SYNC_ROUNDS) {
-            val (cursor, device, out) = io { db.transactionWithResult { Triple(sync.cursor(), sync.device(), sync.pending(SYNC_BATCH)) } }
-            val resp = try {
-                server.sync(SyncRequest(cursor, device, out))
-            } catch (e: retrofit2.HttpException) {
-                // A 404 is not a network problem: the server is answering, it
-                // simply doesn't know this endpoint. Saying "can't reach the
-                // server" for that sends everyone looking in the wrong place.
-                if (e.code() == 404) throw SyncUnsupportedException() else throw e
-            }
-            io {
-                db.transaction {
-                    sync.sent(out)
-                    sync.applyIncoming(resp.changes)
-                    sync.setCursor(resp.cursor)
-                }
-            }
-            if (out.size < SYNC_BATCH && !resp.more) return true
-        }
-        true
-    }
-
-    /**
-     * Sync through a folder in the user's own storage ([FolderSync]) rather
-     * than the server. Throws as [syncNow] does when the folder can't be
-     * reached, and one of the Sync*Exceptions when its passphrase stands in the
-     * way.
+     * Sync through the sync folder ([FolderSync]): this device's own for
+     * same-Wi-Fi sync, or a WebDAV folder. Throws when the folder can't be
+     * reached (nothing is lost: what wasn't written is sent next time), and one
+     * of the Sync*Exceptions when its passphrase stands in the way.
      */
     internal suspend fun syncFolder(
         folder: SyncFolder,
         passphrase: CharArray?,
         keys: KeyCache,
         codeKey: javax.crypto.SecretKey? = null,
-    ) = serverMutex.withLock {
+    ) = syncMutex.withLock {
         FolderSync(sync, object : SyncTx {
             override suspend fun <T> run(block: () -> T): T = io { db.transactionWithResult { block() } }
         }, folder, passphrase, keys, codeKey).run()
@@ -574,11 +538,11 @@ class LibraryStore(
     /** This device's sync id, which same-Wi-Fi sync introduces it by. */
     internal suspend fun syncDevice(): String = io { db.transactionWithResult { sync.device() } }
 
-    /** Changes here not yet accepted by the server. */
+    /** Changes here not yet written to the sync folder. */
     suspend fun pendingSyncCount(): Long = io { sync.pendingCount() }
 
-    /** Signed out, or into another account: its records are not this one's. */
-    suspend fun resetSync() = serverMutex.withLock { io { db.transaction { sync.reset() } } }
+    /** Sync disconnected: the next connection starts afresh. */
+    suspend fun resetSync() = syncMutex.withLock { io { db.transaction { sync.reset() } } }
 
     // --- housekeeping --------------------------------------------------------
 
@@ -685,8 +649,6 @@ class LibraryStore(
         /** Chapters kept from streaming (not downloaded). */
         const val CACHE_CHAPTERS = 300L
         const val UNUSED_DAYS = 30
-        private const val SYNC_BATCH = 500L
-        private const val MAX_SYNC_ROUNDS = 40
         private val WHITESPACE = Regex("\\s+")
     }
 }

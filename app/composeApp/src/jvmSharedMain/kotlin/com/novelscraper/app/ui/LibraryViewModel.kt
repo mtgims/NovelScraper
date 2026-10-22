@@ -22,8 +22,8 @@ import kotlinx.coroutines.withTimeoutOrNull
  *  drag whose order can never arrive does not look stuck. */
 private const val REORDER_SETTLE_MS = 2_000L
 
-/** The library grid, straight from the local library; [refresh] imports what is
- *  new on the server (when signed in). */
+/** The library grid, straight from the local library; [refresh] checks for new
+ *  chapters and syncs with the other devices (when sync is set up). */
 class LibraryViewModel : ViewModel() {
     private val lib = Library.store
 

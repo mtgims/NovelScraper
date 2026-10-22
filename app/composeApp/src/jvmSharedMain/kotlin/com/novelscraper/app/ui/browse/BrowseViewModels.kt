@@ -22,7 +22,7 @@ import kotlinx.serialization.json.jsonPrimitive
 
 private const val OFFLINE = "Couldn't reach the site. Check your connection; downloaded chapters open without one."
 
-/** What to tell the user when a plugin (or server) call fails. */
+/** What to tell the user when a plugin call fails. */
 fun describe(e: Throwable): String = when (e) {
     is SiteChallengeException ->
         if (SiteChecks.possible) "This site asks for a browser check first: open it from the box that pops up, then try again."
@@ -32,9 +32,6 @@ fun describe(e: Throwable): String = when (e) {
     is PluginException -> if (e.message?.contains("Network request failed") == true) OFFLINE
                           else "The source failed: ${e.message}"
     is java.io.IOException -> OFFLINE
-    // Server novels: their chapters come from the server until downloaded.
-    is retrofit2.HttpException -> if (e.code() == 401) "Sign in to your server (Settings) to read this."
-                                  else "The server answered ${e.code()}."
     is kotlinx.coroutines.TimeoutCancellationException -> "The source took too long to answer."
     else -> "Couldn't reach the source (${e.message ?: e.javaClass.simpleName})."
 }
@@ -65,8 +62,8 @@ class ExtensionsViewModel : ViewModel() {
     val installed: StateFlow<List<InstalledPlugin>> = Extensions.installed
     val repos: StateFlow<List<String>> = Extensions.repos
 
-    /** Sources the account's other devices have that this one does not, as
-     *  (plugin id, repository). Empty without an account, or once they match. */
+    /** Sources the other synced devices have that this one does not, as
+     *  (plugin id, repository). Empty without sync, or once they match. */
     private val _synced = MutableStateFlow<List<Pair<String, String>>>(emptyList())
     val synced: StateFlow<List<Pair<String, String>>> = _synced.asStateFlow()
 

@@ -28,7 +28,7 @@ import com.novelscraper.app.data.ReaderPrefs
 import com.novelscraper.app.update.AppUpdates
 import com.novelscraper.app.extensions.Extensions
 import com.novelscraper.app.library.Library
-import com.novelscraper.app.net.Account
+import com.novelscraper.app.library.LibrarySyncRunner
 import com.novelscraper.app.net.Net
 import com.novelscraper.app.net.buildImageLoader
 import com.novelscraper.app.platform.DesktopDirs
@@ -51,7 +51,6 @@ import java.io.File
 /** Everything App.onCreate does on Android, before the first window. */
 fun initApp() {
     Net.init()
-    Account.init()
     SyncSettings.init()
     Extensions.init(Net.client)
     AppUpdates.init(Net.client)
@@ -105,11 +104,11 @@ fun main(args: Array<String>) {
         com.novelscraper.app.ui.components.NovelVoicingDialog(bookId, title, onDismiss)
     }
     // Settings are saved in the background; make sure pending saves land however
-    // the app exits (window close, logout, SIGTERM).
+    // the app exits (window close, SIGTERM).
     Runtime.getRuntime().addShutdownHook(Thread { Extensions.flushStorage(); PropertiesStore.flush() })
-    // The desktop app is "in the foreground" while it runs: confirm the session
-    // and keep syncing (when signed in).
-    Account.onForeground()
+    // The desktop app is "in the foreground" while it runs: keep syncing (when
+    // sync is set up).
+    LibrarySyncRunner.onForeground()
     if (DesktopDirs.installedInsideData) {
         com.novelscraper.app.platform.Log.w("Main", "installed inside the data folder ${DesktopDirs.data}")
         com.novelscraper.app.platform.showToast(

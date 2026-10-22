@@ -15,18 +15,14 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.material3.Button
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
-import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
-import com.novelscraper.app.net.Account
-import kotlinx.coroutines.launch
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.IntOffset
-import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.navigation.NavType
 import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
@@ -41,24 +37,19 @@ import com.novelscraper.app.ui.browse.ExtensionsScreen
 import com.novelscraper.app.ui.browse.SourceScreen
 import com.novelscraper.app.ui.components.PillNavBar
 import com.novelscraper.app.ui.components.NavRail
-import com.novelscraper.app.ui.components.ServerSyncNotice
 import com.novelscraper.app.ui.components.SiteCheckPrompt
 import com.novelscraper.app.ui.components.isTopLevelRoute
 import com.novelscraper.app.ui.screen.BookScreen
 import com.novelscraper.app.ui.screen.LibraryScreen
-import com.novelscraper.app.ui.screen.LoginScreen
 import com.novelscraper.app.ui.screen.ReaderScreen
-import com.novelscraper.app.ui.screen.RegisterScreen
-import com.novelscraper.app.ui.screen.SettingsHooks
 import com.novelscraper.app.ui.screen.SettingsScreen
 import com.novelscraper.app.ui.screen.StatsScreen
 
-/** The whole app: the tabs and detail screens. A server account is optional;
- *  sign-in lives under Settings. */
+/** The whole app: the tabs and detail screens. */
 @Composable
 fun AppRoot() = MainApp()
 
-private val TAB_ORDER = listOf("library", "browse", "stats", "settings", "login", "register")
+private val TAB_ORDER = listOf("library", "browse", "stats", "settings")
 // Tab rank drives slide direction; detail screens (book/reader) rank high so
 // opening them slides forward (left), and back-navigation slides right.
 private fun routeRank(route: String?): Int {
@@ -70,8 +61,6 @@ private fun routeRank(route: String?): Int {
 @Composable
 private fun MainApp() {
     val nav = rememberNavController()
-    val auth: AuthViewModel = viewModel { AuthViewModel() }
-    val scope = rememberCoroutineScope()
     val entry by nav.currentBackStackEntryAsState()
     val route = entry?.destination?.route
     val slideSpec = tween<IntOffset>(260)
@@ -132,27 +121,6 @@ private fun MainApp() {
             composable("library") {
                 LibraryScreen(onOpenBook = { id -> nav.navigate("book/$id") })
             }
-            composable("login") {
-                val busy by auth.busy.collectAsState()
-                val error by auth.error.collectAsState()
-                LoginScreen(
-                    baseUrl = auth.baseUrl, busy = busy, error = error,
-                    onLogin = { u, p -> auth.login(u, p) { nav.popBackStack("login", inclusive = true) } },
-                    onSetBaseUrl = auth::setBaseUrl,
-                    onRegister = { auth.clearError(); auth.loadAuthConfig(); nav.navigate("register") },
-                    onBack = { auth.clearError(); nav.popBackStack() },
-                )
-            }
-            composable("register") {
-                val busy by auth.busy.collectAsState()
-                val error by auth.error.collectAsState()
-                val openSignup by auth.openSignup.collectAsState()
-                RegisterScreen(
-                    busy = busy, error = error, openSignup = openSignup,
-                    onRegister = { u, p, i -> auth.register(u, p, i) { nav.popBackStack("login", inclusive = true) } },
-                    onBack = { auth.clearError(); nav.popBackStack() },
-                )
-            }
             composable("browse") {
                 BrowseScreen(
                     onOpenSource = { id -> nav.navigate("source/${encodeRouteArg(id)}") },
@@ -168,10 +136,9 @@ private fun MainApp() {
                     onOpenNovel = { id -> nav.navigate("book/$id") },
                 )
             }
-            // Worked out from the library on this device, so no account needed.
             composable("stats") { StatsScreen() }
             composable("settings") {
-                SettingsScreen(onLogout = { scope.launch { Account.logout() } })
+                SettingsScreen()
             }
             composable(
                 "book/{id}",
@@ -201,9 +168,6 @@ private fun MainApp() {
 
                 // A source asking for a browser check can come from any screen.
                 SiteCheckPrompt()
-
-                // Server sync is going: say so, once a launch, until set aside.
-                ServerSyncNotice(onSetUp = { SettingsHooks.jumpToSync = true; go(nav, route, "settings") })
 
                 if (!wide && isTopLevelRoute(route)) {
                     PillNavBar(

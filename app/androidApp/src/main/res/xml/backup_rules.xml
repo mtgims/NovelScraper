@@ -7,7 +7,7 @@
   another one, so a session that travels in it is a session someone else may
   end up holding:
 
-    ns.xml            the NovelScraper account's session cookie
+    ns.xml            the old account's session cookie (emptied since 1.2)
     site-cookies.xml  what sites set while sources browse them, including any
                       login a source made on the reader's behalf
     plugin-data.xml   whatever a source stored, which is where its tokens live

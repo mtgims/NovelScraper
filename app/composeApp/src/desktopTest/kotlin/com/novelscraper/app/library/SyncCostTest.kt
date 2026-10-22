@@ -37,7 +37,7 @@ class SyncCostTest {
 
     @Test fun markingAChapterReadCostsAFewStatements() = runBlocking<Unit> {
         val driver = Counting(jdbcLibraryDriver(null))
-        val lib = LibraryStore(driver, Source(), LibraryStoreTest.offlineServer())
+        val lib = LibraryStore(driver, Source())
         val id = lib.openSource("fake", "n", "Novel", null).also { lib.refresh(it) }
         lib.setInLibrary(id, true)
 
