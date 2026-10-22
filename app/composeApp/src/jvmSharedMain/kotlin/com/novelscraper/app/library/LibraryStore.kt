@@ -297,7 +297,10 @@ class LibraryStore(
         }
     }
 
+    /** A new collection named [name]; a blank name is refused, here and not
+     *  only on screen, since a nameless tab says nothing. */
     suspend fun createCollection(name: String): Int = changeWithResult {
+        require(name.isNotBlank()) { "a collection needs a name" }
         val key = java.util.UUID.randomUUID().toString()
         val order = shelves.maxSortOrder().executeAsOne() + 1
         shelves.insert(name.trim(), order, null, key)
@@ -306,7 +309,9 @@ class LibraryStore(
         id
     }
 
+    /** A blank [name] leaves the collection as it was. */
     suspend fun renameCollection(id: Int, name: String) = change {
+        if (name.isBlank()) return@change
         shelves.rename(name.trim(), id.toLong())
         val c = shelves.selectAll().executeAsList().firstOrNull { it.id == id.toLong() } ?: return@change
         c.sync_key?.let { sync.emit(Kind.COLLECTION, it, CollectionRec.serializer(), CollectionRec(c.name, c.sort_order)) }
