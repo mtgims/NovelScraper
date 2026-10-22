@@ -221,3 +221,11 @@ actual suspend fun saveToDownloads(
     file.outputStream().buffered().use { write(it) }
     file.name
 }
+
+/** A computer shows the sync code; scanning is the phone's part. */
+actual val canScanCodes: Boolean = false
+
+@Composable
+actual fun CodeScannerDialog(onScanned: (String) -> Unit, onDismiss: () -> Unit) {
+    androidx.compose.runtime.LaunchedEffect(Unit) { onDismiss() }
+}

@@ -139,6 +139,18 @@ class PickedFile(val name: String, val open: () -> InputStream?)
 @Composable
 expect fun rememberEpubPicker(onPicked: (List<PickedFile>) -> Unit): () -> Unit
 
+/** Whether this device can scan a QR code with its camera (Android, with a camera). */
+expect val canScanCodes: Boolean
+
+/**
+ * A full-screen camera view that reads the first QR code it sees and hands its
+ * text to [onScanned]. The camera permission is asked for when this opens, not
+ * before; refused, it closes through [onDismiss]. Only shown where
+ * [canScanCodes].
+ */
+@Composable
+expect fun CodeScannerDialog(onScanned: (String) -> Unit, onDismiss: () -> Unit)
+
 /** Where a "save as" landed. [write] returns false if the bytes couldn't be written. */
 fun interface SaveTarget {
     fun write(bytes: ByteArray): Boolean

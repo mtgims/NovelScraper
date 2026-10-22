@@ -64,6 +64,9 @@ import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.platform.LocalClipboardManager
 import androidx.compose.ui.text.input.VisualTransformation
 import androidx.compose.material3.ButtonDefaults
+import com.novelscraper.app.platform.CodeScannerDialog
+import com.novelscraper.app.ui.components.QrCode
+import com.novelscraper.app.platform.canScanCodes
 import com.novelscraper.app.platform.showToast
 import com.novelscraper.app.net.Net
 import com.novelscraper.app.sync.FolderAuthException
@@ -174,6 +177,9 @@ private fun FolderSyncSection() {
     val conn by SyncSettings.state.collectAsState()
     var webdav by remember { mutableStateOf(false) }
     var joining by remember { mutableStateOf(false) }
+    var scanning by remember { mutableStateOf(false) }
+    /** A code read by the camera, for the join dialog to show before pairing. */
+    var scanned by remember { mutableStateOf("") }
     var showCode by remember { mutableStateOf(false) }
     var addPeer by remember { mutableStateOf(false) }
     var deleting by remember { mutableStateOf(false) }
@@ -204,7 +210,12 @@ private fun FolderSyncSection() {
                         }
                     }
                 }) { Text("Start syncing") }
-                OutlinedButton(enabled = !busy, onClick = { joining = true }) { Text("Enter a sync code") }
+                OutlinedButton(enabled = !busy, onClick = { scanned = ""; joining = true }) { Text("Enter a sync code") }
+            }
+            if (canScanCodes) {
+                OutlinedButton(enabled = !busy, onClick = { scanning = true }, modifier = Modifier.padding(top = 8.dp)) {
+                    Text("Scan a code")
+                }
             }
             TextButton(onClick = { webdav = true }, modifier = Modifier.padding(top = 4.dp)) {
                 Text("Or sync through WebDAV (Nextcloud, a NAS)")
@@ -243,7 +254,16 @@ private fun FolderSyncSection() {
         }
     }
     if (webdav) WebDavDialog(onDismiss = { webdav = false })
-    if (joining) JoinDialog(onDismiss = { joining = false })
+    if (joining) JoinDialog(initial = scanned, onDismiss = { joining = false })
+    if (scanning) CodeScannerDialog(
+        onScanned = { text ->
+            scanning = false
+            // Any QR code reads; only a sync code goes on to pairing.
+            if (runCatching { SyncCode.parse(text) }.isSuccess) { scanned = text; joining = true }
+            else showToast("That QR code isn't a sync code. Show the sync code on the other device and scan that.", long = true)
+        },
+        onDismiss = { scanning = false },
+    )
     if (showCode) SyncCodeDialog(onDismiss = { showCode = false })
     if (addPeer) AddPeerDialog(onDismiss = { addPeer = false })
 }
@@ -311,15 +331,16 @@ private fun SyncCodeDialog(onDismiss: () -> Unit) {
         onDismissRequest = onDismiss,
         title = { Text("Sync code") },
         text = {
-            Column {
+            Column(Modifier.verticalScroll(rememberScrollState())) {
+                if (code.isNotEmpty()) QrCode(code, Modifier.align(Alignment.CenterHorizontally).padding(bottom = 4.dp))
                 Text(
                     code,
                     style = MaterialTheme.typography.titleLarge.copy(fontFamily = FontFamily.Monospace),
                     modifier = Modifier.padding(vertical = 8.dp),
                 )
                 Text(
-                    "On the other device: Settings, Sync, Enter a sync code. Then keep both on the same " +
-                        "Wi-Fi with NovelScraper open, and they find each other.",
+                    "On the other device: Settings, Sync, then Scan a code on a phone, or Enter a sync " +
+                        "code. Then keep both on the same Wi-Fi with NovelScraper open, and they find each other.",
                     style = MaterialTheme.typography.bodyMedium,
                 )
                 Text(
@@ -338,9 +359,9 @@ private fun SyncCodeDialog(onDismiss: () -> Unit) {
 }
 
 @Composable
-private fun JoinDialog(onDismiss: () -> Unit) {
+private fun JoinDialog(initial: String = "", onDismiss: () -> Unit) {
     val scope = rememberCoroutineScope()
-    var text by remember { mutableStateOf("") }
+    var text by remember { mutableStateOf(initial) }
     var busy by remember { mutableStateOf(false) }
     var error by remember { mutableStateOf<String?>(null) }
     AlertDialog(
@@ -349,7 +370,8 @@ private fun JoinDialog(onDismiss: () -> Unit) {
         text = {
             Column {
                 Text(
-                    "The code another device shows under Settings, Sync, Show sync code.",
+                    if (initial.isNotEmpty()) "The code just scanned. Pair with it?"
+                    else "The code another device shows under Settings, Sync, Show sync code.",
                     style = MaterialTheme.typography.bodyMedium,
                 )
                 OutlinedTextField(

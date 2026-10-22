@@ -152,6 +152,10 @@ kotlin {
 
                 // QuickJS, the JavaScript engine that runs source extensions (plugins).
                 implementation("io.github.dokar3:quickjs-kt:1.0.15")
+
+                // QR codes for the sync code: drawn on every platform, scanned on
+                // Android (ZXing, Apache-2.0; no Google services).
+                implementation("com.google.zxing:core:3.5.4")
             }
         }
         androidMain {
@@ -161,6 +165,10 @@ kotlin {
                 implementation("androidx.lifecycle:lifecycle-service:2.8.7")
                 // MediaSession + media-style notification for background/lock-screen TTS.
                 implementation("androidx.media:media:1.7.0")
+                // The camera for scanning a sync code's QR (androidx, no Google services).
+                implementation("androidx.camera:camera-camera2:1.5.3")
+                implementation("androidx.camera:camera-lifecycle:1.5.3")
+                implementation("androidx.camera:camera-view:1.5.3")
                 implementation("app.cash.sqldelight:android-driver:2.4.0")
                 // On-device Kokoro/Piper TTS via sherpa-onnx (ONNX model + espeak-ng
                 // phonemizer + voices). compileOnly: a library can't bundle a local
