@@ -51,6 +51,26 @@ object TtsModels {
         val kind: String,          // "kokoro" | "vits" | "supertonic"
         val onnx: String,
         val required: List<String>,
+        /** The archive's SHA-256, as published with it (see [PIPER_SHA256]). */
+        val sha256: String,
+    )
+
+    /**
+     * Each Piper voice archive's SHA-256, copied from the digests GitHub's
+     * releases API gives for the sherpa-onnx `tts-models` release (2026-10-21).
+     * A model is code of a kind the app runs, so only the published one is
+     * installed. If a file is ever replaced upstream, its download is refused
+     * until this list is updated.
+     */
+    private val PIPER_SHA256 = mapOf(
+        "en_US-amy-medium" to "9a5d1fc497f85e8022b785bff5f8105203b1e33099ee6265203efc70b0cb0264",
+        "en_US-ryan-medium" to "c546af78b6395b4e7c4ce1ed899438b64426a362f5d4ec5fecd090ded9ad7505",
+        "en_US-lessac-medium" to "9e3febfacf0abf4270172d2958bcec246032b7e88efc2720840cc80c93de334e",
+        "en_US-joe-medium" to "261b903a1fb2ce621e2b5b14233cd41223c3b9f9590f896c11daee4df22d9bd3",
+        "en_GB-alan-medium" to "a48d4017da0f77668b27bed63fe6e04dd64c6397e1fadad4f460efb0ef7c9012",
+        "en_GB-cori-medium" to "49c9a5361bbdd95d7ca9687c4de11e5908481f65e7c7c368960df79949fdac2b",
+        "en_GB-alba-medium" to "fcd45962906933eec4431d3688f7d74aaac8713c87c6717f91fd3b23463aa1a1",
+        "en_GB-northern_english_male-medium" to "2bb2c1e709f58c11f17c693b3b38f500e110e7f54f2651774ec48b8d41f12c55",
     )
 
     private val SPECS: Map<String, Spec> = buildMap {
@@ -67,12 +87,14 @@ object TtsModels {
                 kind = "kokoro",
                 onnx = "model.onnx",
                 required = listOf("model.onnx", "voices.bin", "tokens.txt", "lexicon-us-en.txt"),
+                sha256 = "c5f7e2d2caf082bc1d20fb70334a61d99d20b484500aad32e7cf84c128ea3298",
             ) else Spec(
                 dir = "kokoro-int8-multi-lang-v1_0",
                 url = "$BASE/kokoro-int8-multi-lang-v1_0.tar.bz2",
                 kind = "kokoro",
                 onnx = "model.int8.onnx",
                 required = listOf("model.int8.onnx", "voices.bin", "tokens.txt", "lexicon-us-en.txt"),
+                sha256 = "4c3052abaa60943a341f193888cf6abd68787dae6ab8ae5c925a706caa247e4e",
             ),
         )
         put(
@@ -86,6 +108,7 @@ object TtsModels {
                     "duration_predictor.int8.onnx", "text_encoder.int8.onnx", "vector_estimator.int8.onnx",
                     "vocoder.int8.onnx", "tts.json", "unicode_indexer.bin", "voice.bin",
                 ),
+                sha256 = "82fa96f91c4ef8abaae3a14a3f4153facf88bed821d1f7331cec2700f432c427",
             ),
         )
         for (v in PIPER_VOICES) {
@@ -97,6 +120,7 @@ object TtsModels {
                     kind = "vits",
                     onnx = "${v.id}.onnx",
                     required = listOf("${v.id}.onnx", "tokens.txt"),
+                    sha256 = PIPER_SHA256.getValue(v.id),
                 ),
             )
         }

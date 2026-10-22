@@ -48,6 +48,7 @@ object KokoroDownloader {
 
             // 1. download the archive.
             val req = Request.Builder().url(TtsModels.downloadUrl(engine)).build()
+            val sha = java.security.MessageDigest.getInstance("SHA-256")
             client.newCall(req).execute().use { resp ->
                 if (!resp.isSuccessful) {
                     onProgress(Progress.Failed("Download failed (HTTP ${resp.code})")); return
@@ -63,6 +64,7 @@ object KokoroDownloader {
                             val n = input.read(buf)
                             if (n < 0) break
                             out.write(buf, 0, n)
+                            sha.update(buf, 0, n)
                             acc += n
                             if (acc - lastEmit >= 1_000_000) {
                                 onProgress(Progress.Downloading(acc, total)); lastEmit = acc
@@ -70,6 +72,15 @@ object KokoroDownloader {
                         }
                     }
                 }
+            }
+
+            // 1b. only the published archive is unpacked: a voice model is
+            // something the app runs, so one swapped on the way is refused.
+            val got = sha.digest().joinToString("") { "%02x".format(it) }
+            if (got != TtsModels.spec(engine).sha256) {
+                tmpTar.delete()
+                onProgress(Progress.Failed("The download doesn't match the checksum published for it. Try again later."))
+                return
             }
 
             // 2. extract (bzip2 -> tar), stripping the top-level dir.

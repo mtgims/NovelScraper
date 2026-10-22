@@ -644,7 +644,8 @@ object GpuVoice {
         val (kind, onnx, modelDir) = args.takeIf { it.size >= 3 } ?: return 5
         if (!installed || support !is Support.Ready || !loadPack()) return 4
         return try {
-            val spec = TtsModels.Spec(dir = File(modelDir).name, url = "", kind = kind, onnx = onnx, required = emptyList())
+            val spec = TtsModels.Spec(dir = File(modelDir).name, url = "", kind = kind, onnx = onnx, required = emptyList(),
+                sha256 = "")   // already on disk: nothing is downloaded against it
             val tts = buildModel(spec, modelDir, threads = 1, provider = provider, modelPath = modelFile(spec, modelDir))
             tts.generate("A first sentence to warm up.", 0, 1.0f)
             val t0 = System.nanoTime()
