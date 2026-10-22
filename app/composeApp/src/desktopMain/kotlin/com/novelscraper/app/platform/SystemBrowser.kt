@@ -119,7 +119,8 @@ object SystemBrowser {
             System.getProperty("live.browser").isNullOrBlank() &&
             System.getProperty("live.plugins").isNullOrBlank()
         ) return null
-        return find() ?: ChromeDownload.installed
+        // The downloaded browser is kept current (the reader's own updates itself).
+        return find() ?: ChromeDownload.installed?.also { ChromeDownload.updateLater() }
     }
 
     /**
