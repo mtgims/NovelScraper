@@ -9,8 +9,8 @@ import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.Json
 import java.util.UUID
 
-// What syncs between a user's devices, as records (the server side is
-// backend/app/services/sync.py, which documents the kinds and keys). Values:
+// What syncs between a user's devices, as records: a kind, a key and a JSON
+// value, last writer wins per (kind, key). Values:
 
 @Serializable
 internal data class NovelRec(

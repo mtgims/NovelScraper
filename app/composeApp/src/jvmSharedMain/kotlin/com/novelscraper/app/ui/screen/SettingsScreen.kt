@@ -205,11 +205,6 @@ object SettingsHooks {
 }
 
 /**
- * Engine picker (device / on-device Kokoro / on-device Piper) plus each neural
- * engine's model download. Downloading runs off the main thread; progress is
- * mirrored back to Compose state.
- */
-/**
  * Sync: between the devices on the same Wi-Fi, paired by a sync code, or
  * through a WebDAV folder. What it is and a way to set it up, or how it is
  * doing.
@@ -696,6 +691,11 @@ private fun DeleteAccountDialog(onDismiss: () -> Unit) {
     )
 }
 
+/**
+ * Engine picker (the device's own voice, Kokoro, Supertonic, Piper) plus each
+ * neural engine's model download. Downloading runs off the main thread;
+ * progress is mirrored back to Compose state.
+ */
 @Composable
 private fun NarrationEngine() {
     val engine by ReaderPrefs.ttsEngine.collectAsState()

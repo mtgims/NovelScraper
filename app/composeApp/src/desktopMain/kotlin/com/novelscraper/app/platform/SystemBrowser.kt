@@ -1092,14 +1092,6 @@ object SystemBrowser {
     /** True once the page loaded after the last request to go somewhere. */
     private fun ready(): Boolean = loadedAt >= navigatedAt
 
-    /**
-     * The page as the browser holds it, read out of its document rather than by
-     * running script inside it. Asking a page to evaluate an expression is the
-     * ordinary way to do this, and it is also the way an automated browser
-     * announces itself: the machinery that carries the answer back is watched
-     * for by the very checks this browser exists to get through. Reading the
-     * document leaves that machinery alone.
-     */
     /** Runs an expression in the page and hands back its value as text. */
     private suspend fun evaluate(expression: String, await: Boolean = false): String? {
         val result = call(
@@ -1114,6 +1106,14 @@ object SystemBrowser {
         return result["result"]?.jsonObject?.get("value")?.jsonPrimitive?.contentOrNull
     }
 
+    /**
+     * The page as the browser holds it, read out of its document rather than by
+     * running script inside it. Asking a page to evaluate an expression is the
+     * ordinary way to do this, and it is also the way an automated browser
+     * announces itself: the machinery that carries the answer back is watched
+     * for by the very checks this browser exists to get through. Reading the
+     * document leaves that machinery alone.
+     */
     private suspend fun html(): String? {
         val root = call(
             "DOM.getDocument",

@@ -58,9 +58,9 @@ object Epub {
     /** What all of a book's inlined images may add up to, counting each copy (see [ImageBudget]). */
     internal const val MAX_BOOK_IMAGE_BYTES = 32L * 1024 * 1024
 
-    /** Guards against a zip bomb: an EPUB of novel text is far under this. */
-    /** Not const: a test lowers it, rather than building a quarter-gigabyte
-     *  fixture to prove the budget is enforced. */
+    /** Guards against a zip bomb: an EPUB of novel text is far under this. Not
+     *  const: a test lowers it, rather than building a quarter-gigabyte fixture
+     *  to prove the budget is enforced. */
     internal var maxTotalBytes = 256L * 1024 * 1024
 
     // --- reading -------------------------------------------------------------
@@ -136,7 +136,9 @@ object Epub {
                 // have taken the app down before the check below ever ran.
                 val bytes = readWithin(zip, maxTotalBytes - total)
                 total += bytes.size
-                // Normalise away "./" and any parent traversal in the stored name.
+                // Only "./" is stripped. A name is only ever looked up, never
+                // written to disk, and a manifest's references are resolved the
+                // same way ([resolve]), so "../" in a stored name finds nothing.
                 out[entry.name.removePrefix("./").replace("\\", "/")] = bytes
             }
         }
@@ -427,11 +429,6 @@ object Epub {
 
     // --- writing ---------------------------------------------------------------
 
-    /**
-     * Write [chapters] as an EPUB 3 file. Used by "Save as EPUB", which the
-     * server used to build; it works offline now, for any novel whose chapters
-     * are on the device.
-     */
     /** A cover image for [write]: its bytes and their media type. */
     class Cover(val bytes: ByteArray, val mediaType: String) {
         val extension: String get() = when (mediaType) {
@@ -454,8 +451,10 @@ object Epub {
     }
 
     /**
-     * [chapters] as an EPUB 3, in [language] (an EPUB code, see [languageCode]),
-     * with [cover] when there is one.
+     * Write [chapters] as an EPUB 3 file, in [language] (an EPUB code, see
+     * [languageCode]), with [cover] when there is one. Used by "Save as EPUB",
+     * which the server used to build; it works offline, for any novel whose
+     * chapters are on the device.
      */
     fun write(
         title: String,
@@ -547,10 +546,8 @@ ${xhtmlBody(c.html)}
      * Several volumes as one zip of EPUBs, one file per volume, named the way
      * the server named them. A novel past a hundred chapters is too big to hand
      * over as a single file, and volume-sized pieces are what a reader expects.
-     */
-    /**
-     * Several volumes as a zip of EPUBs. Each volume is asked for ([volume]) as
-     * it is written and let go after, so only one is ever held.
+     * Each volume is asked for ([volume]) as it is written and let go after, so
+     * only one is ever held.
      */
     suspend fun writeZip(
         slug: String,

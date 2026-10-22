@@ -39,7 +39,8 @@ object Net {
     fun init() {
         prefs = settingsStore("ns")
         cookieJar = AppCookieJar(prefs)
-        // Always normalise (guarantee a trailing slash) so string-built URLs like
+        // Always normalise (guarantee a trailing slash), so a URL built by
+        // appending a path to it ("api/..." after the base) comes out right.
         _baseUrl = normalize(prefs.getString(KEY_BASE_URL, DEFAULT_BASE_URL) ?: DEFAULT_BASE_URL)
         rebuild()
     }

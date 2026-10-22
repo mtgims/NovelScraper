@@ -286,15 +286,14 @@ class PluginRuntime private constructor(
         runCatching { Charset.forName(label?.trim().takeUnless { it.isNullOrEmpty() } ?: "UTF-8") }
             .getOrDefault(Charsets.UTF_8)
 
-    /** host.js rawFetch -> one HTTP request from this device. */
     /**
      * The client plugins fetch through.
      *
      * A source is third-party code running on someone's phone or desktop, and
      * from there it can see a home network that is invisible from the internet:
-     * a router's admin page, a NAS, whatever else is listening. Refusing the
-     * addresses at the DNS layer means a redirect to one is refused as well,
-     * which a check on the requested URL alone would miss.
+     * a router's admin page, a NAS, whatever else is listening. [PrivateHosts]
+     * refuses those addresses, on every redirect hop and by the address
+     * actually connected to.
      */
     private val http: OkHttpClient by lazy {
         // A whole request is bounded, not just each read: a reply that trickles
@@ -329,6 +328,7 @@ class PluginRuntime private constructor(
         return buffered.readByteArray()
     }
 
+    /** host.js rawFetch -> one HTTP request from this device. */
     private suspend fun fetch(requestJson: String): String = withContext(Dispatchers.IO) {
         try {
             val r = json.parseToJsonElement(requestJson).jsonObject
@@ -539,11 +539,11 @@ class PluginRuntime private constructor(
 class SiteChallengeException(val pluginId: String, val url: String) :
     Exception("The site asks for a browser check: $url")
 
-/** A plugin threw (its message, often with a JavaScript stack). */
 /** The source this novel comes from is not installed on this device. */
 class PluginNotInstalledException(val source: String) :
     Exception("The $source source isn't installed on this device.")
 
+/** A plugin threw (its message, often with a JavaScript stack). */
 class PluginException(val pluginId: String, message: String) : Exception(message.lineSequence().first()) {
     val details: String = message
 }

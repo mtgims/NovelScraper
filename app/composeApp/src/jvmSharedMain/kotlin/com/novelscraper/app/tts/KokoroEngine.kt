@@ -20,11 +20,6 @@ object KokoroEngine {
 
     private fun defaultThreads(): Int = defaultTtsThreads()
 
-    /**
-     * Load [modelId] ("kokoro" or a Piper voice id), rebuilding if a different one
-     * is active. False if the model isn't present or native init throws (caller
-     * falls back to device TTS). Plain CPU EP (XNNPACK measured slower here).
-     */
     /** Set when the way the model should be built has changed (the desktop's
      *  GPU pack finished testing): the next [ensureLoaded] builds it afresh. A
      *  plain flag, so it can be set without waiting on a generation. */
@@ -32,6 +27,11 @@ object KokoroEngine {
 
     fun reloadOnNextUse() { reload = true }
 
+    /**
+     * Load [modelId] ("kokoro" or a Piper voice id), rebuilding if a different one
+     * is active. False if the model isn't present or native init throws (caller
+     * falls back to device TTS). Plain CPU EP (XNNPACK measured slower here).
+     */
     @Synchronized
     fun ensureLoaded(modelId: String, numThreads: Int = defaultThreads()): Boolean {
         if (tts != null && loadedId == modelId && !reload) return true

@@ -373,7 +373,6 @@ object Extensions {
         }
     }
 
-    /** A map that saves itself on every change (plugins write rarely). */
     /**
      * A source's storage, saved through [save]. Each change used to copy and
      * save the whole map there and then, so a source setting ten keys wrote it

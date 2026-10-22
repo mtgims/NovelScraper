@@ -520,15 +520,15 @@ class LibraryStore(
         if (sync.isSyncable(b)) block(b)
     }
 
+    /** Raised when the server answers, but has no sync in it: an older build. */
+    class SyncUnsupportedException : Exception("This server doesn't have sync yet.")
+
     /**
      * Sync with the server: send what changed here (the whole library, the first
      * time), and apply what changed on the other devices. Returns false if not
      * signed in; throws if the server can't be reached (nothing is lost: what
      * wasn't accepted is sent next time).
      */
-    /** Raised when the server answers, but has no sync in it: an older build. */
-    class SyncUnsupportedException : Exception("This server doesn't have sync yet.")
-
     suspend fun syncNow(): Boolean = serverMutex.withLock {
         if (!server.enabled) return false
         io { db.transaction { sync.enroll() } }
@@ -602,10 +602,10 @@ class LibraryStore(
         name, 1, releaseTime,
     )
 
-    /** Make the book's chapters [list], in its order: known paths keep their row
-     *  (and so their read state and text), new ones are added, missing ones go. */
     /**
-     * Bring a novel's chapter list in line with what the source now reports.
+     * Bring a novel's chapter list in line with what the source now reports:
+     * [list], in its order. Known paths keep their row (and so their read state
+     * and text), and new ones are added.
      *
      * Chapters the source no longer lists are removed, but not unconditionally.
      * A refresh runs unattended every few hours against a site that can fail in
