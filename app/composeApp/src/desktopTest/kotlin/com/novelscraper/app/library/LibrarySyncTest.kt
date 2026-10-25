@@ -101,4 +101,52 @@ class LibrarySyncTest {
         assertTrue(libraryOf(b).isEmpty())
         assertTrue(a.lib.sync.snapshot().none { "src:fake" in it.key }, "nothing about a browsed novel was sent")
     }
+
+    /** A device's per-novel settings, as desktop keeps them outside the database. */
+    private class Settings : NovelSettings {
+        val values = HashMap<String, String>()
+        override fun all(): Map<String, String> = HashMap(values)
+        override fun received(novelKey: String, value: String) { values[novelKey] = value }
+    }
+
+    @Test
+    fun aNovelsOwnSettingsReachTheOtherDevice() = runBlocking<Unit> {
+        val sa = Settings().also { a.lib.novelSettings = it }
+        val sb = Settings().also { b.lib.novelSettings = it }
+        val idA = addNovel(a)
+        val key = a.lib.syncKeyOf(idA)!!
+        a.lib.noteNovelSettings(key, """{"voicing":{"enabled":true}}""")
+        a.sync(); b.sync()
+        assertEquals("""{"voicing":{"enabled":true}}""", sb.values[key])
+
+        // A newer change from B wins on A, and A's hook hears it.
+        b.clock += 1000
+        b.lib.noteNovelSettings(key, """{"voicing":{"enabled":false}}""")
+        b.sync(); a.sync()
+        assertEquals("""{"voicing":{"enabled":false}}""", sa.values[key])
+    }
+
+    @Test
+    fun settingsAlreadyKeptJoinAtEnrollment() = runBlocking<Unit> {
+        val idA = addNovel(a)
+        val key = a.lib.syncKeyOf(idA)!!
+        // Kept before this device ever synced: enrollment sends them.
+        a.lib.novelSettings = Settings().also { it.values[key] = """{"terms":[]}""" }
+        a.lib.resetSync()
+        a.sync()
+        val sb = Settings().also { b.lib.novelSettings = it }
+        b.sync()
+        assertEquals("""{"terms":[]}""", sb.values[key])
+    }
+
+    @Test
+    fun aDeviceWithoutSettingsStillCarriesThem() = runBlocking<Unit> {
+        // Android has no expressive reading: it keeps the record and passes it on.
+        val c = Device(folder, clock = 1_000_000)
+        val idA = addNovel(a)
+        val key = a.lib.syncKeyOf(idA)!!
+        a.lib.noteNovelSettings(key, """{"voicing":{}}""")
+        a.sync(); c.sync()
+        assertTrue(c.lib.sync.snapshot().any { it.kind == "voicing" && it.key == key })
+    }
 }

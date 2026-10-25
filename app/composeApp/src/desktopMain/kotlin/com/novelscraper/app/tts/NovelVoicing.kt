@@ -1,10 +1,15 @@
 package com.novelscraper.app.tts
 
+import com.novelscraper.app.library.LibraryStore
+import com.novelscraper.app.library.NovelSettings
 import com.novelscraper.app.platform.KeyValueStore
+import com.novelscraper.app.platform.Log
 import com.novelscraper.app.platform.settingsStore
+import kotlinx.coroutines.launch
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.builtins.ListSerializer
 import kotlinx.serialization.json.Json
+import java.util.Base64
 
 /** How a novel marks its dialogue. */
 enum class Quote(val label: String) {
@@ -66,49 +71,146 @@ data class NovelVoicing(
     val isDefault get() = this == NovelVoicing()
 }
 
-/** Each novel's [NovelVoicing], kept on this machine by library id. */
-object NovelVoicings {
+/**
+ * Each novel's [NovelVoicing] and its own pronunciations, kept on this machine
+ * by the novel's name in sync (so removing and adding it again keeps them) and
+ * synced with it to the other desktops ([NovelSettings]). An imported EPUB never
+ * syncs and has no such name, so it is kept by library id.
+ */
+object NovelVoicings : NovelSettings {
     private val json = Json { ignoreUnknownKeys = true }
     private val store: KeyValueStore by lazy { settingsStore("expressive") }
-    private val cache = HashMap<Int, NovelVoicing>()
+    private val termList = ListSerializer(NarrationText.Term.serializer())
 
-    fun get(bookId: Int): NovelVoicing = synchronized(cache) {
-        cache.getOrPut(bookId) {
-            store.getString(key(bookId), null)
+    /** The library novels are looked up in; null until [attach] (and in tests that don't). */
+    @Volatile private var library: LibraryStore? = null
+
+    /** Keep novels' settings by their sync names in [store], and sync them through it. */
+    fun attach(store: LibraryStore) {
+        library = store
+        store.novelSettings = this
+        synchronized(cache) { names.clear(); cache.clear(); terms.clear() }
+    }
+
+    /** Back to keeping everything by library id, for tests. */
+    internal fun detach() {
+        library?.novelSettings = null
+        library = null
+        synchronized(cache) { names.clear(); cache.clear(); terms.clear() }
+    }
+
+    /** What a novel's settings travel as. */
+    @Serializable
+    private class Shared(val voicing: NovelVoicing = NovelVoicing(), val terms: List<NarrationText.Term> = emptyList())
+
+    private val names = HashMap<Int, String>()
+    private val cache = HashMap<String, NovelVoicing>()
+    // A novel's own pronunciations, kept apart from the rest so resetting its
+    // expressive reading never takes its word list with it.
+    private val terms = HashMap<String, List<NarrationText.Term>>()
+
+    /** Novel [bookId]'s name here: "s<encoded sync key>", or "book_<id>" for one
+     *  that never syncs. Ids are never reused, so the answer never changes. */
+    private fun name(bookId: Int): String = synchronized(cache) {
+        names[bookId] ?: run {
+            val lib = library ?: return@run "book_$bookId"
+            val key = runCatching { lib.syncKeyOf(bookId) }.getOrNull() ?: return@run "book_$bookId"
+            nameOf(key).also { names[bookId] = it; migrate(bookId, it) }
+        }
+    }
+
+    private fun nameOf(syncKey: String) =
+        "s" + Base64.getUrlEncoder().withoutPadding().encodeToString(syncKey.toByteArray())
+
+    private fun syncKeyOf(name: String): String? =
+        if (!name.startsWith("s")) null
+        else runCatching { String(Base64.getUrlDecoder().decode(name.drop(1))) }.getOrNull()
+
+    /** Settings kept by library id, as 1.2.0 kept them, move to the novel's name. */
+    private fun migrate(bookId: Int, name: String) {
+        for ((old, new) in listOf("book_$bookId" to voicingKey(name), "terms_$bookId" to termsKey(name))) {
+            val v = store.getString(old, null) ?: continue
+            if (store.getString(new, null) == null) store.putString(new, v)
+            store.remove(old)
+        }
+    }
+
+    private fun voicingKey(name: String) = if (name.startsWith("book_")) name else "v_$name"
+    private fun termsKey(name: String) = if (name.startsWith("book_")) "terms_" + name.removePrefix("book_") else "t_$name"
+
+    fun get(bookId: Int): NovelVoicing = voicing(name(bookId))
+
+    private fun voicing(name: String): NovelVoicing = synchronized(cache) {
+        cache.getOrPut(name) {
+            store.getString(voicingKey(name), null)
                 ?.let { runCatching { json.decodeFromString(NovelVoicing.serializer(), it) }.getOrNull() }
                 ?: NovelVoicing()
         }
     }
 
-    fun set(bookId: Int, voicing: NovelVoicing) = synchronized(cache) {
-        cache[bookId] = voicing
-        if (voicing.isDefault) store.remove(key(bookId))
-        else store.putString(key(bookId), json.encodeToString(NovelVoicing.serializer(), voicing))
+    fun set(bookId: Int, voicing: NovelVoicing) {
+        val name = name(bookId)
+        synchronized(cache) { keepVoicing(name, voicing) }
+        shared(name)
     }
 
-    private fun key(bookId: Int) = "book_$bookId"
+    fun terms(bookId: Int): List<NarrationText.Term> = termsOf(name(bookId))
 
-    // A novel's own pronunciations, kept apart from the rest so resetting its
-    // expressive reading never takes its word list with it.
-    private val terms = HashMap<Int, List<NarrationText.Term>>()
-    private val termList = ListSerializer(NarrationText.Term.serializer())
-
-    fun terms(bookId: Int): List<NarrationText.Term> = synchronized(cache) {
-        terms.getOrPut(bookId) {
-            store.getString(termsKey(bookId), null)
+    private fun termsOf(name: String): List<NarrationText.Term> = synchronized(cache) {
+        terms.getOrPut(name) {
+            store.getString(termsKey(name), null)
                 ?.let { runCatching { json.decodeFromString(termList, it) }.getOrNull() }
                 .orEmpty()
         }
     }
 
-    fun setTerms(bookId: Int, list: List<NarrationText.Term>) = synchronized(cache) {
-        val clean = list.filter { it.from.isNotBlank() }.distinctBy { it.from.trim().lowercase() }
-        terms[bookId] = clean
-        if (clean.isEmpty()) store.remove(termsKey(bookId))
-        else store.putString(termsKey(bookId), json.encodeToString(termList, clean))
+    fun setTerms(bookId: Int, list: List<NarrationText.Term>) {
+        val name = name(bookId)
+        synchronized(cache) { keepTerms(name, list) }
+        shared(name)
     }
 
-    private fun termsKey(bookId: Int) = "terms_$bookId"
+    private fun keepVoicing(name: String, voicing: NovelVoicing) {
+        cache[name] = voicing
+        if (voicing.isDefault) store.remove(voicingKey(name))
+        else store.putString(voicingKey(name), json.encodeToString(NovelVoicing.serializer(), voicing))
+    }
+
+    private fun keepTerms(name: String, list: List<NarrationText.Term>) {
+        val clean = list.filter { it.from.isNotBlank() }.distinctBy { it.from.trim().lowercase() }
+        terms[name] = clean
+        if (clean.isEmpty()) store.remove(termsKey(name))
+        else store.putString(termsKey(name), json.encodeToString(termList, clean))
+    }
+
+    /** Tell the other devices, when the novel syncs. */
+    private fun shared(name: String) {
+        val lib = library ?: return
+        val key = syncKeyOf(name) ?: return
+        val value = json.encodeToString(Shared.serializer(), Shared(voicing(name), termsOf(name)))
+        lib.scope.launch {
+            runCatching { lib.noteNovelSettings(key, value) }
+                .onFailure { Log.w("NovelVoicings", "could not share settings: ${it.message}") }
+        }
+    }
+
+    override fun all(): Map<String, String> = synchronized(cache) {
+        store.keys().filter { it.startsWith("v_") || it.startsWith("t_") }
+            .map { it.drop(2) }.distinct()
+            .mapNotNull { name -> syncKeyOf(name)?.let { key ->
+                key to json.encodeToString(Shared.serializer(), Shared(voicing(name), termsOf(name)))
+            } }
+            .toMap()
+    }
+
+    override fun received(novelKey: String, value: String) {
+        val shared = runCatching { json.decodeFromString(Shared.serializer(), value) }.getOrNull() ?: return
+        val name = nameOf(novelKey)
+        synchronized(cache) {
+            keepVoicing(name, shared.voicing)
+            keepTerms(name, shared.terms)
+        }
+    }
 }
 
 /**

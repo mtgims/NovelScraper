@@ -496,6 +496,20 @@ class LibraryStore(
 
     internal val sync = SyncRecords(db, json, now, installedSources)
 
+    /** Where this device keeps novels' own settings, which sync with them
+     *  ([NovelSettings]); none on Android. */
+    var novelSettings: NovelSettings?
+        get() = sync.novelSettings
+        set(value) { sync.novelSettings = value }
+
+    /** Novel [id]'s name in sync; null for one that never syncs (an imported EPUB). */
+    fun syncKeyOf(id: Int): String? = books.selectById(id.toLong()).executeAsOneOrNull()?.sync_key
+
+    /** Novel [novelKey]'s own settings changed here: the other devices get them. */
+    suspend fun noteNovelSettings(novelKey: String, value: String) = change {
+        sync.emitNovelSettings(novelKey, value)
+    }
+
     /** Called after a local change that other devices should get (the app
      *  schedules a sync). */
     var onLocalChange: () -> Unit = {}

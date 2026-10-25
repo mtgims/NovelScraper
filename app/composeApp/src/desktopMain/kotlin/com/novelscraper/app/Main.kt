@@ -40,6 +40,7 @@ import com.novelscraper.app.platform.settingsStore
 import com.novelscraper.app.sync.SyncSettings
 import com.novelscraper.app.tts.DesktopTtsPlayer
 import com.novelscraper.app.tts.MprisPlayer
+import com.novelscraper.app.tts.NovelVoicings
 import com.novelscraper.app.tts.TtsController
 import com.novelscraper.app.ui.AppRoot
 import com.novelscraper.app.ui.theme.NovelScraperTheme
@@ -58,6 +59,8 @@ fun initApp() {
     // ask isn't told that GitHub was unreachable.
     AppUpdates.check(quietly = true)
     Library.init()
+    // Before any sync runs, so other desktops' expressive settings land.
+    NovelVoicings.attach(Library.store)
     ReaderPrefs.init()
     LibraryPrefs.init()
     ThemeController.init()

@@ -7,6 +7,7 @@ import com.novelscraper.app.db.LibraryDb
 import kotlinx.serialization.KSerializer
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.JsonElement
 import java.util.UUID
 
 // What syncs between a user's devices, as records: a kind, a key and a JSON
@@ -44,6 +45,22 @@ internal object Kind {
     const val COLLECTION = "collection"
     const val SHELF = "shelf"
     const val SOURCE = "source"
+    /** A novel's own settings kept outside the library ([NovelSettings]). */
+    const val VOICING = "voicing"
+}
+
+/**
+ * Settings a device keeps about a novel outside the library database, which
+ * travel with the novel: desktop's expressive reading (voices, dialogue marks,
+ * pronunciations). Values are JSON, opaque here, by novel sync key. A device
+ * without any (Android) keeps the records and passes them on.
+ */
+interface NovelSettings {
+    /** Every value kept here, by novel sync key: sent at enrollment. */
+    fun all(): Map<String, String>
+
+    /** A newer value from another device. */
+    fun received(novelKey: String, value: String)
 }
 
 private const val TAB = "\t"
@@ -71,6 +88,9 @@ internal class SyncRecords(
     private val books get() = db.bookQueries
     private val chapters get() = db.chapterQueries
     private val shelves get() = db.collectionQueries
+
+    /** Where a novel's own settings live on this device; null where there are none. */
+    @Volatile var novelSettings: NovelSettings? = null
 
     /** This device's id (made on first use). */
     fun device(): String = state().device
@@ -155,6 +175,10 @@ internal class SyncRecords(
                 ?.takeIf { it.enabled && it.repo.isNotBlank() }?.let { m.key to it.repo }
         }
 
+    /** A novel's own settings ([NovelSettings]), as the JSON they are kept in. */
+    fun emitNovelSettings(novelKey: String, value: String, ts: Long? = null) =
+        emit(Kind.VOICING, novelKey, JsonElement.serializer(), json.parseToJsonElement(value), ts)
+
     fun emitShelf(collectionKey: String, novelKey: String, member: Boolean, ts: Long? = null) =
         emit(Kind.SHELF, collectionKey + TAB + novelKey, ShelfRec.serializer(), ShelfRec(member), ts)
 
@@ -200,6 +224,10 @@ internal class SyncRecords(
             books.selectById(id).executeAsOneOrNull()?.let { emitSnapshot(it, ENROLL_TS) }
         }
         installedSources().forEach { (id, repo) -> emitSource(id, repo, true, ENROLL_TS) }
+        novelSettings?.all()?.forEach { (key, value) ->
+            runCatching { emitNovelSettings(key, value, ENROLL_TS) }
+                .onFailure { Log.w(TAG, "could not enroll settings for $key: ${it.message}") }
+        }
     }
 
     // --- incoming --------------------------------------------------------------------
@@ -243,6 +271,9 @@ internal class SyncRecords(
             // Stored only: acting on it means installing code, which is the
             // Extensions screen's job (and needs the network). See syncedSources.
             Kind.SOURCE -> {}
+            // Kept by novel key whether or not the novel is here yet, so a
+            // novel added later finds its settings waiting.
+            Kind.VOICING -> novelSettings?.received(key, value)
         }
     }
 
