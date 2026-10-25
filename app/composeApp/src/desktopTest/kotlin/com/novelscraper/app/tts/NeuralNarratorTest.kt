@@ -70,7 +70,7 @@ class NeuralNarratorTest {
                 }
             }
         }
-        override fun speakerFor(bookId: Int, engine: String, narrator: Int, role: Role) =
+        override fun speakerFor(bookId: Int, engine: String, narrator: Int, role: Role, character: String?) =
             if (role == Role.NARRATOR) narrator else narrator + 7
     }
 

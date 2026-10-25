@@ -1,6 +1,9 @@
 package com.novelscraper.app.tts
 
 import com.novelscraper.app.data.ReaderPrefs
+import com.novelscraper.app.library.Library
+import com.novelscraper.app.platform.Log
+import kotlinx.coroutines.runBlocking
 
 /**
  * Expressive reading, a desktop beta: quoted speech in a second voice, pauses
@@ -87,11 +90,45 @@ object ExpressiveReading : NarrationDirector {
     internal data class QuoteState(val closer: Char? = null, val dashParagraph: Boolean = false)
 
     override fun direct(bookId: Int, spoken: List<String?>, paragraphEnd: BooleanArray): List<Direction?> {
-        val v = NovelVoicings.get(bookId)
+        val v = withCast(bookId)
         return direct(
             spoken, paragraphEnd, v.quotes ?: Quote.AUTOMATIC, v.stutters ?: ALL_MARKS, v.dynamics ?: true,
-            v.system.orEmpty(),
+            v.system.orEmpty(), v.cast.orEmpty(),
         )
+    }
+
+    /** How many stored chapters the cast is looked for in. */
+    internal const val CAST_SAMPLE = 40
+
+    /**
+     * Novel [bookId]'s settings, with its cast looked for first if it hasn't
+     * been, or was looked for in under half the chapters now stored. Found
+     * characters get voices then and keep them, so nobody's voice changes as
+     * chapters arrive.
+     */
+    private fun withCast(bookId: Int): NovelVoicing {
+        val v = NovelVoicings.get(bookId)
+        if (v.cast != null && v.castFrom >= CAST_SAMPLE) return v
+        if (!Library.ready) return v
+        val sample = runCatching { runBlocking { Library.store.storedSample(bookId, CAST_SAMPLE) } }
+            .onFailure { Log.w("ExpressiveReading", "cast: ${it.message}") }.getOrNull() ?: return v
+        if (sample.isEmpty() || (v.cast != null && sample.size < 2 * v.castFrom)) return v
+        val found = CastReading.detect(sample, v.quotes ?: Quote.AUTOMATIC)
+        val next = v.copy(cast = voiced(v, CastReading.merge(v.cast.orEmpty(), found)), castFrom = sample.size)
+        NovelVoicings.set(bookId, next)
+        return next
+    }
+
+    /** [cast] with voices for those who have none, apart from the narrator,
+     *  dialogue and system voices of both engines. */
+    internal fun voiced(v: NovelVoicing, cast: List<CastMember>): List<CastMember> {
+        val kokoro = ReaderPrefs.kokoroSpeaker.value
+        val kokoroDialogue = dialogueVoice(v, ReaderPrefs.ENGINE_KOKORO, kokoro)
+        val kokoroTaken = setOf(kokoro, kokoroDialogue, v.kokoroSystem ?: kokoroSystemVoice(kokoro, kokoroDialogue))
+        val supertonic = ReaderPrefs.supertonicSpeaker.value
+        val supertonicTaken = setOf(supertonic, dialogueVoice(v, ReaderPrefs.ENGINE_SUPERTONIC, supertonic),
+            v.supertonicSystem ?: supertonicSystemVoice(supertonic))
+        return CastReading.assignSupertonic(CastReading.assignKokoro(cast, kokoro, kokoroTaken), supertonicTaken)
     }
 
     private val ALL_MARKS = StutterMark.entries.toSet()
@@ -103,6 +140,7 @@ object ExpressiveReading : NarrationDirector {
         stutters: Set<StutterMark> = ALL_MARKS,
         dynamics: Boolean = true,
         system: Set<SystemMark> = emptySet(),
+        cast: List<CastMember> = emptyList(),
     ): List<Direction?> {
         val paragraph = IntArray(spoken.size)
         var current = 0
@@ -137,8 +175,17 @@ object ExpressiveReading : NarrationDirector {
             .mapValues { (_, sentences) ->
                 toneOf(sentences.flatMap { pieces[it].orEmpty() }.filter { it.role == Role.NARRATOR }.joinToString(" ") { it.text })
             }
+        // Who says each paragraph's lines, where the cast and the narration say.
+        val speakers: List<String?> = if (cast.isEmpty()) emptyList() else {
+            val sentences = spoken.indices.groupBy { paragraph[it] }
+            CastReading.speakers(
+                (0..(paragraph.lastOrNull() ?: -1)).map { k -> sentences[k].orEmpty().flatMap { pieces[it].orEmpty() } },
+                cast,
+            )
+        }
         return spoken.mapIndexed { i, text ->
             val own = pieces[i] ?: return@mapIndexed null
+            val who = speakers.getOrNull(paragraph[i])
             if (own.isEmpty()) return@mapIndexed Direction(emptyList(), PAUSE_SCENE)
             val speed = speedFor(text!!)
             val next = (i + 1 until spoken.size).firstNotNullOfOrNull { pieces[it]?.takeIf { p -> p.isNotEmpty() } }
@@ -164,6 +211,7 @@ object ExpressiveReading : NarrationDirector {
                 }
                 // A status window's "(F-Fireball-100)" is a rank, not a stammer.
                 beats(p.text, p.role, speed * pace, if (p.role == Role.SYSTEM) emptySet() else stutters, gain)
+                    .map { if (who != null && it.role == Role.DIALOGUE) it.copy(character = who) else it }
             }
             // Pieces of one sentence are never run together; the sentence's own
             // pause follows its last piece, not both.
@@ -405,11 +453,11 @@ object ExpressiveReading : NarrationDirector {
      * go with the narrator. A system message: the novel's own, else one apart
      * from both. Piper has one voice per model, so everything is the narrator.
      */
-    override fun speakerFor(bookId: Int, engine: String, narrator: Int, role: Role): Int {
+    override fun speakerFor(bookId: Int, engine: String, narrator: Int, role: Role, character: String?): Int {
         if (role == Role.NARRATOR) return narrator
         val v = NovelVoicings.get(bookId)
         val dialogue = dialogueVoice(v, engine, narrator)
-        if (role == Role.DIALOGUE) return dialogue
+        if (role == Role.DIALOGUE) return character?.let { characterVoice(v, engine, narrator, it) } ?: dialogue
         return when (engine) {
             ReaderPrefs.ENGINE_KOKORO -> v.kokoroSystem?.takeIf { KokoroVoices.voice(it) != null }
                 ?: kokoroSystemVoice(narrator, dialogue)
@@ -417,6 +465,17 @@ object ExpressiveReading : NarrationDirector {
                 ?: supertonicSystemVoice(narrator)
             else -> narrator
         }
+    }
+
+    /** [character]'s own voice in [v] on [engine]; null where they have none
+     *  that can be told from the narrator. */
+    internal fun characterVoice(v: NovelVoicing, engine: String, narrator: Int, character: String): Int? {
+        val m = v.cast?.firstOrNull { it.name == character } ?: return null
+        return when (engine) {
+            ReaderPrefs.ENGINE_KOKORO -> m.kokoro?.takeIf { KokoroVoices.voice(it) != null }
+            ReaderPrefs.ENGINE_SUPERTONIC -> m.supertonic?.takeIf { it in TtsModels.SUPERTONIC_VOICES.indices }
+            else -> null
+        }?.takeIf { it != narrator }
     }
 
     /** The dialogue voice for [v] (a novel's settings, saved or not) on [engine]. */

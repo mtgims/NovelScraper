@@ -29,7 +29,7 @@ class DirectedSpeechTest {
     private val director = object : NarrationDirector {
         override fun enabled(bookId: Int) = true
         override fun direct(bookId: Int, spoken: List<String?>, paragraphEnd: BooleanArray) = emptyList<Direction?>()
-        override fun speakerFor(bookId: Int, engine: String, narrator: Int, role: Role) =
+        override fun speakerFor(bookId: Int, engine: String, narrator: Int, role: Role, character: String?) =
             if (role == Role.NARRATOR) narrator else 1
     }
 

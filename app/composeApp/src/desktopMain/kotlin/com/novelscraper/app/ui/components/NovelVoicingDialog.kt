@@ -16,6 +16,7 @@ import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.AssistChip
 import androidx.compose.material3.FilterChip
 import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
 import androidx.compose.material3.InputChip
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
@@ -27,10 +28,13 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import com.novelscraper.app.data.ReaderPrefs
 import com.novelscraper.app.library.Library
+import com.novelscraper.app.tts.CastMember
+import com.novelscraper.app.tts.CastReading
 import com.novelscraper.app.tts.ExpressiveReading
 import com.novelscraper.app.tts.KokoroVoices
 import com.novelscraper.app.tts.NarrationText
@@ -84,6 +88,25 @@ fun NovelVoicingDialog(bookId: Int, title: String, onDismiss: () -> Unit) {
                 }
 
                 DialogueVoice(engine, v) { v = it }
+
+                Characters(engine, v, onChange = { v = it }, onFind = {
+                    found = "Reading the stored chapters…"
+                    scope.launch {
+                        val sample = withContext(Dispatchers.IO) {
+                            Library.store.storedSample(bookId, ExpressiveReading.CAST_SAMPLE)
+                        }
+                        if (sample.isEmpty()) {
+                            found = "No chapters are stored yet. Open or download a few, then try again."
+                            return@launch
+                        }
+                        val cast = withContext(Dispatchers.Default) {
+                            val detected = CastReading.detect(sample, v.quotes ?: Quote.AUTOMATIC)
+                            ExpressiveReading.voiced(v, CastReading.merge(v.cast.orEmpty(), detected))
+                        }
+                        v = v.copy(cast = cast, castFrom = sample.size)
+                        found = null
+                    }
+                })
 
                 Heading("Dialogue is marked with")
                 val quotes = v.quotes ?: Quote.AUTOMATIC
@@ -239,6 +262,54 @@ private fun DialogueVoice(engine: String, v: NovelVoicing, onChange: (NovelVoici
         ReaderPrefs.ENGINE_PIPER -> Note("Piper has one voice per model, so dialogue keeps the narrator's voice.")
         else -> {}
     }
+}
+
+/**
+ * The novel's cast: each character found speaking often, with a voice of their
+ * own (or the dialogue voice), and a way to look again.
+ */
+@Composable
+private fun Characters(engine: String, v: NovelVoicing, onChange: (NovelVoicing) -> Unit, onFind: () -> Unit) {
+    Heading("Characters")
+    if (engine == ReaderPrefs.ENGINE_PIPER) {
+        Note("Piper has one voice per model, so characters keep the narrator's voice.")
+        return
+    }
+    val cast = v.cast
+    when {
+        cast == null -> Note("Looked for in the stored chapters the first time this novel is read expressively.")
+        cast.isEmpty() -> Note("Nobody speaks often enough in the stored chapters yet.")
+        else -> Note("A line is read in a character's voice when the narration beside it says who speaks; " +
+            "anything unclear stays in the dialogue voice.")
+    }
+    cast.orEmpty().forEach { m ->
+        fun update(next: CastMember?) =
+            onChange(v.copy(cast = cast.orEmpty().mapNotNull { if (it.name == m.name) next else it }))
+        Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.padding(top = 8.dp)) {
+            Column(Modifier.weight(1f)) {
+                Text(m.name, style = MaterialTheme.typography.bodyMedium)
+                Text(
+                    listOfNotNull(
+                        m.aliases.takeIf { it.isNotEmpty() }?.joinToString(prefix = "also ", separator = ", "),
+                        m.gender?.lowercase(),
+                        "${m.lines} lines found",
+                    ).joinToString(" · "),
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
+            IconButton(onClick = { update(null) }) { Icon(Icons.Filled.Close, "Remove ${m.name}") }
+        }
+        when (engine) {
+            ReaderPrefs.ENGINE_KOKORO -> KokoroVoicePicker(
+                currentId = m.kokoro ?: -1, label = "Voice", automatic = "The dialogue voice",
+            ) { id -> update(m.copy(kokoro = id.takeIf { it >= 0 })) }
+            ReaderPrefs.ENGINE_SUPERTONIC -> SupertonicVoicePicker(
+                currentId = m.supertonic ?: -1, label = "Voice", automatic = "The dialogue voice",
+            ) { id -> update(m.copy(supertonic = id.takeIf { it >= 0 })) }
+        }
+    }
+    TextButton(onClick = onFind) { Text(if (cast == null) "Find characters" else "Look again") }
 }
 
 @Composable

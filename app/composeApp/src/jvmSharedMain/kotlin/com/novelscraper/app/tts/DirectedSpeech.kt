@@ -26,10 +26,12 @@ class DirectedSpeech(
 
     fun speak(direction: Direction, engine: String, narrator: Int, rate: Float): FloatArray {
         val sr = voice.sampleRate
-        val speakers = HashMap<Role, Int>()
+        val speakers = HashMap<Pair<Role, String?>, Int>()
         val samples = { ms: Float -> (ms * sr / 1000).toInt() }
         val parts = direction.pieces.map { p ->
-            val speaker = speakers.getOrPut(p.role) { director.speakerFor(bookId, engine, narrator, p.role) }
+            val speaker = speakers.getOrPut(p.role to p.character) {
+                director.speakerFor(bookId, engine, narrator, p.role, p.character)
+            }
             val raw = voice.generate(p.text, speaker, (rate * p.speedFactor).coerceIn(0.5f, 2.5f))
             val said = if (p.onset > 0f) Trimmed(onsetOf(raw, p.onset, sr), 0, 0) else trimSilence(raw, sr)
             // A stutter's fragment is too short to say how loud a voice is.

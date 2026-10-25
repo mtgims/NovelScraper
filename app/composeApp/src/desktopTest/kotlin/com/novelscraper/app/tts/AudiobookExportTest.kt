@@ -28,7 +28,7 @@ class AudiobookExportTest {
         override fun enabled(bookId: Int) = on
         override fun direct(bookId: Int, spoken: List<String?>, paragraphEnd: BooleanArray) =
             ExpressiveReading.direct(spoken, paragraphEnd)
-        override fun speakerFor(bookId: Int, engine: String, narrator: Int, role: Role) =
+        override fun speakerFor(bookId: Int, engine: String, narrator: Int, role: Role, character: String?) =
             if (role == Role.DIALOGUE) narrator + 7 else narrator
         override fun pronunciations(bookId: Int) = listOf(NarrationText.Term("Nobody", "No one"))
     }

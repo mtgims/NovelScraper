@@ -5,6 +5,7 @@ import java.io.File
 import java.nio.ByteBuffer
 import java.nio.ByteOrder
 import kotlin.test.Test
+import kotlin.test.assertEquals
 import kotlin.test.assertTrue
 
 /**
@@ -152,6 +153,76 @@ class LiveKokoroTest {
         for (t in listOf("STOP RIGHT THERE!", "stop right there!", "HELP", "help")) {
             println("\"$t\": ${"%.2f".format(trimSilence(KokoroEngine.generate(t, narrator, 1f), sr).pcm.size.toDouble() / sr)}s")
         }
+        KokoroEngine.release()
+    }
+
+    /**
+     * Two characters with voices of their own beside the narrator (Adam, as the
+     * user reads): their levels against the narrator once levelled, and how a
+     * one-word line comes out in each voice. With `-PliveTtsOut=<file.wav>` the
+     * passage lands at `<file>-cast.wav`.
+     */
+    @Test
+    fun readsACast() {
+        if (System.getProperty("live.tts") != "true") return
+        if (!TtsModels.isModelReady(TtsModels.KOKORO)) return println("no Kokoro model: run speaksASentence first")
+        com.novelscraper.app.data.ReaderPrefs.init()
+        val prefs = com.novelscraper.app.data.ReaderPrefs
+        prefs.setTtsEngine(prefs.ENGINE_KOKORO)
+        prefs.setKokoroSpeaker(KokoroVoices.all.first { it.code == "am_adam" }.id)
+        prefs.setKokoroDialogueSpeaker(-1)
+        prefs.setTtsRate(1f)
+        val base = NovelVoicing(enabled = true)
+        val cast = ExpressiveReading.voiced(base, listOf(CastMember("Hector", gender = "Male"), CastMember("Lemon", gender = "Female")))
+        NovelVoicings.set(2, base.copy(cast = cast))
+        assertEquals(null, KokoroVoice.prepare(TtsModels.KOKORO), "the model loads")
+        val narrator = prefs.kokoroSpeaker.value
+        val dialogue = ExpressiveReading.speakerFor(2, prefs.ENGINE_KOKORO, narrator, Role.DIALOGUE)
+        println("narrator ${KokoroVoices.voice(narrator)!!.code}, dialogue ${KokoroVoices.voice(dialogue)!!.code}, " +
+            cast.joinToString { "${it.name} ${KokoroVoices.voice(it.kokoro!!)!!.code}" })
+
+        val passage = listOf(
+            "Hector looked at Lemon across the table.", "“Eat,” she said.",
+            "“Later,” he said.",
+            "Lemon narrowed her eyes.", "“Yes?”",
+            "“No.”",
+            "“Two weeks,” Hector repeated, and then he closed the door.",
+        )
+        val ends = booleanArrayOf(false, true, true, false, true, true, true)
+        val directions = ExpressiveReading.direct(2, passage, ends)
+        println(directions.joinToString(" | ") { d -> d!!.pieces.joinToString("+") { "${it.character ?: it.role}:${it.text}" } })
+        val sr = KokoroEngine.sampleRate
+        val speech = DirectedSpeech(KokoroVoice, ExpressiveReading, 2)
+        val audio = directions.map { speech.speak(it!!, prefs.ENGINE_KOKORO, narrator, 1f) }
+        System.getProperty("live.tts.out")?.takeIf { it.isNotBlank() }?.removeSuffix(".wav")?.let {
+            val all = FloatArray(audio.sumOf { a -> a.size })
+            var at = 0
+            for (a in audio) { a.copyInto(all, at); at += a.size }
+            writeWav(File("$it-cast.wav"), all, sr)
+            println("written to $it-cast.wav")
+        }
+
+        // Levels: a long line in each voice, levelled, against the narrator.
+        val line = "The lamps were lit early that evening, and the rain had not let up."
+        val db = { a: Float, b: Float -> "%.1f dB".format(20 * kotlin.math.log10(a / b)) }
+        val n = speechRms(speech.speak(Direction(listOf(Piece(line, Role.NARRATOR)), 0), prefs.ENGINE_KOKORO, narrator, 1f), sr)
+        for (m in cast) {
+            val r = speechRms(speech.speak(Direction(listOf(Piece(line, Role.DIALOGUE, character = m.name)), 0),
+                prefs.ENGINE_KOKORO, narrator, 1f), sr)
+            println("${m.name} against narrator: ${db(r, n)} levelled")
+        }
+        // A one-word line alone in each voice: its length and level, against a
+        // longer line in the same voice (a garbled word comes out far too
+        // short, too long or too quiet).
+        for (id in listOf(narrator, dialogue) + cast.map { it.kokoro!! }) {
+            val code = KokoroVoices.voice(id)!!.code
+            val words = listOf("“Yes?”", "“No.”", "“Eat,”").map { w ->
+                val t = trimSilence(KokoroEngine.generate(w, id, 1f), sr).pcm
+                "$w ${"%.2f".format(t.size.toDouble() / sr)}s ${db(speechRms(t, sr), speechRms(KokoroEngine.generate(line, id, 1f), sr))}"
+            }
+            println("$code: ${words.joinToString(" · ")}")
+        }
+        NovelVoicings.set(2, NovelVoicing())
         KokoroEngine.release()
     }
 

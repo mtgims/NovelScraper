@@ -67,6 +67,11 @@ data class NovelVoicing(
     val system: Set<SystemMark>? = null,
     val kokoroSystem: Int? = null,
     val supertonicSystem: Int? = null,
+    /** The characters who speak in voices of their own ([CastReading]); null: not looked for yet. */
+    val cast: List<CastMember>? = null,
+    /** How many stored chapters [cast] was last looked for in: it is looked
+     *  for again, keeping what it has, once there are twice as many. */
+    val castFrom: Int = 0,
 ) {
     val isDefault get() = this == NovelVoicing()
 }
@@ -262,8 +267,7 @@ object VoicingDetector {
         val system = HashMap<SystemMark, Int>()
         var inline = 0
         for (html in htmls) {
-            // Paragraph breaks become lines, so a dash paragraph can be told.
-            val text = unescape(html.replace(Regex("(?i)</p>|<br\\s*/?>"), "\n").replace(TAG, ""))
+            val text = plainText(html)
             for (q in Quote.entries) quotes.merge(q, count(text, q), Int::plus)
             for (m in StutterMark.entries) stutters.merge(m, ExpressiveReading.countStutters(text, setOf(m)), Int::plus)
             for (line in text.lines()) {
@@ -288,6 +292,10 @@ object VoicingDetector {
         Quote.GUILLEMETS -> text.count { it == '«' }
         Quote.DASH -> Regex("""(?m)^\s*[—–]\s*\p{L}""").findAll(text).count()
     }
+
+    /** A chapter's text, one paragraph to a line (so a dash paragraph can be told). */
+    internal fun plainText(html: String): String =
+        unescape(html.replace(Regex("(?i)</p>|<br\\s*/?>"), "\n").replace(TAG, ""))
 
     private fun unescape(s: String) = ENTITY.replace(s) { m ->
         val e = m.groupValues[1]

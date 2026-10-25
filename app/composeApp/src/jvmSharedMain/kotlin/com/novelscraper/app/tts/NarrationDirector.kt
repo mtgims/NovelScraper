@@ -11,6 +11,7 @@ enum class Role { NARRATOR, DIALOGUE, SYSTEM }
  * kept, that share of the voiced audio: a stutter ("V-Violet") is the opening
  * sound of the word itself, which spelling out the letter can't give. [gain]
  * makes it quieter or louder than its voice's usual level (a whisper, a shout).
+ * [character] names who says a line of dialogue, where that is known.
  */
 data class Piece(
     val text: String,
@@ -19,6 +20,7 @@ data class Piece(
     val pauseAfterMs: Int = 0,
     val onset: Float = 0f,
     val gain: Float = 1f,
+    val character: String? = null,
 )
 
 /**
@@ -41,8 +43,9 @@ interface NarrationDirector {
      */
     fun direct(bookId: Int, spoken: List<String?>, paragraphEnd: BooleanArray): List<Direction?>
 
-    /** The speaker for [role] in [bookId] on [engine], where the narrator is [narrator]. */
-    fun speakerFor(bookId: Int, engine: String, narrator: Int, role: Role): Int
+    /** The speaker for [role] in [bookId] on [engine], where the narrator is [narrator];
+     *  for dialogue, [character]'s own voice where they have one. */
+    fun speakerFor(bookId: Int, engine: String, narrator: Int, role: Role, character: String? = null): Int
 
     /** How words in [bookId] are said, whether or not it is [enabled]: a
      *  novel's names are not an expressive matter. */
