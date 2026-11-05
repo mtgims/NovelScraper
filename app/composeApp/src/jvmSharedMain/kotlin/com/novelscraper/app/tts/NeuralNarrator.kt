@@ -6,11 +6,14 @@ import com.novelscraper.app.data.Sentences
 import com.novelscraper.app.library.Library
 import com.novelscraper.app.platform.Log
 import com.novelscraper.app.platform.showToast
+import com.novelscraper.app.ui.browse.describe
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.async
 import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.isActive
@@ -200,6 +203,10 @@ class NeuralNarrator(
             var chapter = first
             var start = from
             while (isActive) {
+                // Fetch the next chapter as this one starts, not once it is all
+                // synthesized: a source that fails is said while there is still
+                // a chapter to listen to, and this one plays out.
+                val next = if (rollsOn(chapter)) async { upcoming(my, chapter.position + 1) } else null
                 for (i in start until chapter.sentences.size) {
                     if (!isActive) return@launch
                     val text = chapter.spoken.getOrNull(i) ?: continue   // passed over
@@ -211,9 +218,8 @@ class NeuralNarrator(
                     queue.send(Triple(chapter, i, pcm))
                 }
                 // The chapter is synthesized; roll into the next one while it plays.
-                val more = chapter.hasNext && ReaderPrefs.ttsAutoNext.value && !SleepTimer.stopAtChapterEnd
-                if (!more) break
-                chapter = load(chapter.position + 1) ?: break
+                if (!rollsOn(chapter)) { next?.cancel(); break }
+                chapter = (if (next != null) next.await() else upcoming(my, chapter.position + 1)) ?: break
                 start = 0
             }
             queue.close()
@@ -281,20 +287,42 @@ class NeuralNarrator(
         }
     }
 
-    /** Fetch a chapter and work out what to say; null (and stops) if it can't. */
-    private suspend fun load(position: Int): Loaded? {
-        val chapter = try {
-            withContext(Dispatchers.IO) { fetchChapter(bookId, position) }
-        } catch (e: Exception) {
-            showToast("Couldn't load the chapter to narrate.")
-            // load() is reached from the producer, which runs on
-            // Dispatchers.Default rather than the single thread everything
-            // else in here mutates state from. Tearing playback down from
-            // there races whatever that thread is doing. Harmless when already
-            // on it, which is the other way load() is called.
-            withContext(state) { stopNow() }
-            return null
+    /** Whether narration goes on into the chapter after [c]. */
+    private fun rollsOn(c: Loaded) = c.hasNext && ReaderPrefs.ttsAutoNext.value && !SleepTimer.stopAtChapterEnd
+
+    /** The chapter to start on; null (and stops, saying why) if it can't be had. */
+    private suspend fun load(position: Int): Loaded? = try {
+        fetch(position)
+    } catch (e: CancellationException) {
+        throw e
+    } catch (e: Exception) {
+        Log.w(TAG, "chapter $position didn't load: ${e.message}")
+        showToast("Couldn't load the chapter to narrate. ${describe(e)}", long = true)
+        stopNow()
+        null
+    }
+
+    /** The chapter after the one playing; null if it can't be had, which is
+     *  said at once while the one playing still plays to its end. */
+    private suspend fun upcoming(my: Int, position: Int): Loaded? = try {
+        fetch(position)
+    } catch (e: CancellationException) {
+        throw e
+    } catch (e: Exception) {
+        Log.w(TAG, "chapter $position didn't load: ${e.message}")
+        withContext(state) {
+            if (my == epoch) showToast(
+                "The next chapter couldn't be loaded, so narration stops at the end of this one. ${describe(e)}",
+                long = true,
+            )
         }
+        null
+    }
+
+    /** Fetch a chapter and work out what to say; throws if it can't be fetched,
+     *  null if there is nothing left to say. */
+    private suspend fun fetch(position: Int): Loaded? {
+        val chapter = withContext(Dispatchers.IO) { fetchChapter(bookId, position) }
         val plain = Sentences.plain(chapter.content)
         val ranges = Sentences.ranges(plain)
         val sentences = ranges.map { plain.substring(it.first, it.last + 1) }
@@ -307,7 +335,7 @@ class NeuralNarrator(
         )
         // Nothing to say (an empty chapter, or all of it passed over): move on.
         if (loaded.spoken.all { it == null }) {
-            return if (loaded.hasNext && ReaderPrefs.ttsAutoNext.value) load(position + 1) else null
+            return if (loaded.hasNext && ReaderPrefs.ttsAutoNext.value) fetch(position + 1) else null
         }
         return loaded
     }

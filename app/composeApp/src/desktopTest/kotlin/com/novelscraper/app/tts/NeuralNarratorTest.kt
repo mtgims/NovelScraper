@@ -2,7 +2,9 @@ package com.novelscraper.app.tts
 
 import com.novelscraper.app.data.ChapterRead
 import com.novelscraper.app.data.ReaderPrefs
+import com.novelscraper.app.platform.Toasts
 import java.util.concurrent.CopyOnWriteArrayList
+import java.util.concurrent.CountDownLatch
 import kotlin.test.AfterTest
 import kotlin.test.BeforeTest
 import kotlin.test.Test
@@ -24,9 +26,12 @@ class NeuralNarratorTest {
 
     private val voice = object : NarratorVoice {
         var problem: String? = null
+        /** While set, every sentence waits for it. */
+        @Volatile var gate: CountDownLatch? = null
         override fun prepare(modelId: String) = problem
         override val sampleRate = 1000
         override fun generate(text: String, speaker: Int, speed: Float): FloatArray {
+            gate?.await()
             calls.add(Triple(text, speaker, speed))
             val id = Regex("S(\\d+)").find(text)!!.groupValues[1].toFloat()
             return FloatArray(100) { id / 100f }
@@ -77,10 +82,17 @@ class NeuralNarratorTest {
     private val sinks = CopyOnWriteArrayList<Sink>()
     private val marked = CopyOnWriteArrayList<Int>()
     private var holdNext = false
+    private val fetched = CopyOnWriteArrayList<Int>()
+    /** Chapters the "site" fails to give. */
+    @Volatile private var failing = emptySet<Int>()
     private val narrator = NeuralNarrator(
         openSink = { Sink().also { it.hold = holdNext; sinks.add(it) } },
         voice = voice,
-        fetchChapter = { _, p -> chapter(p) },
+        fetchChapter = { _, p ->
+            fetched.add(p)
+            if (p in failing) error("site down")
+            chapter(p)
+        },
         markRead = { _, p -> marked.add(p) },
     )
 
@@ -147,6 +159,44 @@ class NeuralNarratorTest {
         assertEquals(listOf(21, 22), sinks.flatMap { it.ids })
         assertEquals(1, sinks.size)
         assertEquals(listOf(2), marked.toList())
+    }
+
+    @Test fun theNextChapterIsFetchedAsThisOneStarts() {
+        val gate = CountDownLatch(1)
+        voice.gate = gate
+        try {
+            narrator.play(5, 1, "B", 0)
+            eventually("chapter 2 to be fetched while chapter 1's first sentence is still being made") { 2 in fetched }
+        } finally {
+            voice.gate = null
+            gate.countDown()
+        }
+    }
+
+    @Test fun aNextChapterThatWontLoadIsSaidAtOnceAndThisOnePlaysOut() {
+        while (Toasts.queue.tryReceive().isSuccess) Unit
+        failing = setOf(2)
+        holdNext = true
+        narrator.play(5, 1, "B", 0)
+        var toast: String? = null
+        eventually("the warning") { toast = Toasts.queue.tryReceive().getOrNull()?.first; toast != null }
+        assertTrue("site down" in toast!!, "it says why: $toast")
+        assertFalse(sinks.single().closed, "chapter 1 is still playing")
+        sinks.single().hold = false
+        eventually("the chapter to finish") { !TtsController.state.value.active }
+        assertEquals(listOf(10, 11, 12), sinks.single().ids.toList(), "chapter 1 was heard to its end")
+        assertEquals(listOf(1), marked.toList())
+    }
+
+    @Test fun aFirstChapterThatWontLoadStopsAndSaysWhy() {
+        while (Toasts.queue.tryReceive().isSuccess) Unit
+        failing = setOf(1)
+        narrator.play(5, 1, "B", 0)
+        var toast: String? = null
+        eventually("the warning") { toast = Toasts.queue.tryReceive().getOrNull()?.first; toast != null }
+        assertTrue("site down" in toast!!, "it says why: $toast")
+        eventually("narration to give up") { !TtsController.state.value.active }
+        assertTrue(sinks.isEmpty())
     }
 
     @Test fun seekRestartsFromThatSentenceAndDropsTheOldAudio() {
