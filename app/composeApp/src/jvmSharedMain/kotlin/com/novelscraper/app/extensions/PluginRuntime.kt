@@ -472,7 +472,10 @@ class PluginRuntime private constructor(
         val value = body?.get("value")
         val sending: BrowserBody? = when (kind) {
             null -> null
-            "form", "text" -> value?.jsonPrimitive?.contentOrNull?.let { BrowserBody.Text(it) }
+            // Typed as the plain client would type it (see requestBody).
+            "form" -> value?.jsonPrimitive?.contentOrNull
+                ?.let { BrowserBody.Text(it, "application/x-www-form-urlencoded;charset=UTF-8") }
+            "text" -> value?.jsonPrimitive?.contentOrNull?.let { BrowserBody.Text(it, "text/plain;charset=UTF-8") }
             "multipart" -> BrowserBody.Form(
                 value!!.jsonArray.map { part ->
                     val (name, content) = part.jsonArray.map { it.jsonPrimitive.content }

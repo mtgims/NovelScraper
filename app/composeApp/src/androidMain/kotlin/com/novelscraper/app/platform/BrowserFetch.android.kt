@@ -179,7 +179,7 @@ actual suspend fun requestThroughBrowser(
                       try {
                         const r = await fetch(${quote(url)}, {
                           method: ${quote(method)},
-                          headers: ${org.json.JSONObject(headers.filterKeys { !it.equals("content-type", true) })},
+                          headers: ${org.json.JSONObject(pageRequestHeaders(headers, body))},
                           body: $makeBody,
                           credentials: 'include',
                         });

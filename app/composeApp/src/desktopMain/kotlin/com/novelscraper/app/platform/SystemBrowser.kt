@@ -510,7 +510,7 @@ object SystemBrowser {
             (async () => {
               const r = await fetch(${q(url)}, {
                 method: ${q(method)},
-                headers: ${Json.encodeToString(headers.filterKeys { !it.equals("content-type", true) })},
+                headers: ${Json.encodeToString(pageRequestHeaders(headers, body))},
                 body: $makeBody,
                 credentials: 'include',
               });

@@ -216,12 +216,31 @@ data class BrowserReply(val status: Int, val body: String)
 
 /** A body for [requestThroughBrowser], in the shapes a page can send. */
 sealed interface BrowserBody {
-    /** An already encoded body (a form string, JSON, plain text). */
-    data class Text(val value: String) : BrowserBody
+    /** An already encoded body (a form string, JSON, plain text), and the type
+     *  it goes as when the request names none. */
+    data class Text(val value: String, val contentType: String? = null) : BrowserBody
 
     /** Named parts, which the page sends as a form the way its own scripts do,
      *  boundary and all. */
     data class Form(val parts: List<Pair<String, String>>) : BrowserBody
+}
+
+/**
+ * The headers a page's own fetch sends with [body]. A form of parts gets its
+ * boundary from the browser, so its type is left to the browser. An encoded body
+ * keeps its type: without one, a string goes as text/plain, and a site reading a
+ * form (Wuxiabox's search) finds none.
+ */
+fun pageRequestHeaders(headers: Map<String, String>, body: BrowserBody?): Map<String, String> {
+    val withoutType = headers.filterKeys { !it.equals("content-type", ignoreCase = true) }
+    return when (body) {
+        is BrowserBody.Text -> when {
+            withoutType.size < headers.size -> headers
+            body.contentType != null -> headers + ("Content-Type" to body.contentType)
+            else -> headers
+        }
+        else -> withoutType
+    }
 }
 
 /**
