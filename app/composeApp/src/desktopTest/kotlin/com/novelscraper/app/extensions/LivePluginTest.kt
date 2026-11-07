@@ -76,7 +76,9 @@ class LivePluginTest {
     @Test fun plugins() = runBlocking {
         if (ids.isEmpty()) return@runBlocking
         if (recordTo != null) {
-            com.novelscraper.app.platform.SystemBrowser.mayShow = false
+            // Kept off the screen unless asked (-PliveShow=true): a site whose
+            // check wants a person can only be recorded with the window shown.
+            com.novelscraper.app.platform.SystemBrowser.mayShow = System.getProperty("live.show") == "true"
             // A plugin's recordings are replaced whole, not added to.
             for (id in ids) File(recordTo, id).deleteRecursively()
         }
