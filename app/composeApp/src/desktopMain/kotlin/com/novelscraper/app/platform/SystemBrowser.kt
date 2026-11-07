@@ -31,6 +31,7 @@ import java.io.File
 import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.TimeUnit
 import java.util.concurrent.atomic.AtomicInteger
+import kotlin.random.Random
 
 /**
  * The browser already on this computer, driven over its debugging protocol.
@@ -215,6 +216,8 @@ object SystemBrowser {
             var page = settled(deadline)
             var retries = 0
             var lastRetry = System.currentTimeMillis()
+            var ticksLeft = MAX_TICKS
+            var lastTick = 0L
             while (page != null && looksLikeBrowserCheck(page) && System.currentTimeMillis() < deadline) {
                 val now = System.currentTimeMillis()
                 // Waiting on a check is using the browser, so say so. lastUsed
@@ -224,12 +227,31 @@ object SystemBrowser {
                 // from under them, part way through, despite the interactive
                 // budget being five.
                 lastUsed = now
+                val kind = browserCheckKind(page)
+                // A check that wants a tick in a box is given one, the way the
+                // reader would give it, before anyone is asked to. A few tries,
+                // spaced out, and once more after the window comes up; after that
+                // the box is the reader's.
+                if ((kind == CheckKind.Managed || kind == CheckKind.Interactive) &&
+                    ticksLeft > 0 && now - lastTick > TICK_GAP_MS && tickTheBox()
+                ) {
+                    ticksLeft--
+                    lastTick = now
+                    lastRetry = now         // a reload now would throw the tick away
+                    delay(TICK_GAP_MS)
+                    // A check that passes reloads into the site: wait it out
+                    // rather than read a document half replaced.
+                    page = settled(System.currentTimeMillis() + 20_000)
+                    Log.i(TAG, "ticked the check's box: " +
+                        if (page != null && !looksLikeBrowserCheck(page)) "it let us through" else "still a check")
+                    continue
+                }
                 // The check says what it wants. One that only wants waiting gets
                 // longer before anyone is bothered with it; one that wants a tick
-                // goes to the reader at once rather than after a silent wait it
-                // was never going to come out of.
-                val patience = when (browserCheckKind(page)) {
-                    CheckKind.Interactive -> 0L
+                // goes to the reader once the app's own ticks haven't done it,
+                // rather than after a silent wait it was never going to come out of.
+                val patience = when (kind) {
+                    CheckKind.Interactive -> if (ticksLeft > 0) TICKING_MS else 0L
                     CheckKind.Waiting -> maxOf(patienceMs, WAITING_PATIENCE_MS)
                     else -> patienceMs
                 }
@@ -244,6 +266,8 @@ object SystemBrowser {
                     navigate(landing)
                     page = settled(now + 20_000)
                     deadline = System.currentTimeMillis() + interactiveMs
+                    ticksLeft = 1
+                    lastTick = 0L
                     continue
                 }
                 // While it is still ours to deal with, ask again every so often:
@@ -1136,6 +1160,78 @@ object SystemBrowser {
         )?.get("outerHTML")?.jsonPrimitive?.contentOrNull
     }
 
+    /**
+     * Tick a Turnstile box on the page, as a person would: find the check's
+     * frame, move the pointer onto its box and click. True if a box was clicked.
+     *
+     * Found and clicked through the document and the input the browser itself
+     * takes, never by running script in the page, for the reason [html] gives.
+     * The frame sits inside a closed shadow root that no selector reaches, so it
+     * is found by its address and measured through its owner.
+     */
+    private suspend fun tickTheBox(): Boolean {
+        // Asked of our page: a check in somebody else's tab, in a browser that
+        // was already running, has no owner here.
+        val owner = turnstileFrames().firstNotNullOfOrNull { frameId ->
+            call("DOM.getFrameOwner", buildJsonObject { put("frameId", frameId) }, pageSession)
+                ?.get("backendNodeId")?.jsonPrimitive?.int
+        } ?: return false
+        val border = call("DOM.getBoxModel", buildJsonObject { put("backendNodeId", owner) }, pageSession)
+            ?.get("model")?.jsonObject?.get("border")?.jsonArray?.map { it.jsonPrimitive.double }
+            ?: return false
+        if (border.size < 8) return false
+        val (left, top) = border[0] to border[1]
+        // Not laid out yet, or hidden: nothing there to click.
+        if (border[2] - left <= 0 || border[5] - top <= 0) return false
+        // The box sits at the widget's left edge, about 27 pixels in each way.
+        val x = left + Random.nextInt(26, 29)
+        val y = top + Random.nextInt(25, 28)
+        // Come at it from off to one side, in a few steps, rather than appearing
+        // on it out of nowhere.
+        val fromX = x + Random.nextInt(80, 200)
+        val fromY = y + Random.nextInt(40, 120)
+        val steps = Random.nextInt(3, 6)
+        for (i in 1..steps) {
+            val t = i.toDouble() / steps
+            mouse("mouseMoved", fromX + (x - fromX) * t, fromY + (y - fromY) * t)
+            delay(Random.nextLong(20, 60))
+        }
+        mouse("mousePressed", x, y)
+        delay(Random.nextLong(100, 201))
+        mouse("mouseReleased", x, y)
+        return true
+    }
+
+    /**
+     * The ids of the frames holding a Turnstile check. Coming from another
+     * site, one runs in a process of its own: the page's frame tree leaves such
+     * frames out, and the browser lists them as targets, whose id is the frame's.
+     */
+    private suspend fun turnstileFrames(): List<String> =
+        call("Target.getTargets", buildJsonObject {}, null)?.get("targetInfos")?.jsonArray.orEmpty()
+            .map { it.jsonObject }
+            .filter {
+                it["type"]?.jsonPrimitive?.contentOrNull == "iframe" &&
+                    it["url"]?.jsonPrimitive?.contentOrNull?.let { url -> TURNSTILE.containsMatchIn(url) } == true
+            }
+            .mapNotNull { it["targetId"]?.jsonPrimitive?.contentOrNull }
+
+    private suspend fun mouse(type: String, x: Double, y: Double) {
+        call(
+            "Input.dispatchMouseEvent",
+            buildJsonObject {
+                put("type", type)
+                put("x", x)
+                put("y", y)
+                put("button", if (type == "mouseMoved") "none" else "left")
+                if (type != "mouseMoved") put("clickCount", 1)
+            },
+            pageSession,
+        )
+    }
+
+    private val TURNSTILE = Regex("""^https?://challenges\.cloudflare\.com/""")
+
     private const val OFFSCREEN = -2400
 
     /** Where a window goes to be out of sight while it keeps working. Far enough
@@ -1173,4 +1269,10 @@ object SystemBrowser {
 
     /** How long a check that passes by itself gets before the window is shown. */
     private const val WAITING_PATIENCE_MS = 15_000L
+
+    /** How many times the app ticks a check's box itself, how far apart, and
+     *  how long a check that wants a tick is left to those before it is shown. */
+    private const val MAX_TICKS = 3
+    private const val TICK_GAP_MS = 5_000L
+    private const val TICKING_MS = 15_000L
 }
