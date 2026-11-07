@@ -74,7 +74,8 @@ class PluginRuntime private constructor(
     /** A page in the current call answered with a Cloudflare-style browser check. */
     @Volatile private var challengedUrl: String? = null
 
-    /** A page in the current call was the site's firewall refusing this connection. */
+    /** A page in the current call was the site's firewall refusing this device,
+     *  the browser included (or there was no browser to ask). */
     @Volatile private var blockedUrl: String? = null
 
     suspend fun popular(page: Int, latest: Boolean = false): List<NovelItem> =
@@ -368,12 +369,16 @@ class PluginRuntime private constructor(
                 call.execute().use { r -> Reply(r.code, r.message, r.request.url.toString(), r.priorResponse != null, r.headers, readCapped(r)) }
             }
             val bytes = resp.bytes
-            if (isChallenge(resp.code, resp.headers, bytes)) {
+            // A refusal of this client is often not one of the browser: Scribble
+            // Hub blocks plain requests from a VPN and lets its browser in.
+            val blocked = resp.code == 403 &&
+                looksLikeBlocked(String(bytes, 0, minOf(bytes.size, 20_000), Charsets.UTF_8))
+            if (blocked || isChallenge(resp.code, resp.headers, bytes)) {
                 // Cloudflare reads more than cookies, so a browser check can't
                 // hand this client a pass: ask through the browser instead.
                 SiteChecks.needsBrowser(url)
                 viaBrowser(url, method, headers, r["body"] as? JsonObject)?.let { return@withContext it }
-                challengedUrl = url
+                if (blocked) blockedUrl = url else challengedUrl = url
             } else {
                 // How the site answered sets how soon the download queue asks it
                 // again. A check above is not about pace: the browser answers it.
@@ -382,7 +387,6 @@ class PluginRuntime private constructor(
                 SitePacing.record(pluginId, System.currentTimeMillis() - asked, ok = !refused, retryAfterMs = retryAfter)
                 // It answered us plainly: it no longer needs the long way round.
                 if (resp.code in 200..299) SiteChecks.plainAgain(url)
-                else if (looksLikeBlocked(String(bytes, 0, minOf(bytes.size, 20_000), Charsets.UTF_8))) blockedUrl = url
             }
             val id = responseSeq.incrementAndGet()
             synchronized(responseBodies) { responseBodies[id] = bytes }

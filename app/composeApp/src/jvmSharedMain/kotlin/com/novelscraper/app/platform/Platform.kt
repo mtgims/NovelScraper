@@ -291,8 +291,10 @@ fun looksLikeBrowserCheck(html: String): Boolean {
 
 /**
  * Cloudflare's refusal ("Sorry, you have been blocked"): the site's firewall
- * turned this connection away, often for the network it comes from (VPNs, data
- * centres). Unlike a check, nothing a browser does changes its mind. Its title,
+ * turned the request away, often for the network it comes from (a VPN) together
+ * with what made it. A plain request refused this way may still be let in as a
+ * browser, so it goes there next; refused there too, no check changes its mind,
+ * and none is offered. Its title,
  * "Attention Required!", is shared with Cloudflare's older captcha page, so the
  * headline decides.
  */

@@ -8,9 +8,11 @@ import kotlin.test.AfterTest
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFailsWith
+import kotlin.test.assertTrue
 
-/** A site whose firewall turns this connection away says so, rather than
- *  coming back as "nothing found". */
+/** A site whose firewall turns this connection away is asked through the
+ *  browser (it often lets a browser in: Scribble Hub over a VPN), and says so
+ *  only when nothing got through, rather than coming back as "nothing found". */
 class SiteBlockTest {
 
     private val page = javaClass.getResource("/cloudflare-blocked.html")!!.readBytes()
@@ -25,7 +27,12 @@ class SiteBlockTest {
         start()
     }
 
-    @AfterTest fun stop() = server.stop(0)
+    private val blockedUrl = "http://127.0.0.1:${server.address.port}/blocked"
+
+    @AfterTest fun stop() {
+        server.stop(0)
+        SiteChecks.plainAgain(blockedUrl)
+    }
 
     private val env = PluginEnvironment(OkHttpClient(), "TestAgent/1.0", { mutableMapOf() }, allowPrivateHosts = true)
 
@@ -62,5 +69,15 @@ class SiteBlockTest {
         PluginRuntime.load("blocked3", plugin("blocked3", "/blocked", "[{ name: 'elsewhere', path: 'q' }]"), env).use { p ->
             assertEquals("elsewhere", p.popular(1).single().name)
         }
+    }
+
+    /** The block is often on the plain client alone: the browser is tried next,
+     *  and the site's later pages go there from the start. */
+    @Test fun aBlockedSiteIsAskedThroughTheBrowser() = runBlocking<Unit> {
+        PluginRuntime.load("blocked4", plugin("blocked4", "/blocked"), env).use { p ->
+            assertFailsWith<SiteBlockedException> { p.popular(1) }
+        }
+        SiteChecks.wantsBrowser(blockedUrl)  // the first ask is a plain retry, every half hour
+        assertTrue(SiteChecks.wantsBrowser(blockedUrl), "the site should now go through the browser")
     }
 }
