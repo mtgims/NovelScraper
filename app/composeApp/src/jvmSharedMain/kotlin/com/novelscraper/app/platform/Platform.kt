@@ -269,3 +269,31 @@ fun looksLikeBrowserCheck(html: String): Boolean {
         head.contains("ddos-guard", ignoreCase = true) ||
         head.contains("check_are_you_bot", ignoreCase = true)
 }
+
+/** What a browser check wants from the browser in front of it. */
+enum class CheckKind {
+    /** Passes by itself in a window that is drawn: only waiting is needed. */
+    Waiting,
+    /** Cloudflare decides as it goes; often passes alone, sometimes wants a tick. */
+    Managed,
+    /** Wants a tick in a box. */
+    Interactive,
+    /** A check that doesn't say which (DDoS-Guard, or one this doesn't know). */
+    Other,
+}
+
+// The interstitial carries its kind in its options, `cType: 'managed'`.
+private val CHECK_TYPE = Regex("""cType:\s*'([a-z-]+)'""")
+
+/** The kind of browser check this page is, or null if it is not one. */
+fun browserCheckKind(html: String): CheckKind? {
+    if (!looksLikeBrowserCheck(html)) return null
+    // The options sit in a script near the end of a small page, past the 6 KB
+    // the check itself is recognised by.
+    return when (CHECK_TYPE.find(html.take(20_000))?.groupValues?.get(1)) {
+        "non-interactive" -> CheckKind.Waiting
+        "managed" -> CheckKind.Managed
+        "interactive" -> CheckKind.Interactive
+        else -> CheckKind.Other
+    }
+}

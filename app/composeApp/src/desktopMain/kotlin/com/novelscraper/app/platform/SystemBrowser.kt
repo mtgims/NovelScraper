@@ -224,7 +224,16 @@ object SystemBrowser {
                 // from under them, part way through, despite the interactive
                 // budget being five.
                 lastUsed = now
-                if (!shown && now - started > patienceMs) {
+                // The check says what it wants. One that only wants waiting gets
+                // longer before anyone is bothered with it; one that wants a tick
+                // goes to the reader at once rather than after a silent wait it
+                // was never going to come out of.
+                val patience = when (browserCheckKind(page)) {
+                    CheckKind.Interactive -> 0L
+                    CheckKind.Waiting -> maxOf(patienceMs, WAITING_PATIENCE_MS)
+                    else -> patienceMs
+                }
+                if (!shown && now - started > patience) {
                     shown = true
                     Log.i(TAG, "the check needs a visible browser; showing it")
                     onShown()
@@ -1161,4 +1170,7 @@ object SystemBrowser {
     /** How long a check gets before it is asked again, and how many times. */
     private const val RETRY_MS = 8_000L
     private const val MAX_RETRIES = 3
+
+    /** How long a check that passes by itself gets before the window is shown. */
+    private const val WAITING_PATIENCE_MS = 15_000L
 }
