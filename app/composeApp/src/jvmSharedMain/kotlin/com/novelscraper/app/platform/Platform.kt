@@ -270,6 +270,19 @@ fun looksLikeBrowserCheck(html: String): Boolean {
         head.contains("check_are_you_bot", ignoreCase = true)
 }
 
+/**
+ * Cloudflare's refusal ("Sorry, you have been blocked"): the site's firewall
+ * turned this connection away, often for the network it comes from (VPNs, data
+ * centres). Unlike a check, nothing a browser does changes its mind. Its title,
+ * "Attention Required!", is shared with Cloudflare's older captcha page, so the
+ * headline decides.
+ */
+fun looksLikeBlocked(html: String): Boolean {
+    val head = html.take(20_000)
+    return head.contains("cf-error-details") &&
+        (head.contains("data-translate=\"block_headline\"") || head.contains("you have been blocked", ignoreCase = true))
+}
+
 /** What a browser check wants from the browser in front of it. */
 enum class CheckKind {
     /** Passes by itself in a window that is drawn: only waiting is needed. */

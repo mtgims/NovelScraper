@@ -13,6 +13,7 @@ import com.novelscraper.app.platform.BrowserBody
 import com.novelscraper.app.platform.BrowserReply
 import com.novelscraper.app.platform.requestThroughBrowser
 import com.novelscraper.app.platform.canFetchThroughBrowser
+import com.novelscraper.app.platform.looksLikeBlocked
 import com.novelscraper.app.platform.looksLikeBrowserCheck
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.awaitCancellation
@@ -72,6 +73,9 @@ class PluginRuntime private constructor(
 
     /** A page in the current call answered with a Cloudflare-style browser check. */
     @Volatile private var challengedUrl: String? = null
+
+    /** A page in the current call was the site's firewall refusing this connection. */
+    @Volatile private var blockedUrl: String? = null
 
     suspend fun popular(page: Int, latest: Boolean = false): List<NovelItem> =
         decode(call("__popular(${q(info.id)}, $page, $latest)"))
@@ -147,14 +151,18 @@ class PluginRuntime private constructor(
     private suspend fun evaluateCall(expr: String): String =
         withTimeout(callTimeoutMs) {
             challengedUrl = null
+            blockedUrl = null
             js.evaluate<Any?>("__call(() => $expr)")
             val r = json.parseToJsonElement(js.evaluate<String>("__take()")).jsonObject
             val value = r["v"]?.jsonPrimitive?.contentOrNull ?: ""
             val ok = r["ok"]?.jsonPrimitive?.content == "true"
+            val empty = !ok || value.isBlank() || value == "[]" || value == "null"
+            // Blocked outright: no browser check would help, so none is offered.
+            blockedUrl?.let { url -> if (empty) throw SiteBlockedException(info.id, url) }
             // A site behind a browser check makes plugins fail or come back empty;
             // say so rather than showing "nothing found".
             challengedUrl?.let { url ->
-                if (!ok || value.isBlank() || value == "[]" || value == "null") {
+                if (empty) {
                     // The app can offer to open this in a real browser.
                     SiteChecks.needed(url)
                     throw SiteChallengeException(info.id, url)
@@ -374,6 +382,7 @@ class PluginRuntime private constructor(
                 SitePacing.record(pluginId, System.currentTimeMillis() - asked, ok = !refused, retryAfterMs = retryAfter)
                 // It answered us plainly: it no longer needs the long way round.
                 if (resp.code in 200..299) SiteChecks.plainAgain(url)
+                else if (looksLikeBlocked(String(bytes, 0, minOf(bytes.size, 20_000), Charsets.UTF_8))) blockedUrl = url
             }
             val id = responseSeq.incrementAndGet()
             synchronized(responseBodies) { responseBodies[id] = bytes }
@@ -482,6 +491,7 @@ class PluginRuntime private constructor(
         }
         if (reply == null) return null
         if (looksLikeBrowserCheck(reply.body)) return null
+        if (looksLikeBlocked(reply.body)) blockedUrl = url
         return synthetic(reply.status, url, reply.body, "text/html; charset=utf-8")
     }
 
@@ -494,6 +504,12 @@ class PluginRuntime private constructor(
         if (looksLikeBrowserCheck(html)) {
             Log.w(TAG, "browser fetch: the site is still asking the browser itself")
             return null
+        }
+        // The browser was turned away as well: say so, rather than hand the
+        // refusal over as the page.
+        if (looksLikeBlocked(html)) {
+            blockedUrl = url
+            return synthetic(403, url, html, "text/html; charset=utf-8")
         }
         return synthetic(200, url, html, "text/html; charset=utf-8")
     }
@@ -552,6 +568,11 @@ class PluginRuntime private constructor(
         }
     }
 }
+
+/** The site's firewall refused this connection outright (Cloudflare's "Sorry,
+ *  you have been blocked"), often for the network it comes from. */
+class SiteBlockedException(val pluginId: String, val url: String) :
+    Exception("The site blocks this connection: $url")
 
 /** The site answered with a browser check (Cloudflare) that needs a real browser
  *  to pass; the plugin couldn't get through. */

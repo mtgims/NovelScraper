@@ -57,4 +57,17 @@ class BrowserCheckTest {
         // Prose that quotes the option's spelling is still prose.
         assertNull(browserCheckKind("<html><head><title>Chapter 3</title></head><body><p>cType: 'interactive'</p></body></html>"))
     }
+
+    /** Cloudflare's refusal, as it is served (scrubbed): not a check to pass. */
+    private val blocked = javaClass.getResource("/cloudflare-blocked.html")!!.readText()
+
+    @Test fun cloudflaresBlockPageIsABlock() {
+        assertTrue(looksLikeBlocked(blocked))
+        assertFalse(looksLikeBrowserCheck(blocked), "no check would change its mind")
+    }
+
+    @Test fun checksAndPagesAreNotBlocks() {
+        assertFalse(looksLikeBlocked(interstitial("managed")))
+        assertFalse(looksLikeBlocked("<html><head><title>Chapter 1</title></head><body><p>Sorry, you have been blocked, he wrote.</p></body></html>"))
+    }
 }

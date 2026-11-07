@@ -2,6 +2,7 @@ package com.novelscraper.app.library
 
 import com.novelscraper.app.db.openLibraryDriver
 import com.novelscraper.app.extensions.PluginException
+import com.novelscraper.app.extensions.SiteBlockedException
 import com.novelscraper.app.extensions.SiteChallengeException
 import com.novelscraper.app.extensions.Extensions
 import com.novelscraper.app.net.SitePacing
@@ -138,6 +139,7 @@ object ChapterDownloads {
     fun resume() = start()
 
     private fun message(e: Exception): String = when (e) {
+        is SiteBlockedException -> "Downloads paused: the site turned this connection away."
         is SiteChallengeException -> "Downloads paused: the site asks for a browser check."
         is PluginException -> "Downloads paused: the source failed (${e.message})."
         else -> "Downloads paused: couldn't reach the site."

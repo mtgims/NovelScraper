@@ -9,6 +9,7 @@ import com.novelscraper.app.extensions.PluginException
 import com.novelscraper.app.extensions.PluginNotInstalledException
 import com.novelscraper.app.extensions.RepoPlugin
 import com.novelscraper.app.library.Library
+import com.novelscraper.app.extensions.SiteBlockedException
 import com.novelscraper.app.extensions.SiteChallengeException
 import com.novelscraper.app.extensions.SiteChecks
 import kotlinx.coroutines.Job
@@ -24,6 +25,8 @@ private const val OFFLINE = "Couldn't reach the site. Check your connection; dow
 
 /** What to tell the user when a plugin call fails. */
 fun describe(e: Throwable): String = when (e) {
+    is SiteBlockedException ->
+        "This site turned this connection away. Sites often block VPNs and some networks: try from another one."
     is SiteChallengeException ->
         if (SiteChecks.possible) "This site asks for a browser check first: open it from the box that pops up, then try again."
         else "This site asks for a browser check first, which this device can't do."
