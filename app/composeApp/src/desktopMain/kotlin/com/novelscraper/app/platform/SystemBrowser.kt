@@ -156,6 +156,7 @@ object SystemBrowser {
 
     @Volatile private var navigatedAt = 0L
     @Volatile private var loadedAt = 0L
+    @Volatile private var domReadyAt = 0L
     @Volatile private var idleAt = 0L
 
     private val pending = ConcurrentHashMap<Int, CompletableDeferred<JsonObject>>()
@@ -218,7 +219,11 @@ object SystemBrowser {
         var shown = false
         try {
             navigate(landing) ?: return null
-            var page = settled(deadline)
+            // A front page that is only the way in is read as soon as its
+            // document is there: all that matters about it is whether it is a
+            // check. Waiting for it to settle as well was most of the time a
+            // first page from a site took, spent on a page nobody reads.
+            var page = if (landing == url) settled(deadline) else arrived(deadline)
             var retries = 0
             var lastRetry = System.currentTimeMillis()
             var ticksLeft = MAX_TICKS
@@ -354,6 +359,20 @@ object SystemBrowser {
             }
         }
         return page
+    }
+
+    /**
+     * The page as soon as its document has been parsed (or [deadline]), for a
+     * page that only has to be told apart from a check. A check is a check from
+     * its first byte; a page that turns into one later is caught by the request
+     * made from inside it, which goes the long way round when it meets one.
+     */
+    private suspend fun arrived(deadline: Long): String? {
+        while (System.currentTimeMillis() < deadline) {
+            if (domReadyAt >= navigatedAt || loadedAt >= navigatedAt) break
+            delay(100)
+        }
+        return html()
     }
 
     /** Load a page in the window itself, the slow way, when nothing else works. */
@@ -976,6 +995,7 @@ object SystemBrowser {
                         // Not an answer: the browser saying the page finished.
                         val event = message["method"]?.jsonPrimitive?.contentOrNull
                         if (event == "Page.loadEventFired") loadedAt = System.currentTimeMillis()
+                        if (event == "Page.domContentEventFired") domReadyAt = System.currentTimeMillis()
                         // Where each answer actually came from: a redirect hop
                         // arrives with the request it led to.
                         val answered = when (event) {
