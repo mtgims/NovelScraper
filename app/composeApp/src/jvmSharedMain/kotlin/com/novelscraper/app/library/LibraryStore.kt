@@ -458,6 +458,11 @@ class LibraryStore(
         chapters.nextQueued().executeAsOneOrNull()?.let { Triple(it.chapter_id, it.book_id.toInt(), it.attempts) }
     }
 
+    /** The source novel [bookId] comes from; null for an imported one. */
+    internal suspend fun pluginIdOf(bookId: Int): String? = io {
+        books.selectById(bookId.toLong()).executeAsOneOrNull()?.plugin_id
+    }
+
     /** A download didn't work: count the try, and give up on it after [tries]. */
     internal suspend fun downloadFailed(chapterId: Long, attempts: Long, tries: Int): Boolean = io {
         val giveUp = attempts + 1 >= tries

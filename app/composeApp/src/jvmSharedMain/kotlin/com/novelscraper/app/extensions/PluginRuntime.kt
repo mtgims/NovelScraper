@@ -6,6 +6,7 @@ import com.dokar.quickjs.alias.def
 import com.dokar.quickjs.binding.AsyncFunctionBinding
 import com.dokar.quickjs.binding.FunctionBinding
 import com.novelscraper.app.net.PrivateHosts
+import com.novelscraper.app.net.SitePacing
 import com.novelscraper.app.platform.Log
 import com.novelscraper.app.platform.fetchThroughBrowser
 import com.novelscraper.app.platform.BrowserBody
@@ -350,6 +351,7 @@ class PluginRuntime private constructor(
                 viaBrowser(url, method, headers, r["body"] as? JsonObject)?.let { return@withContext it }
             }
             val call = http.newCall(builder.build())
+            val asked = System.currentTimeMillis()
             // Read whole inside the guard: a slow reply is slow in its body.
             val resp = cancelledWith(call) {
                 call.execute().use { r -> Reply(r.code, r.message, r.request.url.toString(), r.priorResponse != null, r.headers, readCapped(r)) }
@@ -361,9 +363,14 @@ class PluginRuntime private constructor(
                 SiteChecks.needsBrowser(url)
                 viaBrowser(url, method, headers, r["body"] as? JsonObject)?.let { return@withContext it }
                 challengedUrl = url
-            } else if (resp.code in 200..299) {
+            } else {
+                // How the site answered sets how soon the download queue asks it
+                // again. A check above is not about pace: the browser answers it.
+                val retryAfter = SitePacing.parseRetryAfter(resp.headers["retry-after"])
+                val refused = resp.code == 429 || (resp.code == 503 && retryAfter != null)
+                SitePacing.record(pluginId, System.currentTimeMillis() - asked, ok = !refused, retryAfterMs = retryAfter)
                 // It answered us plainly: it no longer needs the long way round.
-                SiteChecks.plainAgain(url)
+                if (resp.code in 200..299) SiteChecks.plainAgain(url)
             }
             val id = responseSeq.incrementAndGet()
             synchronized(responseBodies) { responseBodies[id] = bytes }

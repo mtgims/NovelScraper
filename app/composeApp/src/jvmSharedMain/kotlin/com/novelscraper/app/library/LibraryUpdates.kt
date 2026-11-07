@@ -1,6 +1,7 @@
 package com.novelscraper.app.library
 
 import com.novelscraper.app.extensions.PluginNotInstalledException
+import com.novelscraper.app.net.SitePacing
 import com.novelscraper.app.platform.KeyValueStore
 import com.novelscraper.app.platform.Log
 import com.novelscraper.app.platform.settingsStore
@@ -86,7 +87,8 @@ object LibraryUpdates {
                     Log.w(TAG, "${novel.title}: ${e.message}")
                 }
                 _state.value = _state.value.copy(newChapters = new, failed = failed)
-                if (i < novels.lastIndex) delay(PAUSE_MS)
+                // The next novel's source sets the pause, when it has asked for more.
+                if (i < novels.lastIndex) delay(maxOf(PAUSE_MS, SitePacing.delayFor(novels[i + 1].pluginId)))
             }
             prefs.putString(KEY_LAST, System.currentTimeMillis().toString())
             _state.value = _state.value.copy(running = false, done = novels.size, novel = "")

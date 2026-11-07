@@ -4,6 +4,7 @@ import com.novelscraper.app.db.openLibraryDriver
 import com.novelscraper.app.extensions.PluginException
 import com.novelscraper.app.extensions.SiteChallengeException
 import com.novelscraper.app.extensions.Extensions
+import com.novelscraper.app.net.SitePacing
 import com.novelscraper.app.platform.Log
 import com.novelscraper.app.sync.FolderAuthException
 import com.novelscraper.app.sync.SyncNewerFormatException
@@ -52,13 +53,13 @@ object Library {
 /**
  * Works through the download queue (download_queue), one chapter at a time,
  * pausing between chapters fetched from a source site so a whole novel is not
- * requested at once. The queue lives in the database, so it survives restarts;
- * a failure pauses it with a message until [resume] (or new downloads) wake it.
+ * requested at once: as long as that source has shown it wants ([SitePacing]).
+ * The queue lives in the database, so it survives restarts; a failure pauses
+ * it with a message until [resume] (or new downloads) wake it.
  */
 object ChapterDownloads {
     data class State(val running: Boolean = false, val error: String? = null)
 
-    private const val SITE_PAUSE_MS = 1_000L
     /** Tries per chapter before it is left for later. */
     private const val TRIES = 3
     /** How many chapters in a row may fail before the queue waits for the reader. */
@@ -84,9 +85,12 @@ object ChapterDownloads {
                 _state.value = State(running = true)
                 var inARow = 0        // failures with nothing succeeding in between
                 while (true) {
-                    val (chapterId, _, attempts) = lib.nextQueued() ?: break
+                    val (chapterId, bookId, attempts) = lib.nextQueued() ?: break
+                    // As long as the source has shown it wants between pages:
+                    // longer for a slow site, what it asked for after a refusal.
+                    val source = lib.pluginIdOf(bookId)
                     try {
-                        if (lib.downloadQueued(chapterId)) delay(SITE_PAUSE_MS)
+                        if (lib.downloadQueued(chapterId)) delay(SitePacing.delayFor(source))
                         inARow = 0
                     } catch (e: kotlinx.coroutines.CancellationException) {
                         throw e
@@ -102,7 +106,8 @@ object ChapterDownloads {
                             _state.value = State(running = false, error = message(e))
                             break
                         }
-                        delay(if (gaveUp) SITE_PAUSE_MS else BACKOFF_MS * (attempts + 1))
+                        val backoff = if (gaveUp) 0L else BACKOFF_MS * (attempts + 1)
+                        delay(maxOf(backoff, SitePacing.delayFor(source)))
                     }
                 }
                 if (_state.value.error == null) _state.value = State(running = false)
