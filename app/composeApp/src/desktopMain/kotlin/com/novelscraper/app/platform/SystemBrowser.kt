@@ -110,6 +110,11 @@ object SystemBrowser {
 
     /** `NOVELSCRAPER_BROWSER_VISIBLE=1` keeps the window on screen the whole
      *  time, for a desktop where a check won't finish out of sight. */
+    /** False keeps the window off the reader's screen whatever a check wants:
+     *  for live tests and measurements, where a check that won't pass out of
+     *  sight should fail rather than put a window in front of someone. */
+    @Volatile internal var mayShow = true
+
     private val keepVisible: Boolean =
         System.getenv("NOVELSCRAPER_BROWSER_VISIBLE").orEmpty().let { it == "1" || it.equals("true", true) }
 
@@ -255,7 +260,7 @@ object SystemBrowser {
                     CheckKind.Waiting -> maxOf(patienceMs, WAITING_PATIENCE_MS)
                     else -> patienceMs
                 }
-                if (!shown && now - started > patience) {
+                if (!shown && mayShow && now - started > patience) {
                     shown = true
                     Log.i(TAG, "the check needs a visible browser; showing it")
                     onShown()

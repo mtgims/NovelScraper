@@ -275,6 +275,8 @@ tasks.withType<Test>().configureEach {
     systemProperty("live.plugins", providers.gradleProperty("livePlugins").getOrElse(""))
     systemProperty("live.repo", providers.gradleProperty("liveRepo").getOrElse(""))
     systemProperty("live.search", providers.gradleProperty("liveSearch").getOrElse(""))
+    // Where LivePluginTest records what the sites answered, for offline replays.
+    systemProperty("live.record", providers.gradleProperty("liveRecord").getOrElse(""))
     // LiveWebDavTest runs only with -PliveSync=webdav:<address>|<user>|<password>.
     systemProperty("live.sync", providers.gradleProperty("liveSync").getOrElse(""))
     // LiveKokoroTest fetches a speech model and speaks with it.

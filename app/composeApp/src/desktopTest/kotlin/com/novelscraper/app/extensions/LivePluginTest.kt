@@ -3,6 +3,10 @@ package com.novelscraper.app.extensions
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.runBlocking
 import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.JsonNull
+import kotlinx.serialization.json.JsonPrimitive
+import kotlinx.serialization.json.buildJsonObject
+import kotlinx.serialization.json.put
 import kotlinx.serialization.json.jsonArray
 import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
@@ -16,19 +20,66 @@ import kotlin.test.assertTrue
  * Runs real LNReader plugins against their real sites: popular list, one novel,
  * its first chapter (four requests per plugin, spaced out). Only with
  * -PlivePlugins=<id>[,<id>...]; the normal test run never touches the network.
+ *
+ * With -PliveRecord=<dir>, every request and what the plugin got back (through
+ * the browser too, where a site wants one) is written to <dir>/<id>/, in the
+ * form the extensions repository's scripts/test-plugins.mjs replays offline.
+ * The browser stays off the screen then: a check it can't pass alone fails.
  */
 class LivePluginTest {
     private val ids = System.getProperty("live.plugins").orEmpty().split(',').map { it.trim() }.filter { it.isNotEmpty() }
+    private val recordTo = System.getProperty("live.record").orEmpty().takeIf { it.isNotBlank() }?.let { File(it) }
 
     private val http = OkHttpClient.Builder().cookieJar(BrowserCookieJar()).build()
     private val env = PluginEnvironment(
         http = http,
         userAgent = "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36",
         storage = { mutableMapOf() },
+        recorder = recordTo?.let { dir -> recorderInto(dir) },
     )
+
+    /** Writes each request and reply as test-plugins.mjs reads them back. */
+    private fun recorderInto(root: File): PluginRecorder {
+        val seq = java.util.concurrent.atomic.AtomicInteger()
+        return { pluginId, request, reply, bytes ->
+            val req = Json.parseToJsonElement(request).jsonObject
+            val res = Json.parseToJsonElement(reply).jsonObject
+            val record = buildJsonObject {
+                put("method", req["method"]?.jsonPrimitive?.content ?: "GET")
+                put("url", req["url"]!!.jsonPrimitive.content)
+                put("requestBody", req["body"] ?: JsonNull)
+                res["error"]?.let { put("error", it) } ?: run {
+                    put("status", res["status"]!!)
+                    put("statusText", res["statusText"] ?: JsonPrimitive(""))
+                    put("finalUrl", res["url"]!!)
+                    put("redirected", res["redirected"] ?: JsonPrimitive(false))
+                    put("headers", res["headers"] ?: buildJsonObject {})
+                    // Text where the bytes are UTF-8, so a recording can be read
+                    // and compared by eye; base64 otherwise.
+                    val text = bytes?.let {
+                        runCatching {
+                            Charsets.UTF_8.newDecoder().decode(java.nio.ByteBuffer.wrap(it)).toString()
+                        }.getOrNull()
+                    }
+                    when {
+                        bytes == null -> put("text", res["text"] ?: JsonPrimitive(""))
+                        text != null -> put("text", text)
+                        else -> put("base64", java.util.Base64.getEncoder().encodeToString(bytes))
+                    }
+                }
+            }
+            val dir = File(root, pluginId).apply { mkdirs() }
+            File(dir, "app-%04d.json".format(seq.incrementAndGet())).writeText(record.toString())
+        }
+    }
 
     @Test fun plugins() = runBlocking {
         if (ids.isEmpty()) return@runBlocking
+        if (recordTo != null) {
+            com.novelscraper.app.platform.SystemBrowser.mayShow = false
+            // A plugin's recordings are replaced whole, not added to.
+            for (id in ids) File(recordTo, id).deleteRecursively()
+        }
         // Plugins from a local checkout of an extensions repository (-PliveRepo=<dir>),
         // else from LNReader's published index.
         val repoDir = System.getProperty("live.repo").orEmpty().takeIf { it.isNotBlank() }?.let { File(it) }
@@ -57,7 +108,9 @@ class LivePluginTest {
                     assertTrue(latest.isNotEmpty(), "$id: empty latest list")
                     // Searching is a different page on most sites, and a different
                     // way of being refused, so it is worth its own look.
-                    System.getProperty("live.search").orEmpty().takeIf { it.isNotBlank() }?.let { term ->
+                    // Recording takes the search the replay will ask for.
+                    (System.getProperty("live.search").orEmpty().takeIf { it.isNotBlank() }
+                        ?: "sword".takeIf { recordTo != null })?.let { term ->
                         delay(1500)
                         val found = p.search(term, 1)
                         println("[$id] search '$term': ${found.size} novels, first: ${found.firstOrNull()?.name}")

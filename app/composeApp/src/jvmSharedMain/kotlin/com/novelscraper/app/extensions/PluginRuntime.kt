@@ -247,7 +247,10 @@ class PluginRuntime private constructor(
             asyncFunction("sleep", AsyncFunctionBinding { a ->
                 delay((a.getOrNull(0) as? String)?.toLongOrNull() ?: 0L); null
             })
-            asyncFunction("fetch", AsyncFunctionBinding { a -> fetch(a[0] as String) })
+            asyncFunction("fetch", AsyncFunctionBinding { a ->
+                val request = a[0] as String
+                fetch(request).also { reply -> env.recorder?.let { record(it, request, reply) } }
+            })
             function("body", FunctionBinding { a ->
                 val id = (a.getOrNull(0) as? String)?.toLongOrNull()
                 val bytes = synchronized(responseBodies) { id?.let(responseBodies::get) }
@@ -395,6 +398,15 @@ class PluginRuntime private constructor(
             coroutineContext.ensureActive()
             buildJsonObject { put("error", e.message ?: e.javaClass.simpleName) }.toString()
         }
+    }
+
+    /** Hand a request and the reply the plugin got, bytes and all, to [record]. */
+    private fun record(record: PluginRecorder, request: String, reply: String) {
+        runCatching {
+            val id = json.parseToJsonElement(reply).jsonObject["bodyId"]?.jsonPrimitive?.contentOrNull?.toLongOrNull()
+            val bytes = id?.let { synchronized(responseBodies) { responseBodies[it] } }
+            record(pluginId, request, reply, bytes)
+        }.onFailure { Log.w(TAG, "couldn't record a reply: ${it.message}") }
     }
 
     /** A reply read whole, ready to be handed to the plugin. */
@@ -574,4 +586,10 @@ class PluginEnvironment(
      * client's own jar alone, which is what the tests want.
      */
     val cookies: BrowserCookieJar? = null,
+    /** Shown every request a plugin makes and what it got back; only the live
+     *  tests set it, to record sites for replaying offline. */
+    val recorder: PluginRecorder? = null,
 )
+
+/** (plugin id, request JSON, reply JSON, the reply's bytes if it had a body). */
+typealias PluginRecorder = (String, String, String, ByteArray?) -> Unit
