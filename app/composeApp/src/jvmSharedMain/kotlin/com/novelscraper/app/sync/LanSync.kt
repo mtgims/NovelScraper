@@ -624,13 +624,14 @@ class LanSync internal constructor(
             return host to port
         }
 
-        /** This device's addresses on its local networks. */
+        /** This device's addresses on its local networks: not a VPN's tunnel,
+         *  which has no broadcast address and which no other device can reach. */
         fun ownAddresses(): List<String> = runCatching {
             NetworkInterface.getNetworkInterfaces().toList()
                 .filter { it.isUp && !it.isLoopback && !it.isVirtual }
-                .flatMap { it.inetAddresses.toList() }
-                .filter { it is Inet4Address && it.isSiteLocalAddress }
-                .mapNotNull { it.hostAddress }
+                .flatMap { it.interfaceAddresses }
+                .filter { it.address is Inet4Address && it.address.isSiteLocalAddress && it.broadcast != null }
+                .mapNotNull { it.address.hostAddress }
         }.getOrDefault(emptyList())
 
         /**
