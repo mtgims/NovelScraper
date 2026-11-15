@@ -29,6 +29,10 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.input.pointer.PointerEventPass
+import androidx.compose.ui.input.pointer.PointerEventType
+import androidx.compose.ui.input.pointer.isSecondaryPressed
+import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import com.novelscraper.app.library.LibCollection
@@ -115,6 +119,20 @@ private fun Chip(label: String, selected: Boolean, onClick: () -> Unit, onLongCl
         modifier = Modifier
             .clip(RoundedCornerShape(percent = 50))
             .background(bg)
+            // A right-click opens the same menu as a long press: on a computer
+            // nobody thinks to hold the button down, so Rename and Delete were
+            // out of reach there.
+            .pointerInput(onLongClick) {
+                awaitPointerEventScope {
+                    while (true) {
+                        val event = awaitPointerEvent(PointerEventPass.Initial)
+                        if (event.type == PointerEventType.Press && event.buttons.isSecondaryPressed) {
+                            event.changes.forEach { it.consume() }
+                            onLongClick()
+                        }
+                    }
+                }
+            }
             .combinedClickable(onClick = onClick, onLongClick = onLongClick)
             .padding(horizontal = 16.dp, vertical = 8.dp),
     )
