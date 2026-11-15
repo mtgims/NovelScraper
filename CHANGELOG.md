@@ -13,6 +13,19 @@ since moved to a repository of their own; this one holds the apps.
 
 ## 2026-11-15
 
+- **1.3.1: faster sources, progress import.** Plugins with ids
+  `novelscraper.*` get cheerio on htmlparser2 instead of parse5 (3 to 11x in
+  QuickJS; recorded calls 8.7 s to 3.4 s, results identical, replay suite
+  15/15), output kept as parse5 writes it (characters unescaped, `\n` line
+  ends); other plugins keep parse5, which adds the implied `<body>` and
+  `<tbody>` they may select. Search-everything and loaded sources 4 to 8;
+  page 1 of each source list kept five minutes. `PluginBenchmark` measures the
+  app's share offline from the recordings, or live per request and
+  connection. Reading-progress import (app and server exports) with a waiting
+  list matched by title. Library writes serialised through one lock (overlap
+  gave `SQLITE_BUSY` and nested-transaction errors). Right-click menus on
+  collections, a wide Migrate, a compact Browse header on phones, dropdown
+  voice fields.
 - **1.3.0: sources, checks and sync.** A search of every source; migrating a
   novel, or every novel of a source, to another source with read marks, place,
   rating and collections kept; update badges for sources; covers looked up per

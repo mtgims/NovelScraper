@@ -3,6 +3,55 @@
 Newest first.
 
 
+## 1.3.1, 2026-11-15 · `versionCode 104`
+
+Sources load faster: their pages are read several times faster, a search of
+every source asks twice as many at once, and a source looked at a moment ago
+shows its list straight away. Reading progress can be put back from a backup
+file, collections can be renamed and deleted on the computer, and Migrate is
+laid out for a wide window.
+
+### Faster sources
+- **Pages are read 3 to 11 times faster** for NovelScraper's own sources. Over
+  every recorded page of all 15, the app's own time went from 8.7 s to 3.4 s;
+  FuckNovelpia's list from 1.4 s to 0.17 s, Scribble Hub's from 0.22 s to
+  0.09 s. Lists, novels and chapters come out exactly as before. Sources from
+  other repositories keep the reader they had.
+- **Searching every source asks eight at a time**, not four: about 1.6 to 2 s
+  instead of 2.8 s for 15 sources, about as long as the slowest one alone.
+- **A source opened again within five minutes shows its list at once.** A
+  failed list or a browser check is never kept, and an updated source starts
+  afresh.
+
+### Reading progress from a backup
+- **Import on the statistics page** reads a reading-progress export: the app's
+  own (JSON or CSV) or the one the sync server gave before it was switched
+  off. Novels in the library get their chapters marked read and their place
+  back; the rest wait on a list, where each can be found in the sources and
+  added with its progress, or forgotten. A novel added any other way under the
+  same title gets its progress too.
+
+### On the computer
+- **Collections have a right-click menu** with Rename and Delete, which only
+  came up on a long press before.
+- **Migrate fits a wide window:** sources as a grid of cards, the novels and the
+  sources to look on side by side, the matches in a readable column.
+
+### On the phone
+- **Browse's title has room:** Extensions is an icon with its badge and Migrate
+  sits in the ⋮ menu below 600dp.
+
+### Narration
+- **Voices are picked from a dropdown field** whose list opens against it, at
+  its width, instead of from the corner of the row, which on a phone often
+  opened away from the tap. The same everywhere a voice is chosen.
+
+### Fixes
+- **Changes to the library no longer collide.** Two written at the same moment
+  (a novel's settings going to sync while one was added or removed) could fail
+  with "database is locked"; every change now waits its turn.
+
+
 ## 1.3.0, 2026-11-15 · `versionCode 103`
 
 Sources get easier to live with: one search asks all of them, a novel or a
