@@ -44,8 +44,11 @@ object Library {
             store.scope.launch {
                 runCatching { store.noteInstalledSources(list.map { it.id to it.repo }) }
                     .onFailure { Log.w("Library", "note sources: ${it.message}") }
+                runCatching { store.fillMissingSites() }
             }
         }
+        // Novels synced in before sync named their source.
+        store.scope.launch { runCatching { store.fillMissingSites() }.onFailure { Log.w("Library", "source names: ${it.message}") } }
         store.prune()
         ChapterDownloads.start()
     }

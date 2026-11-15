@@ -659,6 +659,19 @@ class LibraryStore(
         FolderSync(sync, object : SyncTx {
             override suspend fun <T> run(block: () -> T): T = io { db.transactionWithResult { block() } }
         }, folder, passphrase, keys, codeKey).run()
+    }.also { fillMissingSites() }
+
+    /**
+     * Give source novels with no source name their source's name. A novel that
+     * arrives through sync comes without one, and a source not installed here
+     * has none to give until it is.
+     */
+    suspend fun fillMissingSites() {
+        val plugins = io { books.pluginsWithoutSite().executeAsList().filterNotNull() }
+        for (plugin in plugins) {
+            val name = runCatching { sources.name(plugin) }.getOrNull()?.takeIf { it.isNotBlank() } ?: continue
+            io { books.fillSite(name, plugin) }
+        }
     }
 
     /** This device's sync id, which same-Wi-Fi sync introduces it by. */

@@ -84,6 +84,13 @@ UPDATE book SET sentence = ? WHERE id = ?;
 lastInsertId:
 SELECT last_insert_rowid();
 
+-- Source novels never given their source's name: sync brings novels without it.
+pluginsWithoutSite:
+SELECT DISTINCT plugin_id FROM book WHERE site = '' AND plugin_id IS NOT NULL;
+
+fillSite:
+UPDATE book SET site = :site WHERE plugin_id = :plugin_id AND site = '';
+
 updateSourceMeta:
 UPDATE book SET title = ?, author = ?, cover = ?, summary = ?, genres = ?, status = ?, web_url = ?
 WHERE id = ?;

@@ -46,6 +46,13 @@ class LibrarySyncTest {
     private suspend fun libraryOf(d: Device) = d.lib.libraryFlow().first()
 
     @Test
+    fun aNovelSyncedInIsNamedForItsSource() = runBlocking<Unit> {
+        addNovel(a)
+        a.sync(); b.sync()
+        assertEquals("Fake Source", libraryOf(b).single().site, "not filed under no source at all")
+    }
+
+    @Test
     fun removalsReachTheOtherDevice() = runBlocking<Unit> {
         val idA = addNovel(a)
         val col = a.lib.createCollection("Soon")
