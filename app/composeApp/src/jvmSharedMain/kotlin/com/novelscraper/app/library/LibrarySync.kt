@@ -221,12 +221,12 @@ internal class SyncRecords(
      * keeps its own clock, so this only ever adds. Run on a device's first
      * sync with a folder, so the folder starts from the whole library even
      * where an old migration left part of it without records.
+     *
+     * Collections are left to [settleUnsyncedShelves], after the other devices'
+     * changes are in: one named like a collection they already sync is that
+     * collection, and given a record of its own here it would show twice.
      */
     fun fillGaps() {
-        shelves.selectAll().executeAsList().forEach { c ->
-            val key = c.sync_key ?: return@forEach
-            emit(Kind.COLLECTION, key, CollectionRec.serializer(), CollectionRec(c.name, c.sort_order), ENROLL_TS)
-        }
         books.selectSyncable().executeAsList().forEach { id ->
             books.selectById(id).executeAsOneOrNull()?.let { emitSnapshot(it, ENROLL_TS) }
         }
@@ -234,6 +234,62 @@ internal class SyncRecords(
         novelSettings?.all()?.forEach { (key, value) ->
             runCatching { emitNovelSettings(key, value, ENROLL_TS) }
                 .onFailure { Log.w(TAG, "could not enroll settings for $key: ${it.message}") }
+        }
+    }
+
+    /**
+     * Collections here that sync has never heard of, settled.
+     *
+     * Migration 3 gave each device's copy of a server-era collection a random
+     * key of its own, after the device had enrolled, so the copies never got
+     * records and never met: each device showed its own copy beside the one
+     * synced from the others, under the same name. A collection made any other
+     * way has a record from the start, so a key with no record is one of these.
+     *
+     * The same goes for every collection on a device's first sync with a
+     * folder ([fillGaps] leaves them here). Run after the other devices'
+     * changes are in, so their copies are here to be found. A copy named like a synced collection goes into it, novels and
+     * all; an empty one whose synced namesakes were all deleted goes too (it is
+     * the collection deleted on another device); any other starts syncing.
+     */
+    fun settleUnsyncedShelves() {
+        val records = q.ofKind(Kind.COLLECTION).executeAsList().associate { m ->
+            m.key to runCatching { json.decodeFromString(CollectionRec.serializer(), m.value_) }.getOrNull()
+        }
+        val all = shelves.selectAll().executeAsList()
+        val members = shelves.memberships().executeAsList().groupBy({ it.collection_id }, { it.book_id })
+        fun same(a: String, b: String) = a.trim().equals(b.trim(), ignoreCase = true)
+        for (c in all) {
+            val key = c.sync_key ?: continue
+            if (key in records) continue
+            val held = members[c.id].orEmpty()
+            val twin = all.firstOrNull { o ->
+                o.id != c.id && same(o.name, c.name) && o.sync_key?.let { records[it] }?.deleted == false
+            }
+            when {
+                twin != null -> {
+                    held.forEach { bookId ->
+                        shelves.add(bookId, twin.id)
+                        books.selectById(bookId).executeAsOneOrNull()
+                            ?.takeIf { isSyncable(it) }
+                            ?.let { emitShelf(twin.sync_key!!, it.sync_key!!, true) }
+                    }
+                    shelves.delete(c.id)
+                    Log.i(TAG, "merged an unsynced copy of \"${c.name}\" into the synced one")
+                }
+                held.isEmpty() && records.values.any { it != null && it.deleted && same(it.name, c.name) } -> {
+                    shelves.delete(c.id)
+                    Log.i(TAG, "removed an empty unsynced copy of \"${c.name}\", deleted elsewhere")
+                }
+                else -> {
+                    emit(Kind.COLLECTION, key, CollectionRec.serializer(), CollectionRec(c.name, c.sort_order), ENROLL_TS)
+                    held.forEach { bookId ->
+                        books.selectById(bookId).executeAsOneOrNull()
+                            ?.takeIf { isSyncable(it) }
+                            ?.let { emitShelf(key, it.sync_key!!, true, ENROLL_TS) }
+                    }
+                }
+            }
         }
     }
 

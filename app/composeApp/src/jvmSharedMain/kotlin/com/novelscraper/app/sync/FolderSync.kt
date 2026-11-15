@@ -62,6 +62,8 @@ internal class FolderSync(
         // could not read past the hole.
         val lost = snapSeq > 0 && own.none { it.batch.snapshot && it.batch.seq == snapSeq }
         pull(codec, files.filter { it.batch.device != me })
+        // After the pull, so the other devices' copies of a collection are here to meet.
+        tx.run { records.settleUnsyncedShelves() }
         push(codec, me, own, snapshot = renamed || lost)
     }
 

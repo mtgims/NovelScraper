@@ -27,8 +27,17 @@ class LibrarySyncTest {
 
     private class Device(val folder: FakeFolder, var clock: Long) {
         private val keys = KeyCache()
-        val lib = LibraryStore(jdbcLibraryDriver(null), Source(), now = { clock })
+        val driver = jdbcLibraryDriver(null)
+        val lib = LibraryStore(driver, Source(), now = { clock })
         suspend fun sync() = lib.syncFolder(folder, null, keys)
+
+        /** A collection as migration 3 left one: a key of its own, never given a record. */
+        suspend fun unsyncedShelf(name: String, vararg bookIds: Int): Int {
+            driver.execute(null, "INSERT INTO collection (name, sort_order, sync_key) VALUES ('$name', 0, 'c-$name')", 0)
+            val id = lib.collectionsFlow().first().filter { it.name == name }.maxOf { it.id }
+            bookIds.forEach { driver.execute(null, "INSERT INTO book_collection (book_id, collection_id) VALUES ($it, $id)", 0) }
+            return id
+        }
     }
 
     private val folder = FakeFolder()
@@ -44,6 +53,67 @@ class LibrarySyncTest {
     }
 
     private suspend fun libraryOf(d: Device) = d.lib.libraryFlow().first()
+
+    private suspend fun shelvesOf(d: Device) =
+        d.lib.collectionsFlow().first().map { c -> c.name to libraryOf(d).count { c.id in it.collectionIds } }
+
+    @Test
+    fun anUnsyncedCopyOfACollectionGoesIntoTheSyncedOne() = runBlocking<Unit> {
+        val idA = addNovel(a)
+        a.lib.setBookCollections(idA, listOf(a.lib.createCollection("Cultivation")))
+        a.sync()
+        // B had the same collection from the server, rekeyed by migration 3, with
+        // a novel A hasn't got in it.
+        b.sync()
+        val other = b.lib.openSource("fake", "m", "Another", null)
+        b.lib.refresh(other); b.lib.setInLibrary(other, true)
+        b.unsyncedShelf("Cultivation", other)
+
+        b.sync(); a.sync()
+        assertEquals(listOf("Cultivation" to 2), shelvesOf(b), "one collection, both novels")
+        assertEquals(listOf("Cultivation" to 2), shelvesOf(a), "B's novel reaches A in it")
+    }
+
+    @Test
+    fun anEmptyUnsyncedCopyOfADeletedCollectionGoesToo() = runBlocking<Unit> {
+        val col = a.lib.createCollection("LN")
+        a.sync()
+        a.clock += 1000
+        a.lib.deleteCollection(col)
+        a.sync(); b.sync()
+        b.unsyncedShelf("LN")
+
+        b.sync(); a.sync()
+        assertTrue(shelvesOf(b).isEmpty())
+        assertTrue(shelvesOf(a).isEmpty(), "not brought back on A")
+    }
+
+    @Test
+    fun anUnsyncedCollectionLikeNoOtherStartsSyncing() = runBlocking<Unit> {
+        a.sync(); b.sync()
+        val idB = addNovel(b)
+        b.unsyncedShelf("Mine", idB)
+
+        b.sync(); a.sync()
+        assertEquals(listOf("Mine" to 1), shelvesOf(a))
+        assertEquals(listOf("Mine" to 1), shelvesOf(b))
+    }
+
+    @Test
+    fun aDeviceJoiningWithACollectionOfTheSameNameShowsItOnce() = runBlocking<Unit> {
+        val idA = addNovel(a)
+        a.lib.setBookCollections(idA, listOf(a.lib.createCollection("Favourites")))
+        a.sync()
+        // B's own, from before it ever synced.
+        val other = b.lib.openSource("fake", "m", "Another", null)
+        b.lib.refresh(other); b.lib.setInLibrary(other, true)
+        b.lib.setBookCollections(other, listOf(b.lib.createCollection("favourites ")))
+        b.lib.sync.reset()
+
+        b.sync(); a.sync()
+        assertEquals(listOf("Favourites" to 2), shelvesOf(b))
+        assertEquals(listOf("Favourites" to 2), shelvesOf(a))
+    }
 
     @Test
     fun aNovelSyncedInIsNamedForItsSource() = runBlocking<Unit> {
