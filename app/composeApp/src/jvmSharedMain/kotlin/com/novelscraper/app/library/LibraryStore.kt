@@ -60,6 +60,8 @@ class LibraryStore(
     // travels as {"read":false} rather than an empty object.
     private val json = Json { ignoreUnknownKeys = true; explicitNulls = false; encodeDefaults = true }
     private val syncMutex = Mutex()
+    /** Held for each write: see [tx]. */
+    private val txLock = Mutex()
 
     // --- reading the library -------------------------------------------------
 
@@ -139,19 +141,17 @@ class LibraryStore(
      *  picked from and show until the novel's page is fetched. */
     suspend fun openSource(pluginId: String, path: String, name: String, cover: String?): Int {
         io { books.selectBySource(pluginId, path).executeAsOneOrNull() }?.let {
-            io { books.setOpened(now(), it.id) }
+            tx { books.setOpened(now(), it.id) }
             return it.id.toInt()
         }
         val site = runCatching { sources.name(pluginId) }.getOrDefault("")
-        return io {
-            db.transactionWithResult {
-                books.selectBySource(pluginId, path).executeAsOneOrNull()?.id?.toInt() ?: run {
-                    books.insertSource(pluginId, path, name, "", cover, site, null, now())
-                    val id = books.lastInsertId().executeAsOne()
-                    // Read on another device before: its progress and rating apply here too.
-                    books.selectById(id).executeAsOneOrNull()?.let { sync.reapplyNovel(it) }
-                    id.toInt()
-                }
+        return tx {
+            books.selectBySource(pluginId, path).executeAsOneOrNull()?.id?.toInt() ?: run {
+                books.insertSource(pluginId, path, name, "", cover, site, null, now())
+                val id = books.lastInsertId().executeAsOne()
+                // Read on another device before: its progress and rating apply here too.
+                books.selectById(id).executeAsOneOrNull()?.let { sync.reapplyNovel(it) }
+                id.toInt()
             }
         }
     }
@@ -165,23 +165,21 @@ class LibraryStore(
     private suspend fun refreshSource(b: Book, pluginId: String, path: String) {
         val novel = sources.novel(pluginId, path)
         val web = runCatching { sources.webUrl(pluginId, path) }.getOrNull()
-        io {
-            db.transaction {
-                books.updateSourceMeta(
-                    title = novel.name.ifBlank { b.title },
-                    author = novel.author.orEmpty(),
-                    cover = novel.cover ?: b.cover,
-                    summary = novel.summary.orEmpty().trim(),
-                    genres = novel.genres.orEmpty(),
-                    status = novel.status.orEmpty(),
-                    web_url = web,
-                    id = b.id,
-                )
-                mergeChapters(b.id, novel.chapters.distinctBy { it.path }.map { it.toRow() })
-                books.setCheckedAt(now(), b.id)
-                // Read marks and the resume point from other devices, for chapters now here.
-                books.selectById(b.id).executeAsOneOrNull()?.let { sync.reapplyNovel(it) }
-            }
+        tx {
+            books.updateSourceMeta(
+                title = novel.name.ifBlank { b.title },
+                author = novel.author.orEmpty(),
+                cover = novel.cover ?: b.cover,
+                summary = novel.summary.orEmpty().trim(),
+                genres = novel.genres.orEmpty(),
+                status = novel.status.orEmpty(),
+                web_url = web,
+                id = b.id,
+            )
+            mergeChapters(b.id, novel.chapters.distinctBy { it.path }.map { it.toRow() })
+            books.setCheckedAt(now(), b.id)
+            // Read marks and the resume point from other devices, for chapters now here.
+            books.selectById(b.id).executeAsOneOrNull()?.let { sync.reapplyNovel(it) }
         }
     }
 
@@ -207,8 +205,8 @@ class LibraryStore(
             Triple(b, c, chapters.content(c.id).executeAsOneOrNull())
         }
         val html = stored ?: fetchContent(b, c.path, position).also { text ->
-            io { chapters.putContent(c.id, text, 0, now()) }
-            scope.launch { runCatching { chapters.pruneCache(CACHE_CHAPTERS) } }
+            tx { chapters.putContent(c.id, text, 0, now()) }
+            scope.launch { runCatching { tx { chapters.pruneCache(CACHE_CHAPTERS) } } }
         }
         val max = io { chapters.maxPosition(id.toLong()).executeAsOne() }
         return ChapterRead(position, c.number, c.title, html, has_prev = position > 1, has_next = position < max)
@@ -484,18 +482,16 @@ class LibraryStore(
      * not books, and the other devices have no file to open, so the row gets no
      * sync_key and never reaches [SyncRecords].
      */
-    suspend fun importEpub(parsed: Epub.Parsed): Int = io {
-        db.transactionWithResult {
-            val order = books.maxSortOrder().executeAsOne() + 1
-            books.insertLocal(parsed.title, parsed.author, parsed.cover, "", order, now())
-            val bookId = books.lastInsertId().executeAsOne()
-            parsed.chapters.forEachIndexed { i, c ->
-                val pos = i.toLong() + 1
-                chapters.insert(bookId, pos, "epub/$pos", pos.toString(), c.title, 1, null)
-                chapters.putContent(chapters.lastInsertId().executeAsOne(), c.html, 1, now())
-            }
-            bookId.toInt()
+    suspend fun importEpub(parsed: Epub.Parsed): Int = tx {
+        val order = books.maxSortOrder().executeAsOne() + 1
+        books.insertLocal(parsed.title, parsed.author, parsed.cover, "", order, now())
+        val bookId = books.lastInsertId().executeAsOne()
+        parsed.chapters.forEachIndexed { i, c ->
+            val pos = i.toLong() + 1
+            chapters.insert(bookId, pos, "epub/$pos", pos.toString(), c.title, 1, null)
+            chapters.putContent(chapters.lastInsertId().executeAsOne(), c.html, 1, now())
         }
+        bookId.toInt()
     }
 
     /**
@@ -534,24 +530,20 @@ class LibraryStore(
     // --- downloads -----------------------------------------------------------
 
     /** Queue chapters for download (all of them when [positions] is null). */
-    suspend fun enqueueDownloads(id: Int, positions: List<Int>?) = io {
-        db.transaction {
-            val rows = chapters.selectByBook(id.toLong()).executeAsList()
-            val wanted = positions?.toSet()
-            val t = now()
-            rows.filter { it.downloaded == 0L && (wanted == null || it.position.toInt() in wanted) }
-                .forEach { chapters.enqueue(it.id, t) }
-        }
+    suspend fun enqueueDownloads(id: Int, positions: List<Int>?) = tx {
+        val rows = chapters.selectByBook(id.toLong()).executeAsList()
+        val wanted = positions?.toSet()
+        val t = now()
+        rows.filter { it.downloaded == 0L && (wanted == null || it.position.toInt() in wanted) }
+            .forEach { chapters.enqueue(it.id, t) }
     }
 
-    suspend fun removeDownloads(id: Int) = io {
-        db.transaction {
-            chapters.clearQueueForBook(id.toLong())
-            chapters.removeDownloads(id.toLong())
-        }
+    suspend fun removeDownloads(id: Int) = tx {
+        chapters.clearQueueForBook(id.toLong())
+        chapters.removeDownloads(id.toLong())
     }
 
-    suspend fun cancelDownloads(id: Int) = io { chapters.clearQueueForBook(id.toLong()) }
+    suspend fun cancelDownloads(id: Int) = tx { chapters.clearQueueForBook(id.toLong()) }
 
     fun queuedFlow(): Flow<Long> = chapters.queuedCount().asFlow().mapToOneOrNull(Dispatchers.IO).map { it ?: 0 }
     fun failedForBookFlow(id: Int): Flow<Long> =
@@ -571,7 +563,7 @@ class LibraryStore(
     }
 
     /** A download didn't work: count the try, and give up on it after [tries]. */
-    internal suspend fun downloadFailed(chapterId: Long, attempts: Long, tries: Int): Boolean = io {
+    internal suspend fun downloadFailed(chapterId: Long, attempts: Long, tries: Int): Boolean = tx {
         val giveUp = attempts + 1 >= tries
         chapters.attemptFailed(if (giveUp) 1 else 0, chapterId)
         giveUp
@@ -581,9 +573,9 @@ class LibraryStore(
     fun failedDownloadsFlow(): Flow<Long> =
         chapters.failedCount().asFlow().mapToOneOrNull(Dispatchers.IO).map { it ?: 0 }
 
-    suspend fun retryFailedDownloads() = io { chapters.retryFailed() }
+    suspend fun retryFailedDownloads() = tx { chapters.retryFailed() }
 
-    suspend fun forgetFailedDownloads() = io { chapters.dropFailed() }
+    suspend fun forgetFailedDownloads() = tx { chapters.dropFailed() }
 
     /** Download one queued chapter (keeping text already cached) and take it off
      *  the queue. True if it was fetched from a source site (for pacing). */
@@ -593,13 +585,11 @@ class LibraryStore(
             val b = c?.let { books.selectById(it.book_id).executeAsOneOrNull() }
             Triple(b, c, c?.let { chapters.content(it.id).executeAsOneOrNull() })
         }
-        if (b == null || c == null) { io { chapters.dequeue(chapterId) }; return false }
+        if (b == null || c == null) { tx { chapters.dequeue(chapterId) }; return false }
         val html = cached ?: fetchContent(b, c.path, c.position.toInt())
-        io {
-            db.transaction {
-                chapters.putContent(c.id, html, 1, now())
-                chapters.dequeue(c.id)
-            }
+        tx {
+            chapters.putContent(c.id, html, 1, now())
+            chapters.dequeue(c.id)
         }
         return cached == null && b.plugin_id != null
     }
@@ -628,12 +618,12 @@ class LibraryStore(
 
     /** A local change, in one transaction; [onLocalChange] afterwards. */
     private suspend fun change(block: () -> Unit) {
-        io { db.transaction { block() } }
+        tx { block() }
         onLocalChange()
     }
 
     private suspend fun <T> changeWithResult(block: () -> T): T {
-        val r = io { db.transactionWithResult { block() } }
+        val r = tx { block() }
         onLocalChange()
         return r
     }
@@ -657,7 +647,7 @@ class LibraryStore(
         codeKey: javax.crypto.SecretKey? = null,
     ) = syncMutex.withLock {
         FolderSync(sync, object : SyncTx {
-            override suspend fun <T> run(block: () -> T): T = io { db.transactionWithResult { block() } }
+            override suspend fun <T> run(block: () -> T): T = tx(block)
         }, folder, passphrase, keys, codeKey).run()
     }.also { fillMissingSites() }
 
@@ -670,18 +660,18 @@ class LibraryStore(
         val plugins = io { books.pluginsWithoutSite().executeAsList().filterNotNull() }
         for (plugin in plugins) {
             val name = runCatching { sources.name(plugin) }.getOrNull()?.takeIf { it.isNotBlank() } ?: continue
-            io { books.fillSite(name, plugin) }
+            tx { books.fillSite(name, plugin) }
         }
     }
 
     /** This device's sync id, which same-Wi-Fi sync introduces it by. */
-    internal suspend fun syncDevice(): String = io { db.transactionWithResult { sync.device() } }
+    internal suspend fun syncDevice(): String = tx { sync.device() }
 
     /** Changes here not yet written to the sync folder. */
     suspend fun pendingSyncCount(): Long = io { sync.pendingCount() }
 
     /** Sync disconnected: the next connection starts afresh. */
-    suspend fun resetSync() = syncMutex.withLock { io { db.transaction { sync.reset() } } }
+    suspend fun resetSync() = syncMutex.withLock { tx { sync.reset() } }
 
     // --- housekeeping --------------------------------------------------------
 
@@ -690,8 +680,10 @@ class LibraryStore(
     fun prune() {
         scope.launch {
             runCatching {
-                books.pruneUnused(now() - UNUSED_DAYS * 24L * 3600 * 1000)
-                chapters.pruneCache(CACHE_CHAPTERS)
+                tx {
+                    books.pruneUnused(now() - UNUSED_DAYS * 24L * 3600 * 1000)
+                    chapters.pruneCache(CACHE_CHAPTERS)
+                }
             }.onFailure { Log.w(TAG, "prune: ${it.message}") }
         }
     }
@@ -782,6 +774,22 @@ class LibraryStore(
     )
 
     private suspend fun <T> io(block: () -> T): T = withContext(Dispatchers.IO) { block() }
+
+    /**
+     * [block] in one transaction, after any other write here has finished. Every
+     * write goes through this, a single statement too; reads don't need to.
+     *
+     * One at a time because SQLite fails rather than waits when writes overlap:
+     * on the library file, where each thread has its own connection, a
+     * transaction that has read and then writes while another connection holds
+     * the write lock (a transaction's or a lone statement's) gets "database is
+     * locked" at once; in memory, where SQLDelight shares a single connection and
+     * its open transaction between threads, the second gets "cannot start a
+     * transaction within a transaction". Either way a change was lost. [block]
+     * is not suspending, so it can't wait on this lock again.
+     */
+    private suspend fun <T> tx(block: () -> T): T =
+        txLock.withLock { io { db.transactionWithResult { block() } } }
 
     companion object {
         private const val TAG = "Library"
