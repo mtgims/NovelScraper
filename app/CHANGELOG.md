@@ -3,6 +3,101 @@
 Newest first.
 
 
+## 1.3.0, 2026-11-15 · `versionCode 103`
+
+Sources get easier to live with: one search asks all of them, a novel or a
+whole source's worth of novels can move to another source with its place
+kept, and Browse says when a source has an update. Browser checks are passed
+for the reader more often, and on the phone the ones that want a person can
+finally be passed inside the app. Settings is split into pages, the
+statistics page is redesigned, the changelog is in the app, and two
+computers behind a strict firewall can sync again.
+
+### Sources and browsing
+- **Search every source at once.** Browse's search asks each installed source,
+  a few at a time, and lists what each found or why it found nothing. A
+  source's row opens that source with the same search.
+- **Updates are announced.** The repositories are asked when the app starts;
+  Browse and the Extensions button carry the number of sources with a newer
+  version, and a line above the sources names them.
+- **Covers a list leaves out are looked up** for sources that only show a cover
+  on the novel's own page, as the novels come on screen, and kept.
+- **Extensions on the computer** shows the sources as cards in a grid, with the
+  Installed and Available choice and the search on one row. The phone keeps
+  its list.
+
+### Moving novels between sources
+- **Migrate a novel** from its ⋮ menu: pick the same novel on another source and
+  see what would move before anything does. Read chapters, the place reading
+  left off, the rating, collections and the novel's own reading settings move
+  with it, and other devices follow when they sync. Chapters are matched by
+  their numbers, or by their order where the sources number them differently,
+  which is said to be a guess.
+- **Migrate a whole source** from Browse, Migrate: every novel from one source
+  is looked for on the others, in an order that can be changed, paced so no
+  site is asked too often. Close titles are offered unticked, and nothing moves
+  until each match's chapters have loaded.
+- **A place in an unnumbered chapter** (an interlude, an epilogue) survives the
+  move, held by the numbered chapter beside it.
+
+### Browser checks
+- **On the phone, a check that wants a person can be passed.** "Open the check"
+  shows the site in the app and closes by itself once the site lets the app
+  in. A source's page and a novel's page open their site in the same view.
+- **A list stopped by a check loads again** once the check is passed.
+- **The app ticks Cloudflare's box itself** before asking, and a check that
+  passes on its own gets time to do so before a window comes up.
+- **A site that blocks the plain connection is tried through the browser**
+  before it is reported as blocked, and a real block now says so instead of
+  "nothing found".
+- **A check on the chapter itself**, rather than on the site's front page, is
+  waited on and passed the same way.
+- **Downloads are paced by how each site answers**: a slow site gets longer
+  between pages, and one that says it is asked too often gets the wait it asks
+  for.
+- **First pages load faster** through a site's front page: Royal Road 4.0 to
+  2.0 seconds, Novel Fire 2.5 to 0.65, Scribble Hub 2.9 to 0.85.
+
+### Sync
+- **Computers behind a firewall that lets nothing in sync again.** They answer
+  the phone's announcement straight back and call it themselves, remember where
+  each device was last met, and the advice in Settings, Sync now reads the
+  firewall's rules: it asks only for what this network is missing, and names
+  rules left from another network.
+- **A device found but turned away is named** in Settings, Sync, with its
+  firewall as the likely cause, and is no longer called every few seconds.
+- **A VPN's tunnel address is left out** of the addresses This device shows.
+- **Stopping sync asks first.**
+- **Novels synced in from another device are named for their source**; they
+  used to arrive with no source name.
+
+### Settings, statistics and the app
+- **Settings has a page for each area**: Appearance, Narration and Sync, each
+  saying how it stands, with the version below. A wide window shows the list
+  and the page side by side. A voice download carries on when its page is left.
+- **The statistics page is redesigned**: chapters read as one figure, the
+  library's novels by how far along they are, words and reading time, the
+  novels to continue, chapters read by source, genres, ratings, and every novel
+  with its progress, sortable. Words read are now estimated from every chapter
+  read, not only the ones still stored.
+- **What's new is in the app**: Settings, This app, What's new in each version,
+  and once after each update.
+- **Every menu line has an icon.**
+
+### Expressive reading (computer only, beta)
+- **A novel's main characters get voices of their own**, found from who speaks
+  most in its stored chapters; a line uses one when the narration around it
+  says who speaks, and anything unclear stays in the dialogue voice. The
+  novel's Narration dialog lists the cast.
+- **A novel's expressive settings are kept by the novel** and sync to the other
+  computers, so removing a novel and adding it again keeps them.
+
+### Fixed
+- **Narration says why it can't load the next chapter**, and lets the chapter
+  playing finish instead of stopping at once.
+- A form sent from inside a site's page kept its type, so Wuxiabox searches
+  find things again.
+
 ## 1.2.0, 2026-10-22 · `versionCode 102`
 
 Accounts are gone, along with the server they signed in to. Sync is the sync

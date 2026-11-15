@@ -11,6 +11,47 @@ since moved to a repository of their own; this one holds the apps.
 
 ---
 
+## 2026-11-15
+
+- **1.3.0: sources, checks and sync.** A search of every source; migrating a
+  novel, or every novel of a source, to another source with read marks, place,
+  rating and collections kept; update badges for sources; covers looked up per
+  novel (`coverOf`). On the phone, sites and their checks open in an in-app web
+  view where a person can pass them, and a list stopped by a check reloads once
+  it is passed. Checks on the page wanted (not only the front page) get the
+  same waiting and ticking. Same-Wi-Fi sync works past a ufw "deny incoming"
+  firewall: announcements answered back to their port, a sweep of the local
+  network while nobody is met, last addresses remembered, and firewall advice
+  read from ufw's rules. Settings split into pages, the statistics page
+  redesigned on one shared aggregate (`ReadingStats`), the changelog shipped
+  inside the apps, icons on every menu line, a computer layout for Extensions,
+  and synced novels given their source's name.
+
+## 2026-11-08
+
+- **Block pages go through the browser** before being reported, since a
+  refusal is often of the plain client alone (Scribble Hub over a VPN), and
+  recordings can show the check window when asked (`-PliveShow=true`).
+
+## 2026-11-07
+
+- **Browser checks, ideas from Scrapling.** Cloudflare's check kind (`cType`)
+  decides between waiting and asking; the app ticks the Turnstile box itself;
+  downloads and update checks are paced per source by how it answers. A site's
+  front page is read once parsed rather than settled, halving first-page times.
+  Block pages are recognised, and forms sent from inside a page keep their
+  type. Sources can be recorded through the app and replayed offline.
+
+## 2026-11-05
+
+- **Narration explains a chapter it can't load** and lets the playing one
+  finish.
+
+## 2026-10-25
+
+- **Character voices for expressive reading**, and a novel's expressive
+  settings kept by the novel and synced between computers.
+
 ## 2026-10-22
 
 - **1.2.0: accounts are gone.** Sign-in, registration, the account section and
