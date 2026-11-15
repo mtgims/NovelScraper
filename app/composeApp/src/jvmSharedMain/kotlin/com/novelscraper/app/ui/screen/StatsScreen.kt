@@ -18,6 +18,7 @@ import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
@@ -397,10 +398,12 @@ private fun Meter(fraction: Float, modifier: Modifier = Modifier) {
 private fun ContinueReading(list: List<NovelProgress>, onOpenNovel: (Int) -> Unit) {
     Column {
         SectionTitle("Continue reading", "Opened most recently", Modifier.padding(start = 4.dp, bottom = 12.dp))
-        LazyRow(horizontalArrangement = Arrangement.spacedBy(14.dp)) {
+        // The cards' own padding lines their covers up with the cards above.
+        LazyRow(Modifier.offset(x = (-8).dp), horizontalArrangement = Arrangement.spacedBy(4.dp)) {
             items(list, key = { it.book.id }) { p ->
+                // Padded inside the click, so its highlight frames the cover and the numbers under it.
                 Column(
-                    Modifier.width(124.dp).clip(RoundedCornerShape(14.dp)).clickable { onOpenNovel(p.book.id) },
+                    Modifier.width(140.dp).clip(RoundedCornerShape(16.dp)).clickable { onOpenNovel(p.book.id) }.padding(8.dp),
                 ) {
                     BookCover(
                         p.book,

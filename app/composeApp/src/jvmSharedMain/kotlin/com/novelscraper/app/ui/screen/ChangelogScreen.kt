@@ -1,5 +1,6 @@
 package com.novelscraper.app.ui.screen
 
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -134,7 +135,8 @@ fun WhatsNewPrompt(onOpenAll: () -> Unit) {
 private fun ReleaseCard(r: Changelog.Release) {
     Surface(
         shape = RoundedCornerShape(20.dp),
-        color = MaterialTheme.colorScheme.surfaceContainerLow,
+        color = cardColor(),
+        border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline),
         modifier = Modifier.fillMaxWidth(),
     ) {
         Column(Modifier.padding(20.dp)) { ReleaseBody(r, header = true) }
