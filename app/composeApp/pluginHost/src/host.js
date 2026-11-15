@@ -312,8 +312,12 @@ class SessionStorage { constructor(id) { this._id = id; } get() { return undefin
 // cheerio parses with parse5 unless told otherwise: exact to the HTML spec, and
 // in this interpreter about 1 ms per kilobyte (1.4 s for a 1.3 MB catalogue
 // page, 0.2 s for a typical one). htmlparser2, which cheerio also ships, reads
-// the same pages 3 to 11 times faster. A plugin that passes options of its
-// own keeps exactly what it asked for.
+// the same pages 3 to 11 times faster, but adds nothing the page left out:
+// no implied <html>, <head>, <body>, nor <tbody> in a table written without
+// one, so `$('table tbody tr')` finds nothing there. NovelScraper's own
+// sources (ids "novelscraper.*") were checked against every recorded page and
+// select none of those, and get it; any other plugin keeps parse5, as LNReader
+// gives it. A plugin that passes options of its own keeps exactly those.
 // Written back out (.html()), characters stay as they are rather than becoming
 // entities ("—" not "&#x2014;"), as parse5 writes them: plugins that read a
 // page's HTML again in pieces split at every entity and trim each piece, which
@@ -327,7 +331,7 @@ const fastLoad = (content, options, isDocument) => options === undefined
 
 const packages = {
   'htmlparser2': { Parser },
-  'cheerio': { load: fastLoad },
+  'cheerio': { load },
   'dayjs': dayjs,
   'urlencode': urlencode,
   '@libs/novelStatus': { NovelStatus },
@@ -356,6 +360,7 @@ g.__loadPlugin = (pluginId, rawCode) => {
     if (name === '@libs/storage') {
       return { storage: new Storage(pluginId), localStorage: new LocalStorage(pluginId), sessionStorage: new SessionStorage(pluginId) };
     }
+    if (name === 'cheerio' && pluginId.startsWith('novelscraper.')) return { load: fastLoad };
     const mod = packages[name];
     if (mod === undefined) throw new Error(`Module not found: ${name}`);
     return mod;
