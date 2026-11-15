@@ -79,10 +79,24 @@ actual fun InAppBrowser(url: String, check: Boolean, onClose: () -> Unit) {
     // new one, or a changed one, is.
     val clearanceBefore = remember { cookie(url, CLEARANCE) }
 
+    // What the site set goes to the sources before anything is told the check
+    // passed: told first, a list loaded again while this screen was still
+    // closing, without the cookie, and met the same check.
+    fun handOver() {
+        kept.forEach { keepCookies(it) }
+        CookieManager.getInstance().flush()
+    }
+    // Passed (seen, or the reader says so with Done): hand over, then tell, then close.
+    fun finish() {
+        handOver()
+        SiteChecks.endInApp()
+        SiteChecks.passed(url)
+        onClose()
+    }
+
     DisposableEffect(Unit) {
         onDispose {
-            kept.forEach { keepCookies(it) }
-            CookieManager.getInstance().flush()
+            handOver()
             if (check) SiteChecks.endInApp()
             view?.destroy()
         }
@@ -95,8 +109,7 @@ actual fun InAppBrowser(url: String, check: Boolean, onClose: () -> Unit) {
                 val now = kept.firstNotNullOfOrNull { cookie(it, CLEARANCE) }
                 if (now != null && now != clearanceBefore) {
                     showToast("The site let the app in.")
-                    SiteChecks.passedInApp()
-                    onClose()
+                    finish()
                     break
                 }
             }
@@ -119,7 +132,7 @@ actual fun InAppBrowser(url: String, check: Boolean, onClose: () -> Unit) {
                     }
                 },
                 actions = {
-                    if (check) TextButton(onClick = onClose) { Text("Done") }
+                    if (check) TextButton(onClick = { finish() }) { Text("Done") }
                     IconButton(onClick = { view?.reload() }) { Icon(Icons.Filled.Refresh, "Reload") }
                     if (!check) IconButton(onClick = { openInBrowser(current) }) {
                         Icon(Icons.Filled.OpenInBrowser, "Open in the browser")

@@ -464,9 +464,6 @@ fun SourceScreen(
     LaunchedEffect(ui.mode, ui.query) { grid.scrollToItem(0) }
     val installed = remember(pluginId) { Extensions.installed.value.firstOrNull { it.id == pluginId } }
     val site = installed?.site?.ifBlank { null }
-    // A check passed in the app's web view: the list it stopped loads again.
-    val passes by SiteChecks.passes.collectAsState()
-    LaunchedEffect(passes) { if (passes > 0 && vm.ui.value.checkUrl != null) vm.show(vm.ui.value.mode) }
     // A check that stopped the list, opened where the reader can pass it.
     val openCheck: (() -> Unit)? = ui.checkUrl?.takeIf { hasInAppBrowser }?.let { url -> { WebPages.openCheck(url) } }
 

@@ -47,6 +47,7 @@ import androidx.lifecycle.viewModelScope
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.novelscraper.app.extensions.Extensions
 import com.novelscraper.app.extensions.NovelItem
+import com.novelscraper.app.extensions.SiteChecks
 import com.novelscraper.app.library.ChapterDownloads
 import com.novelscraper.app.library.LibBook
 import com.novelscraper.app.library.Library
@@ -187,6 +188,12 @@ class MigrateFromViewModel(val pluginId: String) : ViewModel() {
     )
 
     init {
+        // A source left out for its check, passed since: asked again.
+        viewModelScope.launch {
+            SiteChecks.passed.collect { url ->
+                _unavailable.value.filter { it.check && SiteChecks.sameSite(it.url, url) }.forEach { tryAgain(it.pluginId) }
+            }
+        }
         viewModelScope.launch {
             val list = Library.store.libraryFlowOnce().filter { it.pluginId == pluginId }
             _books.value = list

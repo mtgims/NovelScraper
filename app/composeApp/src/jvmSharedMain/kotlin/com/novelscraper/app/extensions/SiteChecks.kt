@@ -43,12 +43,24 @@ object SiteChecks {
         _pending.value = null
     }
 
-    private val _passes = MutableStateFlow(0)
-    /** Counts checks seen passing in the app's web view, for screens to try again. */
-    val passes: StateFlow<Int> = _passes.asStateFlow()
+    private val _passed = kotlinx.coroutines.flow.MutableSharedFlow<String>(extraBufferCapacity = 8)
+    /**
+     * The address of each check passed, in the app's web view or the computer's
+     * browser, once what the site set is with the sources. Lists stopped by
+     * that site's check load again on hearing it, even from under the screen
+     * that passed it.
+     */
+    val passed: kotlinx.coroutines.flow.SharedFlow<String> = _passed
 
-    /** The web view saw the site let the app in. */
-    fun passedInApp() { _passes.value++ }
+    /** The site at [url] let the app in, and its cookies are already with the sources. */
+    fun passed(url: String) { _passed.tryEmit(url) }
+
+    /** True when [a] and [b] are the same site: the same host, give or take "www." or a subdomain. */
+    fun sameSite(a: String?, b: String?): Boolean {
+        val x = a?.let(::host)?.removePrefix("www.") ?: return false
+        val y = b?.let(::host)?.removePrefix("www.") ?: return false
+        return x == y || x.endsWith(".$y") || y.endsWith(".$x")
+    }
 
     /** The web view with the check closed, passed or not. Whatever asked meanwhile
      *  was asking for the same check, so nothing is left waiting. */
@@ -138,7 +150,7 @@ object SiteChecks {
         _status.value = "Starting…"
         return try {
             val ok = passSiteCheck(url) { _status.value = it }
-            if (ok) _pending.value = null
+            if (ok) { _pending.value = null; passed(url) }
             ok
         } finally {
             _status.value = null

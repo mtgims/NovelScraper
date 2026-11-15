@@ -55,7 +55,7 @@ fun SiteCheckPrompt() {
                         scope.launch {
                             val ok = SiteChecks.run()
                             showToast(
-                                if (ok) "The site let us through: try again." else "The check didn't pass.",
+                                if (ok) "The site let the app in." else "The check didn't pass.",
                                 long = true,
                             )
                         }

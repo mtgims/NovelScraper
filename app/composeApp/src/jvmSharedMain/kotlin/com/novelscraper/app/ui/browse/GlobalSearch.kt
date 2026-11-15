@@ -64,6 +64,7 @@ import com.novelscraper.app.extensions.Extensions
 import com.novelscraper.app.extensions.InstalledPlugin
 import com.novelscraper.app.extensions.NovelItem
 import com.novelscraper.app.extensions.SiteChallengeException
+import com.novelscraper.app.extensions.SiteChecks
 import com.novelscraper.app.library.Library
 import com.novelscraper.app.platform.PlatformBackHandler
 import com.novelscraper.app.platform.isDesktop
@@ -92,7 +93,7 @@ data class SourceResults(
         data object Searching : State
         data class Found(val items: List<NovelItem>) : State
         /** [check]: the site wants a browser check, which only asking it alone can offer. */
-        data class Failed(val message: String, val check: Boolean = false) : State
+        data class Failed(val message: String, val check: Boolean = false, val url: String? = null) : State
     }
 }
 
@@ -126,7 +127,16 @@ class GlobalSearchViewModel(initialQuery: String, private val exclude: String?) 
     val searched: StateFlow<String> = _searched.asStateFlow()
     private var job: Job? = null
 
-    init { if (initialQuery.isNotBlank()) search(initialQuery) }
+    init {
+        if (initialQuery.isNotBlank()) search(initialQuery)
+        // A source's check passed: its row asks again.
+        viewModelScope.launch {
+            SiteChecks.passed.collect { url ->
+                _rows.value.filter { (it.state as? SourceResults.State.Failed)?.let { f -> f.check && SiteChecks.sameSite(f.url, url) } == true }
+                    .forEach { retry(it.pluginId) }
+            }
+        }
+    }
 
     fun search(query: String) {
         val q = query.trim()
@@ -156,7 +166,7 @@ class GlobalSearchViewModel(initialQuery: String, private val exclude: String?) 
         } catch (e: kotlinx.coroutines.CancellationException) {
             throw e
         } catch (e: SiteChallengeException) {
-            SourceResults.State.Failed("The site wants a browser check.", check = true)
+            SourceResults.State.Failed("The site wants a browser check.", check = true, url = e.url)
         } catch (e: Exception) {
             SourceResults.State.Failed(describe(e))
         }

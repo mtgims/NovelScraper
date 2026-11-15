@@ -1,5 +1,6 @@
 package com.novelscraper.app.ui.browse
 
+import com.novelscraper.app.platform.Log
 import com.novelscraper.app.platform.hasInAppBrowser
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
@@ -167,6 +168,16 @@ class SourceViewModel(private val pluginId: String, initialQuery: String? = null
 
     init {
         if (initialQuery.isNullOrBlank()) show(SourceMode.Popular) else show(SourceMode.Search, initialQuery)
+        // That site's check passed (here, or under another screen): the list it stopped loads again.
+        viewModelScope.launch {
+            SiteChecks.passed.collect { url ->
+                val s = _ui.value
+                if (s.checkUrl != null && SiteChecks.sameSite(s.checkUrl, url)) {
+                    Log.i("Source", "check passed for $pluginId, loading again")
+                    if (s.items.isEmpty()) show(s.mode) else loadMore()
+                }
+            }
+        }
     }
 
     /** Open a novel from the list: its local id (a row is made the first time). */
