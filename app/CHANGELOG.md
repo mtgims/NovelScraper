@@ -3,6 +3,29 @@
 Newest first.
 
 
+## 1.3.2, 2026-11-16 · `versionCode 105`
+
+Collections no longer show twice when two devices each had a copy, a source
+read through the browser no longer waits for it to start at every chapter,
+and the update card fits a narrow column.
+
+### Sync
+- **A collection shows once.** Collections kept from the sync server each got
+  a name of their own on every device, so a device showed its own copy beside
+  the one synced from the others. A copy now goes into the synced collection of
+  the same name, novels and all; an empty copy of a collection deleted on
+  another device goes too. A device joining sync with a collection the others
+  already have shows it once.
+
+### On the computer
+- **The browser stays five minutes after its last page**, not one. A source
+  read through it asks it for every chapter, and starting it again took two to
+  four seconds nearly every time.
+- **The update card fits a narrow column:** the button sits under the words
+  instead of squeezing them, and the release notes read as running text,
+  without breaks mid-sentence or stray marks.
+
+
 ## 1.3.1, 2026-11-15 · `versionCode 104`
 
 Sources load faster: their pages are read several times faster, a search of

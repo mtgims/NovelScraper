@@ -11,6 +11,18 @@ since moved to a repository of their own; this one holds the apps.
 
 ---
 
+## 2026-11-16
+
+- **1.3.2: collections once, a warmer browser, a narrow update card.**
+  Collections whose key migration 3 rekeyed after enrollment had no sync
+  record; after each pull `settleUnsyncedShelves` merges such a collection
+  into a synced one of the same name (case and spaces ignored), deletes an
+  empty one whose synced namesakes are all deleted, and gives any other its
+  record at the enrollment clock. `fillGaps` leaves collections to it, so a
+  first sync with a folder merges same-named ones too. Browser idle timeout
+  1 to 5 minutes. The update card stacks below 480dp and shows the release's
+  summary via `Changelog.summary`.
+
 ## 2026-11-15
 
 - **1.3.1: faster sources, progress import.** Plugins with ids
