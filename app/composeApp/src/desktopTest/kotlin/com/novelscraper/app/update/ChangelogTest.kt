@@ -87,4 +87,20 @@ class ChangelogTest {
 
     @Test fun aVersionWithoutAnEntryShowsNothingOfItsOwn() =
         assertEquals(emptyList(), Changelog.toShow("1.4.0", seen = null, hasLibrary = true, all = releases))
+
+    @Test fun theUpdateCardGetsTheSummaryAsRunningText() {
+        val body = "Sources load faster: their pages are read\n" +
+            "several times faster, and `eight` are **searched** at once.\n\n" +
+            "### Faster sources\n- **Pages are read faster.** More.\n"
+        assertEquals(
+            "Sources load faster: their pages are read several times faster, and eight are searched at once.",
+            Changelog.summary(body),
+        )
+    }
+
+    @Test fun withoutASummaryTheFirstSectionIsTold() {
+        val body = "### Fixes\n- **Changes no longer collide.** Two written\n  at once could fail.\n- **Another.**\n"
+        assertEquals("Changes no longer collide. Two written at once could fail.\nAnother.", Changelog.summary(body))
+        assertEquals("", Changelog.summary(""))
+    }
 }

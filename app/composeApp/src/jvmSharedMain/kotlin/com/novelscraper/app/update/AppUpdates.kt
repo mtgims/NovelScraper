@@ -97,7 +97,7 @@ object AppUpdates {
                     }
                     else -> _state.value = State.Available(
                         version = tag,
-                        notes = notes.lineSequence().take(12).joinToString("\n").trim(),
+                        notes = Changelog.summary(notes),
                         url = asset["browser_download_url"]!!.jsonPrimitive.content,
                         bytes = asset["size"]?.jsonPrimitive?.contentOrNull?.toLongOrNull() ?: 0L,
                         digest = asset["digest"]?.jsonPrimitive?.contentOrNull.orEmpty(),

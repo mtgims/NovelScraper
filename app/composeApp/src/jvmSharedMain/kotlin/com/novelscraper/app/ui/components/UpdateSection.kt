@@ -1,9 +1,12 @@
 package com.novelscraper.app.ui.components
 
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.material3.Button
@@ -34,72 +37,90 @@ import com.novelscraper.app.update.AppUpdates
 fun UpdateSection(onChangelog: () -> Unit = {}) {
     val state by AppUpdates.state.collectAsState()
 
-    Column(Modifier.fillMaxWidth().padding(top = 8.dp)) {
-        Row(verticalAlignment = Alignment.CenterVertically) {
-            Column(Modifier.weight(1f)) {
-                Text("Version ${AppUpdates.current}", style = MaterialTheme.typography.bodyMedium)
-                val note = when (val s = state) {
-                    is AppUpdates.State.Idle ->
-                        if (s.upToDate) "The newest there is." else "Updates come from the releases page."
-                    AppUpdates.State.Checking -> "Looking…"
-                    is AppUpdates.State.Available -> "Version ${s.version} is out."
-                    is AppUpdates.State.Downloading -> "Getting version ${s.version}…"
-                    is AppUpdates.State.Ready ->
-                        if (isDesktop) "Version ${s.version} is ready to put in place."
-                        else "Version ${s.version} is downloaded."
-                    is AppUpdates.State.Failed -> s.message
-                }
-                Text(
-                    note,
-                    style = MaterialTheme.typography.bodySmall,
-                    color = if (state is AppUpdates.State.Failed) MaterialTheme.colorScheme.error
-                    else MaterialTheme.colorScheme.onSurfaceVariant,
-                    maxLines = 2, overflow = TextOverflow.Ellipsis,
-                )
-            }
-            when (val s = state) {
-                AppUpdates.State.Checking -> CircularProgressIndicator(Modifier.size(20.dp))
-                is AppUpdates.State.Available ->
-                    Button(onClick = { AppUpdates.download() }) { Text("Update") }
+    BoxWithConstraints(Modifier.fillMaxWidth().padding(top = 8.dp)) {
+        // In a narrow card the button goes under the words: beside them, "Install
+        // and restart" left the note a third of the card and broke it after two words.
+        val narrow = maxWidth < 480.dp
+        Column(Modifier.fillMaxWidth()) {
+            val note = when (val s = state) {
+                is AppUpdates.State.Idle ->
+                    if (s.upToDate) "The newest there is." else "Updates come from the releases page."
+                AppUpdates.State.Checking -> "Looking…"
+                is AppUpdates.State.Available -> "Version ${s.version} is out."
+                is AppUpdates.State.Downloading -> "Getting version ${s.version}…"
                 is AppUpdates.State.Ready ->
-                    Button(onClick = { AppUpdates.install() }) {
-                        Text(if (isDesktop) "Install and restart" else "Install")
-                    }
-                is AppUpdates.State.Downloading -> Unit
-                else -> OutlinedButton(onClick = { AppUpdates.check() }) { Text("Check") }
+                    if (isDesktop) "Version ${s.version} is ready to put in place."
+                    else "Version ${s.version} is downloaded."
+                is AppUpdates.State.Failed -> s.message
             }
-        }
-
-        TextButton(onClick = onChangelog, modifier = Modifier.padding(top = 2.dp)) {
-            Text("What's new in each version")
-        }
-
-        (state as? AppUpdates.State.Downloading)?.let { s ->
-            val fraction = if (s.total > 0) s.done.toFloat() / s.total else 0f
-            Column(Modifier.padding(top = 8.dp)) {
-                LinearProgressIndicator({ fraction }, Modifier.fillMaxWidth())
-                Text(
-                    "${s.done / 1_000_000} of ${s.total / 1_000_000} MB",
-                    style = MaterialTheme.typography.labelSmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    modifier = Modifier.padding(top = 4.dp),
-                )
+            val words = @Composable { modifier: Modifier ->
+                Column(modifier) {
+                    Text("Version ${AppUpdates.current}", style = MaterialTheme.typography.bodyMedium)
+                    Text(
+                        note,
+                        style = MaterialTheme.typography.bodySmall,
+                        color = if (state is AppUpdates.State.Failed) MaterialTheme.colorScheme.error
+                        else MaterialTheme.colorScheme.onSurfaceVariant,
+                        maxLines = 2, overflow = TextOverflow.Ellipsis,
+                    )
+                }
             }
-        }
-
-        (state as? AppUpdates.State.Available)?.let { s ->
-            if (s.notes.isNotBlank()) {
-                Text(
-                    s.notes,
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    maxLines = 6, overflow = TextOverflow.Ellipsis,
-                    modifier = Modifier.padding(top = 8.dp),
-                )
+            val action = @Composable {
+                when (val s = state) {
+                    AppUpdates.State.Checking -> CircularProgressIndicator(Modifier.size(20.dp))
+                    is AppUpdates.State.Available ->
+                        Button(onClick = { AppUpdates.download() }) { Text("Update") }
+                    is AppUpdates.State.Ready ->
+                        Button(onClick = { AppUpdates.install() }) {
+                            Text(if (isDesktop) "Install and restart" else "Install")
+                        }
+                    is AppUpdates.State.Downloading -> Unit
+                    else -> OutlinedButton(onClick = { AppUpdates.check() }) { Text("Check") }
+                }
             }
-            Row(horizontalArrangement = Arrangement.spacedBy(4.dp), modifier = Modifier.padding(top = 4.dp)) {
-                TextButton(onClick = { openInBrowser(AppUpdates.RELEASES_PAGE) }) { Text("Release page") }
-                TextButton(onClick = { AppUpdates.dismiss() }) { Text("Not now") }
+            if (narrow) {
+                words(Modifier.fillMaxWidth())
+                if (state !is AppUpdates.State.Downloading) {
+                    Box(Modifier.padding(top = 8.dp)) { action() }
+                }
+            } else {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    words(Modifier.weight(1f).padding(end = 12.dp))
+                    action()
+                }
+            }
+
+            TextButton(onClick = onChangelog, modifier = Modifier.padding(top = 2.dp).offset(x = (-12).dp)) {
+                Text("What's new in each version")
+            }
+
+            (state as? AppUpdates.State.Downloading)?.let { s ->
+                val fraction = if (s.total > 0) s.done.toFloat() / s.total else 0f
+                Column(Modifier.padding(top = 8.dp)) {
+                    LinearProgressIndicator({ fraction }, Modifier.fillMaxWidth())
+                    Text(
+                        "${s.done / 1_000_000} of ${s.total / 1_000_000} MB",
+                        style = MaterialTheme.typography.labelSmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        modifier = Modifier.padding(top = 4.dp),
+                    )
+                }
+            }
+
+            (state as? AppUpdates.State.Available)?.let { s ->
+                if (s.notes.isNotBlank()) {
+                    Text(
+                        s.notes,
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        maxLines = 8, overflow = TextOverflow.Ellipsis,
+                        modifier = Modifier.padding(top = 8.dp),
+                    )
+                }
+                Row(horizontalArrangement = Arrangement.spacedBy(4.dp), modifier = Modifier.padding(top = 4.dp).offset(x = (-12).dp)) {
+                    TextButton(onClick = { openInBrowser(AppUpdates.RELEASES_PAGE) }) { Text("Release page") }
+                    TextButton(onClick = { AppUpdates.dismiss() }) { Text("Not now") }
+                }
             }
         }
     }

@@ -102,6 +102,19 @@ object Changelog {
         return releases
     }
 
+    /**
+     * A release's notes as GitHub has them ([body], the changelog entry without
+     * its heading), told short for the update card: the summary paragraph, or
+     * the first section when there is none, as plain running text. Shown as
+     * they came, the lines broke where the file wraps them, mid-sentence in
+     * any narrower window, and the marks showed as stars and backticks.
+     */
+    fun summary(body: String): String {
+        val release = parse("## new\n\n$body").firstOrNull() ?: return ""
+        val blocks = release.intro.ifEmpty { release.sections.firstOrNull()?.blocks?.map { it.text }.orEmpty() }
+        return blocks.joinToString("\n") { text -> spans(text).joinToString("") { it.text } }
+    }
+
     /** [text] cut into styled runs; the marks themselves are dropped. */
     fun spans(text: String): List<Span> {
         val out = ArrayList<Span>()
