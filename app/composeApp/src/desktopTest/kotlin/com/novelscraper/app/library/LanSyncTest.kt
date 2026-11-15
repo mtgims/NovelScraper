@@ -297,6 +297,33 @@ class LanSyncTest {
         assertFalse(phone.lan.state.value.peers.single { it.device == pc.lan.device }.unreachable)
     }
 
+    /**
+     * A device that turns this one away isn't called again on every
+     * announcement: behind a firewall that drops calls silently, each try holds
+     * this device's meeting for the whole connect timeout, and the computer's
+     * own call to it would keep coming back "busy".
+     */
+    @Test
+    fun aDeviceThatTurnsThisOneAwayIsNotRedialledOnEveryAnnouncement() = runBlocking<Unit> {
+        val phonePort = freeUdpPort()
+        val phone = Device(code, discoveryPort = phonePort)
+        val calls = java.util.concurrent.atomic.AtomicInteger()
+        val hangsUp = java.net.ServerSocket(0)
+        Thread { while (!hangsUp.isClosed) runCatching { hangsUp.accept().close(); calls.incrementAndGet() } }
+            .apply { isDaemon = true }.start()
+        val keys = PairKeys(code)
+        DatagramSocket().use { out ->
+            repeat(16) {
+                val msg = """{"app":"novelscraper","v":1,"tag":"${keys.tag(System.currentTimeMillis() / 600_000)}",""" +
+                    """"device":"pc","port":${hangsUp.localPort},"name":"PC"}"""
+                out.send(java.net.DatagramPacket(msg.toByteArray(), msg.length, InetAddress.getLoopbackAddress(), phonePort))
+                Thread.sleep(500)
+            }
+        }
+        hangsUp.close()
+        assertTrue(calls.get() in 1..2, "8 s of announcements, ${calls.get()} calls")
+    }
+
     /** Where a device was met is kept, so after a restart it is called again
      *  without waiting to hear it (a firewall, a network that drops broadcasts). */
     @Test

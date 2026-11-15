@@ -204,6 +204,9 @@ class LanSync internal constructor(
     /** When each asker (host:port) was last answered, so one is answered once in a while. */
     private val answered = ConcurrentHashMap<String, Long>()
 
+    /** When each device was last called on hearing it, so one that turns this one away is called seldom. */
+    private val tried = ConcurrentHashMap<String, Long>()
+
     /** The port the server got: [serverPort] if it was free, any other if not. */
     val port: Int get() = server?.localPort ?: 0
 
@@ -323,6 +326,7 @@ class LanSync internal constructor(
             val asker = "${packet.address.hostAddress}:${packet.port}"
             val t = now()
             if (msg["re"]?.jsonPrimitive?.content != "true" && t - (answered[asker] ?: 0) >= ANSWER_MS && this.port > 0) {
+                if (answered.size > 256) answered.entries.removeIf { t - it.value >= ANSWER_MS }
                 answered[asker] = t
                 val reply = announcement(answer = true)
                 runCatching { socket.send(DatagramPacket(reply, reply.size, packet.socketAddress)) }
@@ -338,7 +342,14 @@ class LanSync internal constructor(
             // meeting with it is already under way. A moment's random wait
             // first: the other device has usually just heard this one too, and
             // two meetings started at the same instant both come back "busy".
-            if ((known == null || now() - known.lastSync > RESYNC_MS) && exchanging.add(other)) {
+            // One that turned this device away is tried again only now and then:
+            // behind a firewall that drops calls, each try holds the meeting
+            // through the whole connect timeout, and its own call here, the way
+            // that works, would come back "busy".
+            val due = known == null || (now() - known.lastSync > RESYNC_MS &&
+                (!known.unreachable || now() - (tried[other] ?: 0) >= UNREACHABLE_RETRY_MS))
+            if (due && exchanging.add(other)) {
+                tried[other] = now()
                 val host = packet.address.hostAddress
                 daemon("lan-exchange") {
                     try {
@@ -594,6 +605,8 @@ class LanSync internal constructor(
         private const val JITTER_MS = 2_000L
         /** Ask the network address by address every this many announcements (30 s). */
         private const val SWEEP_EVERY = 6
+        /** Call a device that turned this one away at most this often on hearing it. */
+        private const val UNREACHABLE_RETRY_MS = 60_000L
         /** Answer one asker at most this often. */
         private const val ANSWER_MS = 10_000L
         /** The most addresses a sweep asks: a /22. A bigger network is a
