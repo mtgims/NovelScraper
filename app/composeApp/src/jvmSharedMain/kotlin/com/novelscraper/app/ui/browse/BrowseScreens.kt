@@ -1,5 +1,8 @@
 package com.novelscraper.app.ui.browse
 
+import com.novelscraper.app.extensions.SiteChecks
+import com.novelscraper.app.platform.WebPages
+import com.novelscraper.app.platform.hasInAppBrowser
 import androidx.compose.foundation.background
 import androidx.compose.material3.VerticalDivider
 import androidx.compose.foundation.layout.fillMaxHeight
@@ -119,10 +122,13 @@ private fun Centered(content: @Composable () -> Unit) =
     Box(Modifier.fillMaxSize().padding(24.dp), contentAlignment = Alignment.Center) { content() }
 
 @Composable
-private fun ErrorText(message: String, onRetry: (() -> Unit)? = null) {
+private fun ErrorText(message: String, onOpenCheck: (() -> Unit)? = null, onRetry: (() -> Unit)? = null) {
     Column(horizontalAlignment = Alignment.CenterHorizontally) {
         Text(message, color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodyMedium)
-        if (onRetry != null) TextButton(onClick = onRetry) { Text("Try again") }
+        Row {
+            if (onOpenCheck != null) TextButton(onClick = onOpenCheck) { Text("Open the check") }
+            if (onRetry != null) TextButton(onClick = onRetry) { Text("Try again") }
+        }
     }
 }
 
@@ -446,11 +452,25 @@ fun SourceScreen(
     LaunchedEffect(nearEnd, ui.items.size) { if (nearEnd && ui.items.isNotEmpty()) vm.loadMore() }
     // A new list (popular / latest / another search) starts at the top.
     LaunchedEffect(ui.mode, ui.query) { grid.scrollToItem(0) }
+    val installed = remember(pluginId) { Extensions.installed.value.firstOrNull { it.id == pluginId } }
+    val site = installed?.site?.ifBlank { null }
+    // A check passed in the app's web view: the list it stopped loads again.
+    val passes by SiteChecks.passes.collectAsState()
+    LaunchedEffect(passes) { if (passes > 0 && vm.ui.value.checkUrl != null) vm.show(vm.ui.value.mode) }
+    // A check that stopped the list, opened where the reader can pass it.
+    val openCheck: (() -> Unit)? = ui.checkUrl?.takeIf { hasInAppBrowser }?.let { url -> { WebPages.openCheck(url) } }
 
     Column(Modifier.fillMaxSize()) {
         TopAppBar(
-            title = { Text(ui.name.ifBlank { "Source" }, maxLines = 1, overflow = TextOverflow.Ellipsis) },
+            title = {
+                Text(ui.name.ifBlank { installed?.name ?: "Source" }, maxLines = 1, overflow = TextOverflow.Ellipsis)
+            },
             navigationIcon = { IconButton(onClick = onBack) { Icon(Icons.AutoMirrored.Filled.ArrowBack, "Back") } },
+            actions = {
+                site?.let { url ->
+                    IconButton(onClick = { WebPages.open(url) }) { Icon(Icons.Filled.OpenInBrowser, "Open website") }
+                }
+            },
         )
         OutlinedTextField(
             value = query, onValueChange = { query = it }, singleLine = true,
@@ -472,7 +492,7 @@ fun SourceScreen(
         }
         when {
             ui.items.isEmpty() && ui.loading -> Centered { CircularProgressIndicator() }
-            ui.items.isEmpty() && ui.error != null -> Centered { ErrorText(ui.error!!) { vm.show(ui.mode) } }
+            ui.items.isEmpty() && ui.error != null -> Centered { ErrorText(ui.error!!, openCheck) { vm.show(ui.mode) } }
             ui.items.isEmpty() && ui.endReached -> Centered { Text("Nothing found.") }
             else -> LazyVerticalGrid(
                 state = grid,
@@ -501,7 +521,7 @@ fun SourceScreen(
                     item(span = { androidx.compose.foundation.lazy.grid.GridItemSpan(maxLineSpan) }) {
                         Box(Modifier.fillMaxWidth().padding(16.dp), contentAlignment = Alignment.Center) {
                             if (ui.loading) CircularProgressIndicator(Modifier.size(28.dp))
-                            else ErrorText(ui.error!!) { vm.loadMore() }
+                            else ErrorText(ui.error!!, openCheck) { vm.loadMore() }
                         }
                     }
                 }

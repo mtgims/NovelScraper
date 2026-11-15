@@ -77,7 +77,7 @@ private const val SETTLE_MS = 2_500L
  * to connect, so a name that answers differently the second time (DNS
  * rebinding) is the one gap left; it can't say what address it reached.
  */
-private class PublicOnly(private val on: Boolean) {
+internal class PublicOnly(private val on: Boolean) {
     @Volatile var blocked = false
         private set
 
@@ -93,7 +93,7 @@ private class PublicOnly(private val on: Boolean) {
 
 /** Give what the WebView collected to the extensions' cookie jar. The header form
  *  is name/value pairs only, so the domain is the one we asked for. */
-private fun keepCookies(url: String) {
+internal fun keepCookies(url: String) {
     val http = url.toHttpUrlOrNull() ?: return
     val header = CookieManager.getInstance().getCookie(url).orEmpty()
     val cookies = header.split(';').mapNotNull { pair ->

@@ -26,9 +26,35 @@ object SiteChecks {
 
     val possible: Boolean get() = canPassSiteChecks
 
-    /** A source answered with a browser check. */
+    private val _inApp = MutableStateFlow<String?>(null)
+    /** The check the reader has open in the app's own web view, if any. */
+    val inApp: StateFlow<String?> = _inApp.asStateFlow()
+
+    /** A source answered with a browser check. Nothing is asked while a check
+     *  is already being worked through: a second prompt over it would only be
+     *  in the way of the one on screen. */
     fun needed(url: String) {
-        if (_status.value == null) _pending.value = url
+        if (_status.value == null && _inApp.value == null) _pending.value = url
+    }
+
+    /** The reader opened the check at [url] in the app's web view. */
+    fun beginInApp(url: String) {
+        _inApp.value = url
+        _pending.value = null
+    }
+
+    private val _passes = MutableStateFlow(0)
+    /** Counts checks seen passing in the app's web view, for screens to try again. */
+    val passes: StateFlow<Int> = _passes.asStateFlow()
+
+    /** The web view saw the site let the app in. */
+    fun passedInApp() { _passes.value++ }
+
+    /** The web view with the check closed, passed or not. Whatever asked meanwhile
+     *  was asking for the same check, so nothing is left waiting. */
+    fun endInApp() {
+        _inApp.value = null
+        _pending.value = null
     }
 
     // Sites that refuse this app's plain requests, so their pages are loaded in

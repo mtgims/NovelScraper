@@ -1,5 +1,8 @@
 package com.novelscraper.app.ui
 
+import com.novelscraper.app.platform.InAppBrowser
+import com.novelscraper.app.platform.WebPages
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.animation.AnimatedContentTransitionScope
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
@@ -157,6 +160,19 @@ private fun MainApp() {
             }
             composable("extensions") { ExtensionsScreen(onBack = { nav.popBackStack() }) }
             composable(
+                "web?url={url}&check={check}",
+                arguments = listOf(
+                    navArgument("url") { type = NavType.StringType },
+                    navArgument("check") { type = NavType.BoolType; defaultValue = false },
+                ),
+            ) { e ->
+                InAppBrowser(
+                    url = e.arguments!!.read { getString("url") },
+                    check = e.arguments!!.read { getBoolean("check") },
+                    onClose = { nav.popBackStack() },
+                )
+            }
+            composable(
                 "source/{plugin}?q={q}",
                 arguments = listOf(navArgument("q") { type = NavType.StringType; nullable = true; defaultValue = null }),
             ) { e ->
@@ -201,6 +217,12 @@ private fun MainApp() {
 
                 // A source asking for a browser check can come from any screen.
                 SiteCheckPrompt()
+                // So can a site's page asked for: a source's, a novel's, a check's.
+                LaunchedEffect(Unit) {
+                    WebPages.requests.collect { r ->
+                        nav.navigate("web?url=${encodeRouteArg(r.url)}&check=${r.check}")
+                    }
+                }
 
                 if (!wide && isTopLevelRoute(route)) {
                     PillNavBar(

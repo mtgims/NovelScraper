@@ -1,5 +1,7 @@
 package com.novelscraper.app.ui.components
 
+import com.novelscraper.app.platform.WebPages
+import com.novelscraper.app.platform.hasInAppBrowser
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
@@ -30,7 +32,10 @@ fun SiteCheckPrompt() {
         title = { Text("$site asks for a browser check") },
         text = {
             Text(
-                status ?: if (SiteChecks.possible) {
+                status ?: if (hasInAppBrowser) {
+                    "The site wants to see a browser before it hands over chapters. Open it here and " +
+                        "pass its check (a box to tick, or a moment's wait), and the app reads the site from then on."
+                } else if (SiteChecks.possible) {
                     "The site wants to see a browser before it hands over chapters, and no " +
                         "amount of cookies changes that. The app can open one, and from then on " +
                         "it loads this site's pages through it. " + browserCheckNote.orEmpty()
@@ -41,7 +46,9 @@ fun SiteCheckPrompt() {
             )
         },
         confirmButton = {
-            if (SiteChecks.possible) {
+            if (hasInAppBrowser) {
+                TextButton(onClick = { WebPages.openCheck(url) }) { Text("Open the check") }
+            } else if (SiteChecks.possible) {
                 TextButton(
                     enabled = status == null,
                     onClick = {

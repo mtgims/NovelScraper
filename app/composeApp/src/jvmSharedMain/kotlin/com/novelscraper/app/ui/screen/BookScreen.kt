@@ -1,5 +1,6 @@
 package com.novelscraper.app.ui.screen
 
+import com.novelscraper.app.platform.WebPages
 import androidx.compose.material.icons.automirrored.outlined.MenuBook
 import androidx.compose.material.icons.automirrored.outlined.PlaylistAddCheck
 import androidx.compose.material.icons.outlined.AudioFile
@@ -90,7 +91,6 @@ import com.novelscraper.app.library.LibBook
 import com.novelscraper.app.library.LibChapter
 import com.novelscraper.app.library.LibCollection
 import com.novelscraper.app.library.LibProgress
-import com.novelscraper.app.platform.openInBrowser
 import com.novelscraper.app.tts.AudiobookExport
 import com.novelscraper.app.ui.AudioRange
 import com.novelscraper.app.ui.DownloadChoice
@@ -170,7 +170,7 @@ fun BookScreen(
                     val b = book ?: return@TopAppBar
                     if (refreshing) CircularProgressIndicator(Modifier.size(22.dp))
                     b.webUrl?.let { url ->
-                        IconButton(onClick = { openInBrowser(url) }) {
+                        IconButton(onClick = { WebPages.open(url) }) {
                             Icon(Icons.Filled.OpenInBrowser, contentDescription = "Open website")
                         }
                     }

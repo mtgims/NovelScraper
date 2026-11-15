@@ -1,5 +1,6 @@
 package com.novelscraper.app.ui.browse
 
+import com.novelscraper.app.platform.hasInAppBrowser
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.novelscraper.app.extensions.Extensions
@@ -27,9 +28,11 @@ private const val OFFLINE = "Couldn't reach the site. Check your connection; dow
 fun describe(e: Throwable): String = when (e) {
     is SiteBlockedException ->
         "This site turned this connection away. Sites often block VPNs and some networks: try from another one."
-    is SiteChallengeException ->
-        if (SiteChecks.possible) "This site asks for a browser check first: open it from the box that pops up, then try again."
-        else "This site asks for a browser check first, which this device can't do."
+    is SiteChallengeException -> when {
+        hasInAppBrowser -> "This site asks for a browser check first: open it here, pass it, then try again."
+        SiteChecks.possible -> "This site asks for a browser check first: open it from the box that pops up, then try again."
+        else -> "This site asks for a browser check first, which this device can't do."
+    }
     is PluginNotInstalledException -> "${e.message} Install it under Browse, Extensions."
     // The plugin host's fetch reports a failed connection this way.
     is PluginException -> if (e.message?.contains("Network request failed") == true) OFFLINE
@@ -153,6 +156,8 @@ data class SourceUi(
     val endReached: Boolean = false,
     val error: String? = null,
     val imageHeaders: Map<String, String> = emptyMap(),
+    /** The page whose browser check stopped the list, for the reader to pass. */
+    val checkUrl: String? = null,
 )
 
 class SourceViewModel(private val pluginId: String, initialQuery: String? = null) : ViewModel() {
@@ -170,7 +175,7 @@ class SourceViewModel(private val pluginId: String, initialQuery: String? = null
             try {
                 onReady(Library.store.openSource(pluginId, item.path, item.name, item.cover))
             } catch (e: Exception) {
-                _ui.update { it.copy(error = describe(e)) }
+                _ui.update { it.copy(error = describe(e), checkUrl = (e as? SiteChallengeException)?.url) }
             }
         }
     }
@@ -185,7 +190,7 @@ class SourceViewModel(private val pluginId: String, initialQuery: String? = null
         _ui.update {
             it.copy(
                 mode = mode, query = query, items = emptyList(), page = 0,
-                endReached = false, error = null, loading = false,
+                endReached = false, error = null, checkUrl = null, loading = false,
             )
         }
         loadMore()
@@ -196,7 +201,7 @@ class SourceViewModel(private val pluginId: String, initialQuery: String? = null
         val s = _ui.value
         if (s.loading || s.endReached) return
         if (s.mode == SourceMode.Search && s.query.isBlank()) return
-        _ui.update { it.copy(loading = true, error = null) }
+        _ui.update { it.copy(loading = true, error = null, checkUrl = null) }
         job = viewModelScope.launch {
             try {
                 val rt = Extensions.runtime(pluginId)
@@ -218,7 +223,7 @@ class SourceViewModel(private val pluginId: String, initialQuery: String? = null
             } catch (e: kotlinx.coroutines.CancellationException) {
                 throw e
             } catch (e: Exception) {
-                _ui.update { it.copy(loading = false, error = describe(e)) }
+                _ui.update { it.copy(loading = false, error = describe(e), checkUrl = (e as? SiteChallengeException)?.url) }
             }
         }
     }
