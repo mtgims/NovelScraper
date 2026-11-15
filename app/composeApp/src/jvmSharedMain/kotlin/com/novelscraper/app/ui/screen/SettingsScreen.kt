@@ -279,30 +279,29 @@ private fun LanStatus() {
         while (true) { now = System.currentTimeMillis(); kotlinx.coroutines.delay(15_000) }
     }
     val met = state?.peers.orEmpty().filter { it.lastSync > 0 }
+    // Heard lately, but turning this device away, and not met another way since.
+    val turnedAway = state?.peers.orEmpty().filter {
+        it.unreachable && now - it.lastSeen < 3 * 60_000 && now - it.lastSync > 5 * 60_000
+    }
     Column(Modifier.padding(top = 12.dp)) {
+        turnedAway.forEach { p ->
+            Text(
+                "Found ${p.name} (${p.address.substringBeforeLast(':')}), but it won't let this device connect, " +
+                    "most likely because of its firewall. If it's a Linux computer, Settings, Sync on it shows " +
+                    "how to let devices in.",
+                style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.error,
+                modifier = Modifier.padding(bottom = 6.dp),
+            )
+        }
         when {
             sync.problem != null -> Text("Not synced. " + sync.problem, style = MaterialTheme.typography.bodyMedium,
                 color = MaterialTheme.colorScheme.error)
             met.isEmpty() -> {
-                Text(
+                if (turnedAway.isEmpty()) Text(
                     "Looking for your other devices on this Wi-Fi. Open NovelScraper on them to sync.",
                     style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
-                val hint by produceState<String?>(null) {
-                    value = withContext(Dispatchers.IO) { firewallHint(LanSync.DISCOVERY_PORT to LanSync.SERVER_PORT) }
-                }
-                hint?.let { cmd ->
-                    Text(
-                        "This computer's firewall keeps the other devices out. To let them in from this " +
-                            "network only, run in a terminal:",
-                        style = MaterialTheme.typography.bodySmall,
-                        modifier = Modifier.padding(top = 8.dp),
-                    )
-                    SelectionContainer {
-                        Text(cmd, style = MaterialTheme.typography.bodySmall.copy(fontFamily = FontFamily.Monospace),
-                            modifier = Modifier.padding(top = 4.dp))
-                    }
-                }
+                FirewallHint()
             }
             else -> met.forEach { p ->
                 Text("Synced with ${p.name} ${ago(now, p.lastSync)}.", style = MaterialTheme.typography.bodyMedium,
@@ -312,6 +311,26 @@ private fun LanStatus() {
         state?.addresses?.takeIf { it.isNotEmpty() }?.let { addresses ->
             Text("This device: ${addresses.joinToString(", ")}", style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.padding(top = 6.dp))
+        }
+    }
+}
+
+/** On a computer whose firewall keeps the other devices out: how to let them in. */
+@Composable
+private fun FirewallHint() {
+    val hint by produceState<String?>(null) {
+        value = withContext(Dispatchers.IO) { firewallHint(LanSync.DISCOVERY_PORT to LanSync.SERVER_PORT) }
+    }
+    hint?.let { cmd ->
+        Text(
+            "This computer's firewall keeps the other devices out. To let them in from this " +
+                "network only, run in a terminal:",
+            style = MaterialTheme.typography.bodySmall,
+            modifier = Modifier.padding(top = 8.dp),
+        )
+        SelectionContainer {
+            Text(cmd, style = MaterialTheme.typography.bodySmall.copy(fontFamily = FontFamily.Monospace),
+                modifier = Modifier.padding(top = 4.dp))
         }
     }
 }

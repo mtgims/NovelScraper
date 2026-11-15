@@ -154,8 +154,15 @@ class LanSync internal constructor(
     private val sweepTargets: (() -> List<InetSocketAddress>)? = null,
     private val now: () -> Long = System::currentTimeMillis,
 ) {
-    /** A device met: [address] as host:port, [lastSync] when they last swapped files (0: not yet). */
-    data class Peer(val device: String, val name: String, val address: String, val lastSeen: Long, val lastSync: Long)
+    /**
+     * A device met: [address] as host:port, [lastSync] when they last swapped
+     * files (0: not yet). [unreachable]: heard, but the last call to it was
+     * turned away or went unanswered, as its firewall does to callers.
+     */
+    data class Peer(
+        val device: String, val name: String, val address: String, val lastSeen: Long, val lastSync: Long,
+        val unreachable: Boolean = false,
+    )
 
     /** [addresses]: this device's own, as host:port, for typing into another. */
     data class State(val running: Boolean = false, val addresses: List<String> = emptyList(), val peers: List<Peer> = emptyList())
@@ -314,7 +321,10 @@ class LanSync internal constructor(
             }
             val address = "${packet.address.hostAddress}:$port"
             val known = peers[other]
-            peers[other] = Peer(other, msg.str("name") ?: "Another device", address, now(), known?.lastSync ?: 0)
+            peers[other] = Peer(
+                other, msg.str("name") ?: "Another device", address, now(), known?.lastSync ?: 0,
+                unreachable = known?.unreachable == true && known.address == address,
+            )
             publish()
             // Newly met, or not swapped with for a while: do it now, unless a
             // meeting with it is already under way. A moment's random wait
@@ -342,6 +352,9 @@ class LanSync internal constructor(
         meeting.lock()
         try {
             return exchangeLocked(host, port)
+        } catch (e: IOException) {
+            unreachable("$host:$port")
+            throw e
         } finally {
             meeting.unlock()
         }
@@ -508,6 +521,11 @@ class LanSync internal constructor(
             other, otherName ?: known?.name ?: "Another device",
             address ?: known?.address ?: "", now(), now(),
         )
+        publish()
+    }
+
+    private fun unreachable(address: String) {
+        for ((id, p) in peers) if (p.address == address && !p.unreachable) peers[id] = p.copy(unreachable = true)
         publish()
     }
 

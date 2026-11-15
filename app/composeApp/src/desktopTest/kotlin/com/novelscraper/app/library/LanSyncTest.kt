@@ -271,6 +271,30 @@ class LanSyncTest {
         assertEquals(1, libraryOf(pc).size, "and took the phone's library")
     }
 
+    /** A device heard but turning this one away is shown as such, not as nobody found. */
+    @Test
+    fun aDeviceThatTurnsThisOneAwayIsMarkedUnreachable() = runBlocking<Unit> {
+        val phonePort = freeUdpPort()
+        val phone = Device(code, discoveryPort = phonePort)
+        // A computer that announces itself and hangs up on every caller.
+        val hangsUp = java.net.ServerSocket(0)
+        Thread { while (!hangsUp.isClosed) runCatching { hangsUp.accept().close() } }.apply { isDaemon = true }.start()
+        val keys = PairKeys(code)
+        val msg = """{"app":"novelscraper","v":1,"tag":"${keys.tag(System.currentTimeMillis() / 600_000)}",""" +
+            """"device":"pc","port":${hangsUp.localPort},"name":"PC"}"""
+        DatagramSocket().use { it.send(java.net.DatagramPacket(msg.toByteArray(), msg.length, InetAddress.getLoopbackAddress(), phonePort)) }
+        fun seen() = phone.lan.state.value.peers.firstOrNull { it.device == "pc" }
+        val deadline = System.currentTimeMillis() + 10_000
+        while (System.currentTimeMillis() < deadline && seen()?.unreachable != true) Thread.sleep(50)
+        hangsUp.close()
+        assertTrue(seen()?.unreachable == true, "the phone knows the PC turns it away")
+        assertEquals(0, seen()!!.lastSync)
+        // Once a meeting gets through, it is reachable again.
+        val pc = Device(code)
+        assertTrue(phone.lan.exchange("127.0.0.1", pc.lan.port))
+        assertFalse(phone.lan.state.value.peers.single { it.device == pc.lan.device }.unreachable)
+    }
+
     @Test
     fun aSweepAsksEveryOtherAddressOfASmallNetworkOnly() {
         val hosts = LanSync.sweepHosts(byteArrayOf(192.toByte(), 168.toByte(), 1, 161.toByte()), 24)
