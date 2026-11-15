@@ -237,10 +237,10 @@ object SystemBrowser {
                     val now = System.currentTimeMillis()
                     // Waiting on a check is using the browser, so say so. lastUsed
                     // was set once before this loop, and the idle watcher closes an
-                    // unused browser after IDLE_MS, which is a minute: a check the
-                    // reader took longer than that to answer had the window shut
-                    // from under them, part way through, despite the interactive
-                    // budget being five.
+                    // unused browser after IDLE_MS (a minute when this was written):
+                    // a check the reader took longer than that to answer had the
+                    // window shut from under them, part way through, despite the
+                    // interactive budget being five.
                     lastUsed = now
                     val kind = browserCheckKind(page)
                     // A check that wants a tick in a box is given one, the way the
@@ -1292,12 +1292,14 @@ object SystemBrowser {
     /**
      * How long a browser stands unused before it is closed.
      *
-     * A minute, not the three it used to be. A reader who has finished browsing
-     * and settled into a chapter shouldn't have a browser standing behind the
-     * app for the rest of the evening, and starting one again costs a couple of
-     * seconds against a page that was going to take that anyway.
+     * Five minutes. It was one, so that a reader settled into a chapter had no
+     * browser standing behind the app for the evening, but a source read
+     * through the browser asks it for every chapter, and a chapter takes longer
+     * than a minute to read: the browser was started again, two to four
+     * seconds, for nearly every one. Five covers a chapter and a look around
+     * Browse, and a reader who has stopped still gets the memory back soon.
      */
-    private const val IDLE_MS = 60_000L
+    private const val IDLE_MS = 5 * 60_000L
 
     /** The same, for a browser the reader has just had on their screen. */
     private const val SEEN_IDLE_MS = 10_000L
