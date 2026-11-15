@@ -6,8 +6,10 @@ import com.novelscraper.app.data.BookStat
 import com.novelscraper.app.data.StatsRead
 import com.novelscraper.app.library.Library
 import com.novelscraper.app.library.LibBook
+import com.novelscraper.app.library.ProgressBackup
 import com.novelscraper.app.library.ReadingStats
 import com.novelscraper.app.library.WordSample
+import com.novelscraper.app.platform.PickedFile
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
@@ -79,6 +81,37 @@ class StatsViewModel : ViewModel() {
         }
     }
 
+    /** What importing a backup did, for the page to say. */
+    sealed interface Imported {
+        data class Done(val restored: Int, val waiting: Int) : Imported
+        data class Failed(val message: String) : Imported
+    }
+
+    /**
+     * Put a reading-progress backup's chapters back ([com.novelscraper.app.library.StatsRestore]):
+     * this page's own export, or the sync server's from before it closed.
+     */
+    suspend fun importBackup(file: PickedFile): Imported {
+        val result = withContext(Dispatchers.IO) {
+            try {
+                val bytes = file.open()?.use { it.readAtMost(MAX_BACKUP + 1) }
+                    ?: return@withContext Imported.Failed("Couldn't open the file.")
+                if (bytes.size > MAX_BACKUP) return@withContext Imported.Failed("That file is too big to be a progress backup.")
+                val novels = ProgressBackup.parse(bytes.toString(Charsets.UTF_8))
+                val o = Library.restore.import(novels)
+                Imported.Done(o.restored, o.waiting)
+            } catch (e: ProgressBackup.Unreadable) {
+                Imported.Failed(e.message ?: "This file isn't a reading-progress export.")
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                Imported.Failed("Couldn't restore the progress: ${e.message ?: e::class.simpleName}")
+            }
+        }
+        if (result is Imported.Done && result.restored > 0) load()
+        return result
+    }
+
     private fun exportOf(r: ReadingStats, sample: WordSample): StatsRead {
         val words = r.wordsRead(sample).coerceAtMost(Int.MAX_VALUE.toLong()).toInt()
         val hours = r.minutesRead(sample) / 60f
@@ -119,4 +152,21 @@ class StatsViewModel : ViewModel() {
 
     private fun toJson(s: StatsRead): String =
         Json { prettyPrint = true }.encodeToString(StatsRead.serializer(), s)
+
+    private companion object {
+        /** A backup of thousands of novels is well under a megabyte. */
+        const val MAX_BACKUP = 8 * 1024 * 1024
+
+        /** Up to [limit] bytes (InputStream.readNBytes is Android 13 and later). */
+        fun java.io.InputStream.readAtMost(limit: Int): ByteArray {
+            val out = java.io.ByteArrayOutputStream()
+            val buf = ByteArray(64 * 1024)
+            while (out.size() < limit) {
+                val n = read(buf, 0, minOf(buf.size, limit - out.size()))
+                if (n < 0) break
+                out.write(buf, 0, n)
+            }
+            return out.toByteArray()
+        }
+    }
 }

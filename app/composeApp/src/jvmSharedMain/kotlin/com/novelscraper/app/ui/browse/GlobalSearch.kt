@@ -65,6 +65,7 @@ import com.novelscraper.app.extensions.InstalledPlugin
 import com.novelscraper.app.extensions.NovelItem
 import com.novelscraper.app.extensions.SiteChallengeException
 import com.novelscraper.app.extensions.SiteChecks
+import com.novelscraper.app.library.BackupNovel
 import com.novelscraper.app.library.Library
 import com.novelscraper.app.platform.PlatformBackHandler
 import com.novelscraper.app.platform.isDesktop
@@ -187,6 +188,28 @@ class GlobalSearchViewModel(initialQuery: String, private val exclude: String?) 
                 onReady(Library.store.openSource(pluginId, item.path, item.name, item.cover))
             } catch (e: Exception) {
                 showToast(describe(e), long = true)
+            }
+        }
+    }
+
+    /** A picked result is being added with a backup's progress; other picks are ignored meanwhile. */
+    private val restoring = java.util.concurrent.atomic.AtomicBoolean(false)
+
+    /** A result picked as [novel] from a backup: it joins the library with the
+     *  backup's progress (its chapter list fetched first if need be). */
+    fun openRestoring(pluginId: String, item: NovelItem, novel: BackupNovel, onReady: (Int) -> Unit) {
+        if (!restoring.compareAndSet(false, true)) return
+        viewModelScope.launch {
+            try {
+                val id = Library.store.openSource(pluginId, item.path, item.name, item.cover)
+                if (Library.restore.restoreFound(id, novel)) showToast("Reading progress restored for ${novel.title}")
+                onReady(id)
+            } catch (e: kotlinx.coroutines.CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                showToast(describe(e), long = true)
+            } finally {
+                restoring.set(false)
             }
         }
     }

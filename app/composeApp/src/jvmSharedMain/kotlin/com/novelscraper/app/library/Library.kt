@@ -7,6 +7,8 @@ import com.novelscraper.app.extensions.SiteChallengeException
 import com.novelscraper.app.extensions.Extensions
 import com.novelscraper.app.net.SitePacing
 import com.novelscraper.app.platform.Log
+import com.novelscraper.app.platform.settingsStore
+import com.novelscraper.app.platform.showToast
 import com.novelscraper.app.sync.FolderAuthException
 import com.novelscraper.app.sync.SyncNewerFormatException
 import com.novelscraper.app.sync.SyncNotEncryptedException
@@ -14,6 +16,7 @@ import com.novelscraper.app.sync.SyncPassphraseNeededException
 import com.novelscraper.app.sync.SyncSettings
 import com.novelscraper.app.sync.SyncWrongPassphraseException
 import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.SupervisorJob
@@ -22,6 +25,10 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.distinctUntilChanged
+import kotlinx.coroutines.flow.emptyFlow
+import kotlinx.coroutines.flow.flatMapLatest
+import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withTimeoutOrNull
 
@@ -31,6 +38,9 @@ object Library {
         private set
 
     val ready: Boolean get() = ::store.isInitialized
+
+    /** Reading progress put back from a backup, and the novels it still waits for. */
+    val restore: StatsRestore by lazy { StatsRestore(store, settingsStore("stats-restore")) }
 
     /** Open the database; call once at startup. */
     fun init(store: LibraryStore = LibraryStore(
@@ -51,6 +61,23 @@ object Library {
         store.scope.launch { runCatching { store.fillMissingSites() }.onFailure { Log.w("Library", "source names: ${it.message}") } }
         store.prune()
         ChapterDownloads.start()
+        restoreWhenAdded(store)
+    }
+
+    /** While novels from a backup wait, each one added to the library under the same title gets its progress. */
+    @OptIn(ExperimentalCoroutinesApi::class)
+    private fun restoreWhenAdded(store: LibraryStore) {
+        store.scope.launch {
+            restore.waiting.map { it.isNotEmpty() }.distinctUntilChanged()
+                .flatMapLatest { waiting -> if (waiting) store.libraryFlow() else emptyFlow() }
+                .collect { books ->
+                    runCatching {
+                        val done = restore.matchWaiting(books)
+                        if (done.size == 1) showToast("Reading progress restored for ${done[0].title}")
+                        else if (done.size > 1) showToast("Reading progress restored for ${done.size} novels")
+                    }.onFailure { Log.w("Library", "restore: ${it.message}") }
+                }
+        }
     }
 }
 

@@ -190,6 +190,22 @@ actual fun rememberEpubPicker(onPicked: (List<PickedFile>) -> Unit): () -> Unit 
 }
 
 @Composable
+actual fun rememberFilePicker(mimeTypes: List<String>, extensions: List<String>, onPicked: (PickedFile) -> Unit): () -> Unit {
+    val window = LocalAppWindow.current
+    val current by rememberUpdatedState(onPicked)
+    return {
+        val dialog = FileDialog(window, "Choose a file", FileDialog.LOAD).apply {
+            directory = DesktopDirs.downloads.path
+            setFilenameFilter { _, name -> extensions.any { name.endsWith(".$it", ignoreCase = true) } }
+            file = extensions.joinToString(";") { "*.$it" }  // Windows' dialog filter; GTK uses the one above
+        }
+        dialog.isVisible = true
+        val f = dialog.files.orEmpty().firstOrNull { it.isFile }
+        if (f != null) current(PickedFile(f.name) { f.inputStream() })
+    }
+}
+
+@Composable
 actual fun rememberFileSaver(mimeType: String, onTarget: (SaveTarget?) -> Unit): (String) -> Unit {
     val window = LocalAppWindow.current
     val current by rememberUpdatedState(onTarget)

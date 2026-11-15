@@ -199,6 +199,19 @@ actual fun rememberEpubPicker(onPicked: (List<PickedFile>) -> Unit): () -> Unit 
     return { launcher.launch("application/epub+zip") }
 }
 
+@Composable
+actual fun rememberFilePicker(mimeTypes: List<String>, extensions: List<String>, onPicked: (PickedFile) -> Unit): () -> Unit {
+    val ctx = LocalContext.current
+    val current by rememberUpdatedState(onPicked)
+    val launcher = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
+        if (uri != null) {
+            val cr = ctx.contentResolver
+            current(PickedFile(displayName(ctx, uri) ?: "file") { cr.openInputStream(uri) })
+        }
+    }
+    return { launcher.launch(mimeTypes.toTypedArray()) }
+}
+
 private fun displayName(ctx: Context, uri: Uri): String? =
     ctx.contentResolver.query(uri, arrayOf(OpenableColumns.DISPLAY_NAME), null, null, null)?.use { c ->
         if (c.moveToFirst()) c.getString(0) else null

@@ -1,5 +1,6 @@
 package com.novelscraper.app.ui
 
+import com.novelscraper.app.library.Library
 import com.novelscraper.app.platform.InAppBrowser
 import com.novelscraper.app.platform.WebPages
 import androidx.compose.runtime.LaunchedEffect
@@ -23,6 +24,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.IntOffset
@@ -40,6 +42,7 @@ import com.novelscraper.app.ui.browse.ExtensionsScreen
 import com.novelscraper.app.ui.browse.GlobalSearchScreen
 import com.novelscraper.app.ui.browse.MigrateScreen
 import com.novelscraper.app.ui.screen.ChangelogScreen
+import com.novelscraper.app.ui.screen.RestoreListScreen
 import com.novelscraper.app.ui.screen.WhatsNewPrompt
 import com.novelscraper.app.ui.browse.MigrateFromScreen
 import com.novelscraper.app.ui.browse.MigrateSourcesScreen
@@ -159,6 +162,47 @@ private fun MainApp() {
                     onOpenSource = { plugin, q -> nav.navigate(sourceRoute(plugin, q)) },
                 )
             }
+            composable("restore") {
+                RestoreListScreen(
+                    onBack = { nav.popBackStack() },
+                    onFind = { n -> nav.navigate("restore-find/${encodeRouteArg(n.title)}") },
+                )
+            }
+            // A novel from a backup, looked for in every source: the result picked
+            // joins the library with the backup's progress.
+            composable("restore-find/{title}") { e ->
+                val title = e.arguments!!.read { getString("title") }
+                // Taken once: restoring takes it off the list, and the page leaves then.
+                val waiting by Library.restore.waiting.collectAsState()
+                val novel = remember(title) { waiting.firstOrNull { it.title == title } }
+                GlobalSearchScreen(
+                    initialQuery = title,
+                    title = "Find a novel",
+                    vmKey = "restore-find",
+                    onBack = { nav.popBackStack() },
+                    onPick = { vm, plugin, item ->
+                        if (novel == null) vm.open(plugin, item) { id -> nav.navigate("book/$id") }
+                        else vm.openRestoring(plugin, item, novel) { id ->
+                            nav.popBackStack()
+                            nav.navigate("book/$id")
+                        }
+                    },
+                    onOpenSource = { plugin, q -> nav.navigate(sourceRoute(plugin, q)) },
+                    header = novel?.let { n ->
+                        {
+                            val restoring by Library.restore.adding.collectAsState()
+                            Text(
+                                if (restoring) "Adding “${n.title}” to the library with its progress…"
+                                else "Pick “${n.title}” in the results. It joins the library with " +
+                                    (if (n.read == 1) "its first chapter" else "its first ${n.read} chapters") +
+                                    " marked read" + (if (n.site.isNotBlank()) ". It was on ${n.site}." else "."),
+                                style = MaterialTheme.typography.bodyMedium,
+                                modifier = Modifier.padding(horizontal = 20.dp, vertical = 8.dp),
+                            )
+                        }
+                    },
+                )
+            }
             composable(
                 "migrate/{id}",
                 arguments = listOf(navArgument("id") { type = NavType.IntType }),
@@ -202,7 +246,9 @@ private fun MainApp() {
                     onOpenNovel = { id -> nav.navigate("book/$id") },
                 )
             }
-            composable("stats") { StatsScreen(onOpenNovel = { id -> nav.navigate("book/$id") }) }
+            composable("stats") {
+                StatsScreen(onOpenNovel = { id -> nav.navigate("book/$id") }, onRestoreList = { nav.navigate("restore") })
+            }
             composable("changelog") { ChangelogScreen(onBack = { nav.popBackStack() }) }
             composable("settings") {
                 SettingsScreen(onChangelog = { nav.navigate("changelog") })

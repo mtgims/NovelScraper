@@ -35,6 +35,7 @@ import androidx.compose.material.icons.filled.BarChart
 import androidx.compose.material.icons.filled.Download
 import androidx.compose.material.icons.filled.Extension
 import androidx.compose.material.icons.filled.FileDownload
+import androidx.compose.material.icons.filled.FileUpload
 import androidx.compose.material.icons.filled.LocalLibrary
 import androidx.compose.material.icons.filled.Schedule
 import androidx.compose.material.icons.filled.Star
@@ -69,10 +70,12 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.viewmodel.compose.viewModel
+import com.novelscraper.app.library.Library
 import com.novelscraper.app.library.NovelProgress
 import com.novelscraper.app.library.ReadingStats
 import com.novelscraper.app.library.WordSample
 import com.novelscraper.app.platform.SaveTarget
+import com.novelscraper.app.platform.rememberFilePicker
 import com.novelscraper.app.platform.rememberFileSaver
 import com.novelscraper.app.platform.showToast
 import com.novelscraper.app.ui.StatsUi
@@ -88,12 +91,18 @@ import java.time.LocalDate
 import java.util.Locale
 
 @Composable
-fun StatsScreen(onOpenNovel: (Int) -> Unit) {
+fun StatsScreen(onOpenNovel: (Int) -> Unit, onRestoreList: () -> Unit) {
     val vm: StatsViewModel = viewModel { StatsViewModel() }
     val ui by vm.ui.collectAsState()
     LaunchedEffect(Unit) { vm.load() }
     val scope = rememberCoroutineScope()
     var chooser by remember { mutableStateOf(false) }
+    var imported by remember { mutableStateOf<StatsViewModel.Imported?>(null) }
+    val waiting by Library.restore.waiting.collectAsState()
+    val pickBackup = rememberFilePicker(
+        mimeTypes = listOf("application/json", "text/csv", "text/comma-separated-values", "text/plain"),
+        extensions = listOf("json", "csv"),
+    ) { file -> scope.launch { imported = vm.importBackup(file) } }
 
     fun save(target: SaveTarget?, format: String) {
         if (target == null) return
@@ -113,6 +122,10 @@ fun StatsScreen(onOpenNovel: (Int) -> Unit) {
 
     Column(Modifier.fillMaxSize()) {
         ScreenTitle("Statistics") {
+            TextButton(onClick = pickBackup) {
+                Icon(Icons.Filled.FileUpload, null, Modifier.size(18.dp))
+                Text("Import", Modifier.padding(start = 6.dp))
+            }
             if (ui is StatsUi.Data && (ui as StatsUi.Data).stats.novels > 0) {
                 TextButton(onClick = { chooser = true }) {
                     Icon(Icons.Filled.FileDownload, null, Modifier.size(18.dp))
@@ -120,14 +133,37 @@ fun StatsScreen(onOpenNovel: (Int) -> Unit) {
                 }
             }
         }
+        if (waiting.isNotEmpty()) WaitingBanner(waiting.size, onRestoreList)
         Box(Modifier.fillMaxSize()) {
             when (val s = ui) {
                 is StatsUi.Loading -> CircularProgressIndicator(Modifier.align(Alignment.Center))
                 is StatsUi.Error -> Text(s.message, Modifier.align(Alignment.Center), color = MaterialTheme.colorScheme.error)
                 is StatsUi.Data ->
-                    if (s.stats.novels == 0) EmptyStats(Modifier.align(Alignment.Center))
+                    if (s.stats.novels == 0) EmptyStats(Modifier.align(Alignment.Center), onImport = pickBackup)
                     else StatsContent(s.stats, s.words, onOpenNovel)
             }
+        }
+    }
+
+    imported?.let { result ->
+        val done = { imported = null }
+        when (result) {
+            is StatsViewModel.Imported.Failed -> AlertDialog(
+                onDismissRequest = done,
+                title = { Text("Couldn't import") },
+                text = { Text(result.message) },
+                confirmButton = { TextButton(onClick = done) { Text("OK") } },
+            )
+            is StatsViewModel.Imported.Done -> AlertDialog(
+                onDismissRequest = done,
+                title = { Text(if (result.restored > 0) "Progress restored" else "Progress imported") },
+                text = { Text(importSummary(result)) },
+                confirmButton = {
+                    if (result.waiting > 0) TextButton(onClick = { done(); onRestoreList() }) { Text("Find them") }
+                    else TextButton(onClick = done) { Text("OK") }
+                },
+                dismissButton = if (result.waiting > 0) ({ TextButton(onClick = done) { Text("Later") } }) else null,
+            )
         }
     }
 
@@ -143,6 +179,45 @@ fun StatsScreen(onOpenNovel: (Int) -> Unit) {
                 TextButton(onClick = { chooser = false; saveJson("novelscraper-progress-$date.json") }) { Text("JSON") }
             },
         )
+    }
+}
+
+private fun importSummary(r: StatsViewModel.Imported.Done): String = buildString {
+    fun novels(n: Int) = if (n == 1) "1 novel" else "$n novels"
+    if (r.restored == 0 && r.waiting == 0) {
+        append("The backup has no chapters marked read, so there was nothing to put back.")
+        return@buildString
+    }
+    if (r.restored > 0) append("Chapters read are marked again for ${novels(r.restored)} in the library.")
+    if (r.waiting > 0) {
+        if (isNotEmpty()) append("\n\n")
+        append(if (r.waiting == 1) "1 novel isn't in the library yet. " else "${r.waiting} novels aren't in the library yet. ")
+        append("They wait on a list: find each one in the sources, and its progress comes back as it's added.")
+    }
+}
+
+/** Novels from a backup still waiting to be found. */
+@Composable
+private fun WaitingBanner(count: Int, onOpen: () -> Unit) {
+    ContentWidth(max = MAX_WIDTH) {
+        Surface(
+            onClick = onOpen,
+            shape = RoundedCornerShape(14.dp),
+            color = MaterialTheme.colorScheme.secondaryContainer,
+            modifier = Modifier.fillMaxWidth().padding(start = 16.dp, end = 16.dp, bottom = 10.dp),
+        ) {
+            Row(Modifier.padding(start = 16.dp, end = 8.dp, top = 6.dp, bottom = 6.dp), verticalAlignment = Alignment.CenterVertically) {
+                Icon(Icons.Filled.FileUpload, null, Modifier.size(20.dp), tint = MaterialTheme.colorScheme.onSecondaryContainer)
+                Text(
+                    if (count == 1) "1 novel from a backup isn't in the library yet"
+                    else "$count novels from a backup aren't in the library yet",
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.onSecondaryContainer,
+                    modifier = Modifier.weight(1f).padding(horizontal = 12.dp),
+                )
+                TextButton(onClick = onOpen) { Text("Find") }
+            }
+        }
     }
 }
 
@@ -536,7 +611,7 @@ private fun NovelRow(p: NovelProgress, onOpenNovel: (Int) -> Unit, modifier: Mod
 }
 
 @Composable
-private fun EmptyStats(modifier: Modifier) {
+private fun EmptyStats(modifier: Modifier, onImport: () -> Unit) {
     Column(modifier.padding(32.dp), horizontalAlignment = Alignment.CenterHorizontally) {
         Box(
             Modifier.size(72.dp).clip(CircleShape).background(MaterialTheme.colorScheme.primaryContainer),
@@ -550,6 +625,10 @@ private fun EmptyStats(modifier: Modifier) {
             style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant,
             textAlign = TextAlign.Center, modifier = Modifier.padding(top = 6.dp).width(320.dp),
         )
+        TextButton(onClick = onImport, modifier = Modifier.padding(top = 12.dp)) {
+            Icon(Icons.Filled.FileUpload, null, Modifier.size(18.dp))
+            Text("Import a progress backup", Modifier.padding(start = 6.dp))
+        }
     }
 }
 

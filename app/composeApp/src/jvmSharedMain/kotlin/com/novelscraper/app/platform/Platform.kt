@@ -153,6 +153,11 @@ class PickedFile(val name: String, val open: () -> InputStream?)
 @Composable
 expect fun rememberEpubPicker(onPicked: (List<PickedFile>) -> Unit): () -> Unit
 
+/** Returns a launcher that lets the user pick one file: of [mimeTypes] on
+ *  Android, ending in one of [extensions] (no dot) on desktop. */
+@Composable
+expect fun rememberFilePicker(mimeTypes: List<String>, extensions: List<String>, onPicked: (PickedFile) -> Unit): () -> Unit
+
 /** Whether this device can scan a QR code with its camera (Android, with a camera). */
 expect val canScanCodes: Boolean
 
