@@ -291,7 +291,7 @@ private fun SourceRow(
 
 /** A source's icon, or its initial where it has none. */
 @Composable
-private fun SourceIcon(name: String, iconUrl: String, size: Dp) {
+internal fun SourceIcon(name: String, iconUrl: String, size: Dp) {
     Box(
         Modifier.size(size).clip(RoundedCornerShape(size / 5)).background(MaterialTheme.colorScheme.surfaceVariant),
         contentAlignment = Alignment.Center,

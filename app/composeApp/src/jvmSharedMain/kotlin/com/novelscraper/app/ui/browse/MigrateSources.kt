@@ -1,6 +1,19 @@
 package com.novelscraper.app.ui.browse
 
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.BorderStroke
+import androidx.compose.foundation.layout.BoxWithConstraints
+import androidx.compose.foundation.layout.fillMaxHeight
+import androidx.compose.foundation.layout.heightIn
+import androidx.compose.foundation.lazy.LazyListScope
+import androidx.compose.foundation.lazy.grid.GridCells
+import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.unit.Dp
+import com.novelscraper.app.ui.components.ContentWidth
+import com.novelscraper.app.ui.components.READABLE_WIDTH
+import com.novelscraper.app.ui.screen.cardColor
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -13,6 +26,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.grid.items as gridItems
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.automirrored.filled.KeyboardArrowRight
@@ -73,7 +87,11 @@ import kotlinx.coroutines.sync.withPermit
 // --- Which source to move novels off ----------------------------------------------------
 
 /** A source with novels in the library: installed or not. */
-private data class SourceCount(val pluginId: String, val name: String, val count: Int, val installed: Boolean)
+private data class SourceCount(val pluginId: String, val name: String, val count: Int, val installed: Boolean, val iconUrl: String = "")
+
+/** From this width the migration pages are laid out for a computer, as Extensions is. */
+private val MIGRATE_WIDE = 840.dp
+private val MIGRATE_MAX_WIDTH = 1100.dp
 
 /**
  * The sources the library's novels come from, with how many each has. Picking
@@ -88,24 +106,41 @@ fun MigrateSourcesScreen(onBack: () -> Unit, onPick: (pluginId: String) -> Unit)
     val sources = remember(books, installed) {
         books.orEmpty().filter { it.pluginId != null }.groupBy { it.pluginId!! }.map { (id, list) ->
             val p = installed.firstOrNull { it.id == id }
-            SourceCount(id, p?.name ?: list.first().site.ifBlank { id }, list.size, p != null)
+            SourceCount(id, p?.name ?: list.first().site.ifBlank { id }, list.size, p != null, p?.iconUrl.orEmpty())
         }.sortedWith(compareBy({ it.name.lowercase() }))
     }
+    val intro = "Pick a source to move its novels to others. Each is looked for by its title; " +
+        "nothing moves before you check the matches."
     Column(Modifier.fillMaxSize()) {
         TopAppBar(
             title = { Text("Migrate") },
             navigationIcon = { IconButton(onClick = onBack) { Icon(Icons.AutoMirrored.Filled.ArrowBack, "Back") } },
         )
+        BoxWithConstraints(Modifier.fillMaxSize()) {
         when {
             books == null -> Box(Modifier.fillMaxSize(), Alignment.Center) { CircularProgressIndicator() }
             sources.isEmpty() -> Box(Modifier.fillMaxSize().padding(24.dp), Alignment.Center) {
                 Text("No novel in the library comes from a source.", color = MaterialTheme.colorScheme.onSurfaceVariant)
             }
+            // A computer: the sources as cards, as Extensions shows them.
+            maxWidth >= MIGRATE_WIDE -> ContentWidth(max = MIGRATE_MAX_WIDTH) {
+                LazyVerticalGrid(
+                    columns = GridCells.Adaptive(minSize = 320.dp),
+                    contentPadding = PaddingValues(start = 16.dp, end = 16.dp, top = 4.dp, bottom = 24.dp),
+                    horizontalArrangement = Arrangement.spacedBy(14.dp),
+                    verticalArrangement = Arrangement.spacedBy(14.dp),
+                ) {
+                    item(key = "intro", span = { androidx.compose.foundation.lazy.grid.GridItemSpan(maxLineSpan) }) {
+                        Text(intro, style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            modifier = Modifier.padding(start = 4.dp, bottom = 4.dp))
+                    }
+                    gridItems(sources, key = { it.pluginId }) { s -> MigrateSourceCard(s) { onPick(s.pluginId) } }
+                }
+            }
             else -> LazyColumn(contentPadding = PaddingValues(bottom = if (isDesktop) 24.dp else 104.dp)) {
                 item(key = "intro") {
                     Text(
-                        "Pick a source to move its novels to others. Each is looked for by its title; " +
-                            "nothing moves before you check the matches.",
+                        intro,
                         style = MaterialTheme.typography.bodyMedium,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                         modifier = Modifier.padding(horizontal = 20.dp, vertical = 8.dp),
@@ -129,6 +164,31 @@ fun MigrateSourcesScreen(onBack: () -> Unit, onPick: (pluginId: String) -> Unit)
                     }
                 }
             }
+        }
+        }
+    }
+}
+
+@Composable
+private fun MigrateSourceCard(s: SourceCount, onClick: () -> Unit) {
+    Surface(
+        onClick = onClick,
+        shape = RoundedCornerShape(16.dp),
+        color = cardColor(),
+        border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline),
+        modifier = Modifier.fillMaxWidth(),
+    ) {
+        Row(Modifier.padding(start = 16.dp, end = 10.dp, top = 14.dp, bottom = 14.dp), verticalAlignment = Alignment.CenterVertically) {
+            SourceIcon(s.name, s.iconUrl, 44.dp)
+            Column(Modifier.weight(1f).padding(start = 14.dp, end = 8.dp)) {
+                Text(s.name, style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.SemiBold,
+                    maxLines = 1, overflow = TextOverflow.Ellipsis)
+                Text(
+                    (if (s.count == 1) "1 novel" else "${s.count} novels") + (if (s.installed) "" else ", source not installed"),
+                    style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
+            Icon(Icons.AutoMirrored.Filled.KeyboardArrowRight, null, tint = MaterialTheme.colorScheme.onSurfaceVariant)
         }
     }
 }
@@ -393,23 +453,31 @@ fun MigrateFromScreen(
             },
         )
         val list = books
-        when {
-            list == null -> Box(Modifier.weight(1f).fillMaxWidth(), Alignment.Center) { CircularProgressIndicator() }
-            phase == MigrateFromViewModel.Phase.Choose -> ChooseStep(
-                list, selected, targets, vm, Modifier.weight(1f),
-            )
-            else -> MatchStep(
-                list.filter { it.id in rows }, rows, unavailable, phase, vm,
-                onPick = { if (phase == MigrateFromViewModel.Phase.Matching) pickFor = it },
-                onOpenSource = { id -> onOpenSource(id, "") },
-                modifier = Modifier.weight(1f),
-            )
+        BoxWithConstraints(Modifier.weight(1f).fillMaxWidth()) {
+            val wide = maxWidth >= MIGRATE_WIDE
+            when {
+                list == null -> Box(Modifier.fillMaxSize(), Alignment.Center) { CircularProgressIndicator() }
+                phase == MigrateFromViewModel.Phase.Choose ->
+                    if (wide) ChooseSideBySide(list, selected, targets, vm)
+                    else ChooseStep(list, selected, targets, vm, Modifier.fillMaxSize())
+                // A computer: the matches at a width that reads as lines, not a stretched list.
+                else -> ContentWidth(max = if (wide) READABLE_WIDTH else Dp.Infinity) {
+                    MatchStep(
+                        list.filter { it.id in rows }, rows, unavailable, phase, vm,
+                        onPick = { if (phase == MigrateFromViewModel.Phase.Matching) pickFor = it },
+                        onOpenSource = { id -> onOpenSource(id, "") },
+                        modifier = Modifier.fillMaxSize(),
+                    )
+                }
+            }
         }
 
         // The one action for the step, at the bottom.
         val searching = rows.values.any { it is MigrationRow.Waiting || it is MigrationRow.Searching }
         val ticked = rows.values.count { it is MigrationRow.Ready && it.ticked }
         Surface(tonalElevation = 3.dp) {
+            // On a computer the note and the button line up with the page above, not the window's edges.
+            ContentWidth(max = MIGRATE_MAX_WIDTH) {
             Row(
                 Modifier.fillMaxWidth().navigationBarsPadding().padding(horizontal = 16.dp, vertical = 10.dp),
                 verticalAlignment = Alignment.CenterVertically,
@@ -437,6 +505,7 @@ fun MigrateFromScreen(
                     MigrateFromViewModel.Phase.Done -> Button(onClick = onBack) { Text("Done") }
                 }
             }
+            }
         }
     }
 
@@ -458,49 +527,93 @@ private fun ChooseStep(
     modifier: Modifier,
 ) {
     LazyColumn(modifier.fillMaxWidth(), contentPadding = PaddingValues(bottom = 16.dp)) {
-        item(key = "novels-head") {
-            Row(Modifier.fillMaxWidth().padding(start = 20.dp, end = 8.dp, top = 8.dp), verticalAlignment = Alignment.CenterVertically) {
-                SectionTitle("Novels to move", Modifier.weight(1f))
-                TextButton(onClick = { vm.selectAll(selected.size < books.size) }) {
-                    Text(if (selected.size < books.size) "All" else "None")
-                }
+        novelItems(books, selected, vm)
+        item(key = "targets-rule") { HorizontalDivider(Modifier.padding(top = 12.dp)) }
+        targetItems(targets, vm)
+    }
+}
+
+/** A computer: the novels and the sources to look on side by side, each scrolling on its own. */
+@Composable
+private fun ChooseSideBySide(
+    books: List<LibBook>,
+    selected: Set<Int>,
+    targets: List<MigrationTarget>,
+    vm: MigrateFromViewModel,
+) {
+    ContentWidth(max = MIGRATE_MAX_WIDTH) {
+        Row(
+            Modifier.fillMaxSize().padding(start = 16.dp, end = 16.dp, top = 4.dp, bottom = 16.dp),
+            horizontalArrangement = Arrangement.spacedBy(16.dp),
+        ) {
+            Pane(Modifier.weight(1f)) {
+                LazyColumn(Modifier.fillMaxSize(), contentPadding = PaddingValues(bottom = 8.dp)) { novelItems(books, selected, vm) }
+            }
+            Pane(Modifier.weight(1f)) {
+                LazyColumn(Modifier.fillMaxSize(), contentPadding = PaddingValues(bottom = 8.dp)) { targetItems(targets, vm) }
             }
         }
-        items(books, key = { "b${it.id}" }) { b ->
-            CheckRow(b.id in selected, { vm.toggleBook(b.id) }) {
-                Text(b.title, style = MaterialTheme.typography.bodyLarge, maxLines = 1, overflow = TextOverflow.Ellipsis)
-                Text(
-                    if (b.chapterCount == 0) "Chapters not loaded yet"
-                    else "${b.chapterCount - b.unreadCount} of ${b.chapterCount} chapters read",
-                    style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant,
-                )
+    }
+}
+
+@Composable
+private fun Pane(modifier: Modifier, content: @Composable () -> Unit) {
+    Surface(
+        shape = RoundedCornerShape(16.dp),
+        color = cardColor(),
+        border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline),
+        modifier = modifier.fillMaxHeight(),
+    ) { content() }
+}
+
+private fun LazyListScope.novelItems(books: List<LibBook>, selected: Set<Int>, vm: MigrateFromViewModel) {
+    item(key = "novels-head") {
+        Row(Modifier.fillMaxWidth().padding(start = 20.dp, end = 8.dp, top = 8.dp), verticalAlignment = Alignment.CenterVertically) {
+            SectionTitle("Novels to move", Modifier.weight(1f))
+            TextButton(onClick = { vm.selectAll(selected.size < books.size) }) {
+                Text(if (selected.size < books.size) "All" else "None")
             }
         }
-        item(key = "targets-head") {
-            HorizontalDivider(Modifier.padding(top = 12.dp))
-            SectionTitle("Look on, in this order", Modifier.padding(start = 20.dp, top = 16.dp))
+    }
+    items(books, key = { "b${it.id}" }) { b ->
+        CheckRow(b.id in selected, { vm.toggleBook(b.id) }) {
+            Text(b.title, style = MaterialTheme.typography.bodyLarge, maxLines = 1, overflow = TextOverflow.Ellipsis)
             Text(
-                "The first source with the same title is taken.",
+                if (b.chapterCount == 0) "Chapters not loaded yet"
+                else "${b.chapterCount - b.unreadCount} of ${b.chapterCount} chapters read",
                 style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant,
-                modifier = Modifier.padding(horizontal = 20.dp, vertical = 4.dp),
             )
         }
-        if (targets.isEmpty()) item(key = "no-targets") {
-            Text("No other sources are installed. Add some under Browse, Extensions.",
-                color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.padding(20.dp))
+    }
+}
+
+private fun LazyListScope.targetItems(targets: List<MigrationTarget>, vm: MigrateFromViewModel) {
+    item(key = "targets-head") {
+        // As tall as the novels' heading with its button, so the two line up side by side.
+        Box(Modifier.padding(start = 20.dp, top = 8.dp).heightIn(min = 48.dp), Alignment.CenterStart) {
+            SectionTitle("Look on, in this order")
         }
-        items(targets, key = { "t${it.pluginId}" }) { t ->
-            val i = targets.indexOf(t)
-            CheckRow(t.on, { vm.toggleTarget(t.pluginId) }, trailing = {
-                IconButton(enabled = i > 0, onClick = { vm.moveTarget(t.pluginId, -1) }) {
-                    Icon(Icons.Filled.KeyboardArrowUp, "Earlier")
-                }
-                IconButton(enabled = i < targets.lastIndex, onClick = { vm.moveTarget(t.pluginId, 1) }) {
-                    Icon(Icons.Filled.KeyboardArrowDown, "Later")
-                }
-            }) {
-                Text(t.name, style = MaterialTheme.typography.bodyLarge, maxLines = 1, overflow = TextOverflow.Ellipsis)
+        Text(
+            "The first source with the same title is taken.",
+            style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant,
+            modifier = Modifier.padding(horizontal = 20.dp, vertical = 4.dp),
+        )
+    }
+    if (targets.isEmpty()) item(key = "no-targets") {
+        Text("No other sources are installed. Add some under Browse, Extensions.",
+            color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.padding(20.dp))
+    }
+    items(targets, key = { "t${it.pluginId}" }) { t ->
+        val i = targets.indexOf(t)
+        CheckRow(t.on, { vm.toggleTarget(t.pluginId) }, trailing = {
+            IconButton(enabled = i > 0, onClick = { vm.moveTarget(t.pluginId, -1) }) {
+                Icon(Icons.Filled.KeyboardArrowUp, "Earlier")
             }
+            IconButton(enabled = i < targets.lastIndex, onClick = { vm.moveTarget(t.pluginId, 1) }) {
+                Icon(Icons.Filled.KeyboardArrowDown, "Later")
+            }
+        }) {
+            Text(t.name, style = MaterialTheme.typography.bodyLarge, maxLines = 1, overflow = TextOverflow.Ellipsis)
         }
     }
 }
