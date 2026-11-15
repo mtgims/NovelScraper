@@ -309,9 +309,25 @@ class Storage {
 class LocalStorage { constructor(id) { this._id = id; } get() { return undefined; } }
 class SessionStorage { constructor(id) { this._id = id; } get() { return undefined; } }
 
+// cheerio parses with parse5 unless told otherwise: exact to the HTML spec, and
+// in this interpreter about 1 ms per kilobyte (1.4 s for a 1.3 MB catalogue
+// page, 0.2 s for a typical one). htmlparser2, which cheerio also ships, reads
+// the same pages 3 to 11 times faster. A plugin that passes options of its
+// own keeps exactly what it asked for.
+// Written back out (.html()), characters stay as they are rather than becoming
+// entities ("—" not "&#x2014;"), as parse5 writes them: plugins that read a
+// page's HTML again in pieces split at every entity and trim each piece, which
+// lost the spaces around dashes. Empty attributes keep their ="" likewise.
+// Line ends become "\n" first, as the HTML spec has a parser read them and
+// parse5 does: a page saved with Windows line ends kept its "\r" otherwise.
+const FAST = { _useHtmlParser2: true, encodeEntities: 'utf8', emptyAttrs: true };
+const fastLoad = (content, options, isDocument) => options === undefined
+  ? load(typeof content === 'string' ? content.replace(/\r\n?/g, '\n') : content, FAST, isDocument)
+  : load(content, options, isDocument);
+
 const packages = {
   'htmlparser2': { Parser },
-  'cheerio': { load },
+  'cheerio': { load: fastLoad },
   'dayjs': dayjs,
   'urlencode': urlencode,
   '@libs/novelStatus': { NovelStatus },
