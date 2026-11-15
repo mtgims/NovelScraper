@@ -39,6 +39,7 @@ class SourceMigrationTest {
         { id, title ->
             asked += "$id:$title"
             if (id == "checked") throw SiteChallengeException(id, "https://checked.example/")
+            if (id == "down") error("timed out")
             results[id]?.get(title).orEmpty().map { NovelItem(name = it, path = "$id-${it.lowercase().replace(' ', '-')}") }
         }
 
@@ -139,6 +140,25 @@ class SourceMigrationTest {
         assertEquals(0, ready.preview.chaptersHere)
         assertFalse(ready.tick, "what was read can't be matched, so it isn't moved without asking")
         assertNotNull(ready.note)
+    }
+
+    @Test fun aMatchAlreadyInTheLibraryIsntMovedOntoWithoutAsking() = runBlocking<Unit> {
+        val book = onOld("Twice")
+        store.openSource("a", "a-twice", "Twice", null).also { store.refresh(it); store.setInLibrary(it, true) }
+        val p = migration(searching(mapOf("a" to mapOf("Twice" to listOf("Twice"))))).prepare(book, listOf("a")).prepared
+        val ready = assertIs<SourceMigration.Prepared.Ready>(p)
+        assertFalse(ready.tick, "its own read marks and place would change")
+        assertNotNull(ready.note)
+    }
+
+    @Test fun aSourceThatFailsOnceIsAskedAgainAndTheMatchSaysSo() = runBlocking<Unit> {
+        val book = onOld("Later")
+        val out = migration(searching(mapOf("a" to mapOf("Later" to listOf("Later")))), installed = setOf("old", "a", "down"))
+            .prepare(book, listOf("down", "a"))
+        val ready = assertIs<SourceMigration.Prepared.Ready>(out.prepared)
+        assertTrue(ready.tick)
+        assertNotNull(ready.hint, "an earlier source didn't answer")
+        assertFalse(out.unavailable.single().lasting, "a failure isn't a check: the next novel asks it again")
     }
 
     @Test fun nothingFoundIsSaid() = runBlocking<Unit> {

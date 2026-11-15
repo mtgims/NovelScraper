@@ -183,6 +183,7 @@ class MigrateFromViewModel(val pluginId: String) : ViewModel() {
         installed = { id -> Extensions.installed.value.any { it.id == id } },
         describe = ::describe,
         gapMs = 0,
+        paced = { id, fetch -> paced(id) { fetch() } },
     )
 
     init {
@@ -251,10 +252,29 @@ class MigrateFromViewModel(val pluginId: String) : ViewModel() {
     }
 
     private suspend fun look(book: LibBook, order: List<String>) {
+        // Given a match by hand while waiting its turn: that one stands.
+        if (_rows.value[book.id] != MigrationRow.Waiting) return
         set(book.id, MigrationRow.Searching)
         val outcome = engine.prepare(book, order, skip = _unavailable.value.map { it.pluginId }.toSet())
-        _unavailable.update { known -> known + outcome.unavailable.filter { u -> known.none { it.pluginId == u.pluginId } } }
+        _unavailable.update { known ->
+            known + outcome.unavailable.filter { u -> u.lasting && known.none { it.pluginId == u.pluginId } }
+        }
         set(book.id, outcome.prepared.toRow())
+    }
+
+    /** Ask a source left out again (its check was passed), for the novels still without a match. */
+    fun tryAgain(sourceId: String) {
+        if (_phase.value != Phase.Matching) return
+        _unavailable.update { list -> list.filter { it.pluginId != sourceId } }
+        val order = _targets.value.filter { it.on }.map { it.pluginId }
+        val again = _books.value.orEmpty().filter { b ->
+            when (_rows.value[b.id]) { MigrationRow.NoMatch, is MigrationRow.Failed -> true; else -> false }
+        }
+        again.forEach { set(it.id, MigrationRow.Waiting) }
+        viewModelScope.launch {
+            val slots = Semaphore(AT_ONCE)
+            again.forEach { book -> launch { slots.withPermit { look(book, order) } } }
+        }
     }
 
     /** A match picked by hand, for a novel the search missed or got wrong. */
@@ -405,7 +425,7 @@ fun MigrateFromScreen(
                     MigrateFromViewModel.Phase.Matching -> Button(
                         enabled = !searching && ticked > 0,
                         onClick = { confirm = true },
-                    ) { Text(if (ticked == 1) "Move 1" else "Move $ticked") }
+                    ) { Text(if (ticked == 0) "Move" else "Move $ticked") }
                     MigrateFromViewModel.Phase.Moving -> CircularProgressIndicator(Modifier.size(22.dp), strokeWidth = 2.dp)
                     MigrateFromViewModel.Phase.Done -> Button(onClick = onBack) { Text("Done") }
                 }
@@ -499,6 +519,7 @@ private fun MatchStep(
                     modifier = Modifier.weight(1f),
                 )
                 if (u.check) TextButton(onClick = { onOpenSource(u.pluginId) }) { Text("Open") }
+                if (phase == MigrateFromViewModel.Phase.Matching) TextButton(onClick = { vm.tryAgain(u.pluginId) }) { Text("Try again") }
             }
         }
         if (phase == MigrateFromViewModel.Phase.Matching) item(key = "hint") {
@@ -537,7 +558,7 @@ private fun MatchStep(
                                 // Moving is over and this one was left out.
                                 phase != MigrateFromViewModel.Phase.Matching && !r.ticked -> "Left where it is" to false
                                 else -> ("${r.site}: “${r.prepared.item.name}”, " + count(p.chaptersThere, "chapter") +
-                                    " (${p.chaptersHere} here), ${p.readThere} read there") to false
+                                    " (${p.chaptersHere} here), ${p.readHere} read here become ${p.readThere}") to false
                             }
                         }
                         MigrationRow.NoMatch -> "Not found on the sources looked on" to true
@@ -547,8 +568,9 @@ private fun MatchStep(
                     }
                     Text(line, style = MaterialTheme.typography.bodySmall, maxLines = 2, overflow = TextOverflow.Ellipsis,
                         color = if (error) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurfaceVariant)
-                    (r as? MigrationRow.Ready)?.takeIf { phase == MigrateFromViewModel.Phase.Matching }?.prepared?.note?.let {
-                        Text(it, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.error)
+                    (r as? MigrationRow.Ready)?.takeIf { phase == MigrateFromViewModel.Phase.Matching }?.prepared?.let { p ->
+                        p.note?.let { Text(it, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.error) }
+                        p.hint?.let { Text(it, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.tertiary) }
                     }
                 }
             }
