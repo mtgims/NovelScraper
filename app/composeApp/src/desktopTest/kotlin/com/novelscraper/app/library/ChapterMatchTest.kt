@@ -90,6 +90,37 @@ class ChapterMatchTest {
         assertTrue(plan.pastTheEnd)
     }
 
+    @Test fun aPlaceInAnUnnumberedChapterIsFoundByItsTitle() {
+        // Reading the interlude between chapters 5 and 6; the new source has a
+        // prologue first, so everything sits one place later.
+        val titles = (1..5).map { "Chapter $it" } + "Interlude: The Lake" + (6..10).map { "Chapter $it" }
+        val old = list(*titles.toTypedArray(), read = 5)
+        val new = list("Prologue", *titles.toTypedArray())
+        val plan = ChapterMatch.plan(old, new, resumePosition = 6)
+        assertTrue(plan.byNumber)
+        assertEquals((1..6).toSet(), plan.read, "the prologue and chapters 1 to 5, not the interlude")
+        assertEquals(7, plan.resume)
+        assertTrue(plan.exact)
+    }
+
+    @Test fun aPlaceInAnUnnumberedChapterTheNewSourceLacksGoesToTheChapterAfter() {
+        val old = list(*((1..5).map { "Chapter $it" } + "Side Story" + (6..10).map { "Chapter $it" }).toTypedArray(), read = 5)
+        val new = numbered(1..10)
+        val plan = ChapterMatch.plan(old, new, resumePosition = 6)
+        assertEquals((1..5).toSet(), plan.read)
+        assertEquals(6, plan.resume, "chapter 6, the next one")
+        assertFalse(plan.exact)
+    }
+
+    @Test fun aPlaceInAnEpilogueAfterTheLastNumberedChapter() {
+        val old = list(*((1..10).map { "Chapter $it" } + "Epilogue").toTypedArray(), read = 10)
+        val new = list(*((1..10).map { "Chapter $it" } + "Epilogue").toTypedArray())
+        val plan = ChapterMatch.plan(old, new, resumePosition = 11)
+        assertEquals((1..10).toSet(), plan.read)
+        assertEquals(11, plan.resume)
+        assertTrue(plan.exact)
+    }
+
     @Test fun nothingReadMovesNothing() {
         val plan = ChapterMatch.plan(numbered(1..5), numbered(1..5), resumePosition = null)
         assertTrue(plan.read.isEmpty())

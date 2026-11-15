@@ -72,7 +72,14 @@ internal object ChapterMatch {
     ): Plan {
         val oldNumbers = old.mapNotNull { it.second }.toSet()
         val readNumbers = old.filter { it.first.read }.mapNotNull { it.second }.toSet()
-        val resumeNumber = old.firstOrNull { it.first.position == resumePosition }?.second
+        val at = old.indexOfFirst { it.first.position == resumePosition }
+        val resumeCh = old.getOrNull(at)
+        // A place in an unnumbered chapter (an interlude, an epilogue) is held
+        // by the numbered chapter after it, as its read mark is, or failing
+        // that the one before it.
+        val numberAfter = if (at < 0) null else old.drop(at).firstNotNullOfOrNull { it.second }
+        val numberBefore = if (at < 0) null else old.take(at).lastOrNull { it.second != null }?.second
+        val resumeNumber = resumeCh?.second ?: numberAfter ?: numberBefore
 
         fun readByNumber(n: Double) = n in readNumbers ||
             // A chapter the old source never listed, before the place reached.
@@ -87,14 +94,30 @@ internal object ChapterMatch {
             if (nextRead) read += ch.position
         }
 
-        val resume: Pair<Ch, Double?>? = resumeNumber?.let { r ->
+        val nearest: Pair<Ch, Double?>? = resumeNumber?.let { r ->
             new.firstOrNull { it.second == r } ?: new.lastOrNull { (it.second ?: Double.MAX_VALUE) < r }
+        }
+        var exact = nearest != null && nearest.second == resumeNumber
+        var resume = nearest
+        if (resumeCh != null && resumeCh.second == null && nearest != null && exact) {
+            // The unnumbered chapters beside the one holding the place: before
+            // the chapter after it, or after the chapter before it.
+            val i = new.indexOf(nearest)
+            val beside = if (numberAfter != null) {
+                new.take(i).takeLastWhile { it.second == null }
+            } else {
+                new.drop(new.indexOfLast { it.second == resumeNumber } + 1).takeWhile { it.second == null }
+            }
+            val title = resumeCh.first.title.trim()
+            val same = beside.firstOrNull { it.first.title.trim().equals(title, ignoreCase = true) }
+            resume = same ?: beside.firstOrNull() ?: nearest
+            exact = same != null
         }
         val maxNew = new.mapNotNull { it.second }.maxOrNull()
         return Plan(
             read = read,
             resume = resume?.first?.position,
-            exact = resume != null && resume.second == resumeNumber,
+            exact = exact,
             byNumber = true,
             pastTheEnd = resumeNumber != null && maxNew != null && resumeNumber > maxNew,
         )

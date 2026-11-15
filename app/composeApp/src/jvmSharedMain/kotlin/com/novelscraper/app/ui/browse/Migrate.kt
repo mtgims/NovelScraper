@@ -168,7 +168,7 @@ private fun Preview(
                 Warning("These chapters don't number the same way, so they were matched by their order. " +
                     "Check the place after moving.")
             p.resumeHere != null && !p.exact ->
-                Warning("$site has no chapter like the one you were reading; the nearest before it was taken.")
+                Warning("$site has no chapter like the one you were reading; the nearest was taken.")
         }
         Choice("Keep the $here version in the library too", keepOld, onKeepOld)
         if (!keepOld) {
