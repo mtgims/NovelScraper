@@ -104,6 +104,8 @@ fun BookScreen(
     bookId: Int,
     onBack: () -> Unit,
     onOpenReader: (position: Int) -> Unit,
+    /** Move this novel to another source (a novel from a source only). */
+    onMigrate: () -> Unit = {},
 ) {
     PlatformBackHandler(onBack = onBack)
     val vm: BookViewModel = viewModel(key = "book-$bookId") { BookViewModel(bookId) }
@@ -173,6 +175,10 @@ fun BookScreen(
                         if (BookHooks.narration != null) DropdownMenuItem(
                             text = { Text("Narration") },
                             onClick = { menuOpen = false; showNarration = true },
+                        )
+                        if (b.isSource) DropdownMenuItem(
+                            text = { Text("Migrate to another source") },
+                            onClick = { menuOpen = false; onMigrate() },
                         )
                         DropdownMenuItem(
                             text = { Text("Save as audio") },

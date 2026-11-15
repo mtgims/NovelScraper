@@ -57,3 +57,22 @@ data class LibProgress(
     val readCount: Int get() = readPositions.size
     val percent: Float get() = if (total == 0) 0f else readCount * 100f / total
 }
+
+/** What moving a novel to another source would carry over ([LibraryStore.migrationPreview]). */
+data class MigrationPreview(
+    val chaptersHere: Int,
+    val chaptersThere: Int,
+    val readHere: Int,
+    val readThere: Int,
+    /** The chapter reading left off at, and the one it becomes; null when nothing was opened. */
+    val resumeHere: String?,
+    val resumeThere: String?,
+    /** The place was found as the same chapter, not guessed. */
+    val exact: Boolean,
+    /** Chapters were matched by their numbers (else by their order). */
+    val byNumber: Boolean,
+    /** The reader is further on than the new source goes. */
+    val pastTheEnd: Boolean,
+    val downloadedHere: Int,
+    val siteHere: String,
+)

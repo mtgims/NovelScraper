@@ -175,6 +175,13 @@ internal class SyncRecords(
                 ?.takeIf { it.enabled && it.repo.isNotBlank() }?.let { m.key to it.repo }
         }
 
+    /**
+     * Novel [novelKey]'s own settings: this device's, or else the copy sync
+     * carries (a device without settings of its own, Android, passes them on).
+     */
+    fun novelSettingsOf(novelKey: String): String? =
+        novelSettings?.all()?.get(novelKey) ?: q.meta(Kind.VOICING, novelKey).executeAsOneOrNull()?.value_
+
     /** A novel's own settings ([NovelSettings]), as the JSON they are kept in. */
     fun emitNovelSettings(novelKey: String, value: String, ts: Long? = null) =
         emit(Kind.VOICING, novelKey, JsonElement.serializer(), json.parseToJsonElement(value), ts)

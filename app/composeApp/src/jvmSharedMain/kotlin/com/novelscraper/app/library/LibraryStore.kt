@@ -343,6 +343,109 @@ class LibraryStore(
         books.delete(id.toLong())
     }
 
+    // --- moving a novel to another source (migration) ----------------------------
+
+    /**
+     * What moving novel [fromId] to [toId] would carry over, both chapter lists
+     * being here already (the caller refreshed [toId] from its source).
+     */
+    suspend fun migrationPreview(fromId: Int, toId: Int): MigrationPreview = io {
+        val m = matchFor(fromId.toLong(), toId.toLong())
+        val oldChapters = chapters.selectByBook(fromId.toLong()).executeAsList()
+        val newChapters = chapters.selectByBook(toId.toLong()).executeAsList()
+        val from = books.selectById(fromId.toLong()).executeAsOne()
+        val resumeFrom = books.resume(fromId.toLong()).executeAsOneOrNull()?.position
+        MigrationPreview(
+            chaptersHere = oldChapters.size,
+            chaptersThere = newChapters.size,
+            readHere = oldChapters.count { it.read != 0L },
+            readThere = m.plan.read.size,
+            resumeHere = oldChapters.firstOrNull { it.position == resumeFrom }?.let { label(it.number, it.title) },
+            resumeThere = newChapters.firstOrNull { it.position.toInt() == m.plan.resume }?.let { label(it.number, it.title) },
+            exact = m.plan.exact,
+            byNumber = m.plan.byNumber,
+            pastTheEnd = m.plan.pastTheEnd,
+            downloadedHere = oldChapters.count { it.downloaded != 0L },
+            siteHere = from.site,
+        )
+    }
+
+    private fun label(number: String, title: String) =
+        if (number.isNotBlank() && number !in title) "$number. $title" else title
+
+    private class Match(val plan: ChapterMatch.Plan, val downloads: ChapterMatch.Plan)
+
+    private fun matchFor(fromId: Long, toId: Long): Match {
+        val old = chapters.selectByBook(fromId).executeAsList()
+        val new = chapters.selectByBook(toId).executeAsList()
+            .map { ChapterMatch.Ch(it.position.toInt(), it.number, it.title, read = false) }
+        val resume = books.resume(fromId).executeAsOneOrNull()?.position?.toInt()
+        return Match(
+            ChapterMatch.plan(old.map { ChapterMatch.Ch(it.position.toInt(), it.number, it.title, it.read != 0L) }, new, resume),
+            ChapterMatch.plan(old.map { ChapterMatch.Ch(it.position.toInt(), it.number, it.title, it.downloaded != 0L) }, new, null),
+        )
+    }
+
+    /**
+     * Move novel [fromId] to [toId], the same novel on another source: read
+     * marks and the place reached ([ChapterMatch]), rating, collections, its
+     * place in the library and its own narration settings. Unless [keepOld],
+     * the old one leaves the library, its downloads with it, as it would if
+     * removed by hand; the other devices follow through sync as for any novel
+     * removed and any added. [downloadAgain]: queue the chapters that were
+     * downloaded, from the new source.
+     *
+     * Nothing here touches the network: [toId]'s chapters were fetched first,
+     * so a source that fails leaves the library as it was.
+     */
+    suspend fun migrate(fromId: Int, toId: Int, keepOld: Boolean, downloadAgain: Boolean) {
+        require(fromId != toId) { "a novel can't move onto itself" }
+        val again = changeWithResult {
+            val from = books.selectById(fromId.toLong()).executeAsOneOrNull() ?: error("No such novel")
+            val to = books.selectById(toId.toLong()).executeAsOneOrNull() ?: error("No such novel")
+            val m = matchFor(from.id, to.id)
+
+            m.plan.read.chunked(500).forEach { chunk ->
+                chapters.setReadIn(1, to.id, chunk.map { it.toLong() })
+            }
+            m.plan.resume?.let { pos ->
+                chapters.selectAt(to.id, pos.toLong()).executeAsOneOrNull()?.let { c ->
+                    // The same chapter keeps how far down it the reader was; a
+                    // sentence number belongs to one site's text and doesn't.
+                    books.setResume(c.id, if (m.plan.exact) from.scroll else 0.0, to.id)
+                    books.setSentence(null, to.id)
+                }
+            }
+            if (to.rating == null && from.rating != null) books.setRating(from.rating, to.id)
+            shelves.ofBook(from.id).executeAsList().forEach { shelves.add(to.id, it) }
+            if (keepOld) {
+                books.setInLibrary(1, now(), books.maxSortOrder().executeAsOne() + 1, to.id)
+            } else {
+                books.setInLibrary(1, from.added_at, from.sort_order, to.id)
+                books.setInLibrary(0, 0, 0, from.id)
+                chapters.clearQueueForBook(from.id)
+                chapters.removeDownloads(from.id)
+            }
+
+            // Sync: the old novel leaves (as any removal), then the new one
+            // joins with everything written above (as any addition).
+            if (!keepOld && from.sync_key != null && from.in_library != 0L) {
+                sync.emitNovel(from.copy(in_library = 0))
+            }
+            val oldKey = from.sync_key
+            val newKey = to.sync_key
+            if (oldKey != null && newKey != null) {
+                sync.novelSettingsOf(oldKey)?.let { value ->
+                    sync.novelSettings?.received(newKey, value)
+                    sync.emitNovelSettings(newKey, value)
+                }
+            }
+            books.selectById(to.id).executeAsOneOrNull()?.let { sync.emitSnapshot(it) }
+            m.downloads.read.toList()
+        }
+        if (downloadAgain && again.isNotEmpty()) enqueueDownloads(toId, again)
+    }
+
     // --- installed sources -------------------------------------------------------
 
     /**

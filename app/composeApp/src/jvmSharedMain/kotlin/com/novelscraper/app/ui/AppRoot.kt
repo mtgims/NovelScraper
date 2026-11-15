@@ -35,6 +35,7 @@ import com.novelscraper.app.platform.encodeRouteArg
 import com.novelscraper.app.ui.browse.BrowseScreen
 import com.novelscraper.app.ui.browse.ExtensionsScreen
 import com.novelscraper.app.ui.browse.GlobalSearchScreen
+import com.novelscraper.app.ui.browse.MigrateScreen
 import com.novelscraper.app.ui.browse.SourceScreen
 import com.novelscraper.app.ui.components.PillNavBar
 import com.novelscraper.app.ui.components.NavRail
@@ -137,6 +138,23 @@ private fun MainApp() {
                     onOpenSource = { plugin, q -> nav.navigate(sourceRoute(plugin, q)) },
                 )
             }
+            composable(
+                "migrate/{id}",
+                arguments = listOf(navArgument("id") { type = NavType.IntType }),
+            ) { e ->
+                MigrateScreen(
+                    bookId = e.arguments!!.read { getInt("id") },
+                    onBack = { nav.popBackStack() },
+                    onDone = { newId ->
+                        // The old novel's page and this search go: Back from the
+                        // moved novel returns to wherever the old one was opened from.
+                        nav.popBackStack()
+                        nav.popBackStack()
+                        nav.navigate("book/$newId")
+                    },
+                    onOpenSource = { plugin, q -> nav.navigate(sourceRoute(plugin, q)) },
+                )
+            }
             composable("extensions") { ExtensionsScreen(onBack = { nav.popBackStack() }) }
             composable(
                 "source/{plugin}?q={q}",
@@ -163,6 +181,7 @@ private fun MainApp() {
                     bookId = id,
                     onBack = { nav.popBackStack() },
                     onOpenReader = { pos -> nav.navigate("reader/$id/$pos") },
+                    onMigrate = { nav.navigate("migrate/$id") },
                 )
             }
             composable(
