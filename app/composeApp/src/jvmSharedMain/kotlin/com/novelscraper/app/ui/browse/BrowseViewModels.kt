@@ -164,6 +164,46 @@ data class SourceUi(
     val checkUrl: String? = null,
 )
 
+/**
+ * The first page of each source list lately shown (popular, latest, or one
+ * search), for a few minutes: going back to a source just looked at shows it
+ * at once instead of asking the site again, which took 0.2 to 2 s. Only
+ * lists that came back with novels are kept; a failure or a browser check
+ * never is, and a source whose site check passes, or that is updated,
+ * starts afresh.
+ */
+internal class RecentLists(
+    private val keepMs: Long = 5 * 60_000,
+    private val max: Int = 24,
+    private val clock: () -> Long = System::currentTimeMillis,
+) {
+    class Page(val items: List<NovelItem>, val name: String, val imageHeaders: Map<String, String>)
+
+    private data class Key(val pluginId: String, val mode: SourceMode, val query: String)
+    private class Entry(val at: Long, val page: Page)
+    private val entries = LinkedHashMap<Key, Entry>(16, 0.75f, true)
+
+    private fun key(pluginId: String, mode: SourceMode, query: String) =
+        Key(pluginId, mode, if (mode == SourceMode.Search) query.trim() else "")
+
+    @Synchronized fun get(pluginId: String, mode: SourceMode, query: String): Page? {
+        val k = key(pluginId, mode, query)
+        val e = entries[k] ?: return null
+        if (clock() - e.at > keepMs) { entries.remove(k); return null }
+        return e.page
+    }
+
+    @Synchronized fun put(pluginId: String, mode: SourceMode, query: String, page: Page) {
+        if (page.items.isEmpty()) return
+        entries[key(pluginId, mode, query)] = Entry(clock(), page)
+        while (entries.size > max) entries.remove(entries.keys.first())
+    }
+
+    @Synchronized fun forget(pluginId: String) { entries.keys.removeAll { it.pluginId == pluginId } }
+
+    companion object { val shared = RecentLists() }
+}
+
 class SourceViewModel(private val pluginId: String, initialQuery: String? = null) : ViewModel() {
     private val _ui = MutableStateFlow(SourceUi())
     val ui: StateFlow<SourceUi> = _ui.asStateFlow()
@@ -176,12 +216,17 @@ class SourceViewModel(private val pluginId: String, initialQuery: String? = null
             SiteChecks.passed.collect { url ->
                 val s = _ui.value
                 if (s.checkUrl != null && SiteChecks.sameSite(s.checkUrl, url)) {
+                    RecentLists.shared.forget(keptAs())
                     Log.i("Source", "check passed for $pluginId, loading again")
                     if (s.items.isEmpty()) show(s.mode) else loadMore()
                 }
             }
         }
     }
+
+    /** What this source's lists are kept under ([RecentLists]): an updated source starts afresh. */
+    private fun keptAs(): String =
+        pluginId + "@" + Extensions.installed.value.firstOrNull { it.id == pluginId }?.version.orEmpty()
 
     /** Open a novel from the list: its local id (a row is made the first time). */
     fun open(item: NovelItem, onReady: (Int) -> Unit) {
@@ -215,11 +260,15 @@ class SourceViewModel(private val pluginId: String, initialQuery: String? = null
         val s = _ui.value
         if (s.loading || s.endReached) return
         if (s.mode == SourceMode.Search && s.query.isBlank()) return
+        val next = s.page + 1
+        if (next == 1) RecentLists.shared.get(keptAs(), s.mode, s.query)?.let { kept ->
+            _ui.update { it.copy(name = kept.name, items = kept.items, page = 1, imageHeaders = kept.imageHeaders) }
+            return
+        }
         _ui.update { it.copy(loading = true, error = null, checkUrl = null) }
         job = viewModelScope.launch {
             try {
                 val rt = Extensions.runtime(pluginId)
-                val next = s.page + 1
                 val got = when (s.mode) {
                     SourceMode.Popular -> rt.popular(next, latest = false)
                     SourceMode.Latest -> rt.popular(next, latest = true)
@@ -228,6 +277,8 @@ class SourceViewModel(private val pluginId: String, initialQuery: String? = null
                 // Some sources ignore the page and repeat it: stop when nothing is new.
                 val known = s.items.mapTo(HashSet()) { it.path }
                 val fresh = got.filter { it.path !in known }
+                if (next == 1) RecentLists.shared.put(keptAs(), s.mode, s.query,
+                    RecentLists.Page(fresh, rt.info.name, imageHeaders(rt.info.imageRequestInit)))
                 _ui.update {
                     it.copy(
                         name = rt.info.name, items = it.items + fresh, page = next, loading = false,
