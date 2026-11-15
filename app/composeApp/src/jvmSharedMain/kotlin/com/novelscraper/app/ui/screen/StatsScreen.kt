@@ -52,6 +52,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -71,7 +72,6 @@ import com.novelscraper.app.library.NovelProgress
 import com.novelscraper.app.library.ReadingStats
 import com.novelscraper.app.library.WordSample
 import com.novelscraper.app.platform.SaveTarget
-import com.novelscraper.app.platform.isDesktop
 import com.novelscraper.app.platform.rememberFileSaver
 import com.novelscraper.app.platform.showToast
 import com.novelscraper.app.ui.StatsUi
@@ -153,7 +153,7 @@ private enum class Sort(val label: String) { Progress("Progress"), Recent("Recen
 
 @Composable
 private fun StatsContent(s: ReadingStats, words: WordSample?, onOpenNovel: (Int) -> Unit) {
-    var sort by remember { mutableStateOf(Sort.Progress) }
+    var sort by rememberSaveable { mutableStateOf(Sort.Progress) }
     val sorted = remember(s, sort) {
         when (sort) {
             Sort.Progress -> s.progress.sortedWith(compareByDescending<NovelProgress> { it.fraction }.thenByDescending { it.read })
@@ -167,11 +167,12 @@ private fun StatsContent(s: ReadingStats, words: WordSample?, onOpenNovel: (Int)
             val gap = if (wide) 20.dp else 14.dp
             LazyColumn(
                 Modifier.fillMaxSize(),
-                contentPadding = PaddingValues(start = 16.dp, end = 16.dp, top = 4.dp, bottom = if (isDesktop) 32.dp else 110.dp),
+                contentPadding = PaddingValues(start = 16.dp, end = 16.dp, top = 4.dp, bottom = 110.dp),
                 verticalArrangement = Arrangement.spacedBy(gap),
             ) {
                 item(key = "hero") { HeroCard(s) }
-                item(key = "tiles") { Tiles(s, words, columns = if (wide) 6 else 3) }
+                // Three to a row leaves too little for "Reading time" on the narrowest phones.
+                item(key = "tiles") { Tiles(s, words, columns = if (wide) 6 else if (maxWidth < 380.dp) 2 else 3) }
                 if (s.continueReading.isNotEmpty()) item(key = "continue") {
                     ContinueReading(s.continueReading.take(12), onOpenNovel)
                 }
@@ -257,10 +258,13 @@ private fun HeroCard(s: ReadingStats) {
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
             Row(verticalAlignment = Alignment.Bottom) {
+                val read = grouped(s.chaptersRead)
+                // A million chapters and more still fits a phone beside its total.
+                val big = read.length > 7
                 Text(
-                    grouped(s.chaptersRead),
+                    read,
                     fontFamily = FontFamily.SansSerif, fontWeight = FontWeight.SemiBold,
-                    fontSize = 52.sp, lineHeight = 56.sp,
+                    fontSize = if (big) 40.sp else 52.sp, lineHeight = if (big) 44.sp else 56.sp,
                 )
                 Text(
                     "of ${grouped(s.chapters)}",

@@ -18,7 +18,7 @@ data class NovelProgress(val book: LibBook, val read: Int, val total: Int) {
  * the two never disagree.
  *
  * Every novel falls in one of four states: **finished** (every chapter read,
- * and the novel itself is complete), **caught up** (every chapter read of one
+ * and the novel itself is complete, or imported), **caught up** (every chapter read of one
  * still coming out), **reading** (some read) and **not started**.
  */
 data class ReadingStats(
@@ -64,7 +64,9 @@ data class ReadingStats(
             val progress = books.map { NovelProgress(it, (it.chapterCount - it.unreadCount).coerceAtLeast(0), it.chapterCount) }
             var finished = 0; var caughtUp = 0; var reading = 0; var notStarted = 0
             for (p in progress) when {
-                p.total > 0 && p.read >= p.total -> if (COMPLETE.containsMatchIn(p.book.status)) finished++ else caughtUp++
+                // An imported book has every chapter it will ever have.
+                p.total > 0 && p.read >= p.total ->
+                    if (p.book.isImported || COMPLETE.containsMatchIn(p.book.status)) finished++ else caughtUp++
                 p.read > 0 -> reading++
                 else -> notStarted++
             }

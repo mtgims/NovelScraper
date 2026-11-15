@@ -8,6 +8,7 @@ import com.novelscraper.app.library.Library
 import com.novelscraper.app.library.LibBook
 import com.novelscraper.app.library.ReadingStats
 import com.novelscraper.app.library.WordSample
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -47,8 +48,15 @@ class StatsViewModel : ViewModel() {
                 return@launch
             }
             val stats = ReadingStats.of(books)
-            _ui.value = StatsUi.Data(stats, null)
-            val words = runCatching { sample(books) }.getOrDefault(WordSample.NONE)
+            // The last count stays up while the words are counted again.
+            _ui.value = StatsUi.Data(stats, (_ui.value as? StatsUi.Data)?.words)
+            val words = try {
+                sample(books)
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                WordSample.NONE
+            }
             _ui.value = StatsUi.Data(stats, words)
         }
     }

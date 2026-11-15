@@ -8,10 +8,10 @@ class ReadingStatsTest {
     private var id = 0
     private fun book(
         read: Int, total: Int, status: String = "Ongoing", site: String = "Site A", genres: String = "",
-        rating: Int? = null, opened: Long = 0, downloaded: Int = 0,
+        rating: Int? = null, opened: Long = 0, downloaded: Int = 0, imported: Boolean = false,
     ) = LibBook(
         id = ++id, title = "Novel $id", author = "", cover = null, site = site, rating = rating, inLibrary = true,
-        pluginId = "p", path = "n$id", genres = genres, status = status,
+        pluginId = if (imported) null else "p", path = "n$id", genres = genres, status = status,
         chapterCount = total, unreadCount = total - read, downloadedCount = downloaded, openedAt = opened,
     )
 
@@ -28,6 +28,12 @@ class ReadingStatsTest {
         assertEquals(23, s.chaptersRead)
         assertEquals(40, s.chapters)
         assertEquals(3, s.started)
+    }
+
+    @Test fun anImportedBookReadToTheEndIsFinished() {
+        val s = ReadingStats.of(listOf(book(5, 5, status = "", site = "Imported", imported = true), book(5, 5, status = "")))
+        assertEquals(1, s.finished, "an EPUB gets no more chapters")
+        assertEquals(1, s.caughtUp, "a source novel of unknown status may")
     }
 
     @Test fun sourcesAndGenresAreRankedAndRatingsCounted() {
