@@ -213,7 +213,7 @@ object SystemBrowser {
         // met and answered, and ask it for the page wanted afterwards. One page
         // is loaded the slow way per site per session, not one per request.
         val origin = originOf(url)
-        val landing = if (origin != null && currentOrigin() != origin) origin else url
+        var landing = if (origin != null && currentOrigin() != origin) origin else url
         val started = System.currentTimeMillis()
         var deadline = started + loadMs
         var shown = false
@@ -224,82 +224,92 @@ object SystemBrowser {
             // check. Waiting for it to settle as well was most of the time a
             // first page from a site took, spent on a page nobody reads.
             var page = if (landing == url) settled(deadline) else arrived(deadline)
-            var retries = 0
-            var lastRetry = System.currentTimeMillis()
-            var ticksLeft = MAX_TICKS
-            var lastTick = 0L
-            while (page != null && looksLikeBrowserCheck(page) && System.currentTimeMillis() < deadline) {
-                val now = System.currentTimeMillis()
-                // Waiting on a check is using the browser, so say so. lastUsed
-                // was set once before this loop, and the idle watcher closes an
-                // unused browser after IDLE_MS, which is a minute: a check the
-                // reader took longer than that to answer had the window shut
-                // from under them, part way through, despite the interactive
-                // budget being five.
-                lastUsed = now
-                val kind = browserCheckKind(page)
-                // A check that wants a tick in a box is given one, the way the
-                // reader would give it, before anyone is asked to. A few tries,
-                // spaced out, and once more after the window comes up; after that
-                // the box is the reader's.
-                if ((kind == CheckKind.Managed || kind == CheckKind.Interactive) &&
-                    ticksLeft > 0 && now - lastTick > TICK_GAP_MS && tickTheBox()
-                ) {
-                    ticksLeft--
-                    lastTick = now
-                    lastRetry = now         // a reload now would throw the tick away
-                    delay(TICK_GAP_MS)
-                    // A check that passes reloads into the site: wait it out
-                    // rather than read a document half replaced.
-                    page = settled(System.currentTimeMillis() + 20_000)
-                    Log.i(TAG, "ticked the check's box: " +
-                        if (page != null && !looksLikeBrowserCheck(page)) "it let us through" else "still a check")
-                    continue
+            while (true) {
+                var retries = 0
+                var lastRetry = System.currentTimeMillis()
+                var ticksLeft = MAX_TICKS
+                var lastTick = 0L
+                while (page != null && looksLikeBrowserCheck(page) && System.currentTimeMillis() < deadline) {
+                    val now = System.currentTimeMillis()
+                    // Waiting on a check is using the browser, so say so. lastUsed
+                    // was set once before this loop, and the idle watcher closes an
+                    // unused browser after IDLE_MS, which is a minute: a check the
+                    // reader took longer than that to answer had the window shut
+                    // from under them, part way through, despite the interactive
+                    // budget being five.
+                    lastUsed = now
+                    val kind = browserCheckKind(page)
+                    // A check that wants a tick in a box is given one, the way the
+                    // reader would give it, before anyone is asked to. A few tries,
+                    // spaced out, and once more after the window comes up; after that
+                    // the box is the reader's.
+                    if ((kind == CheckKind.Managed || kind == CheckKind.Interactive) &&
+                        ticksLeft > 0 && now - lastTick > TICK_GAP_MS && tickTheBox()
+                    ) {
+                        ticksLeft--
+                        lastTick = now
+                        lastRetry = now         // a reload now would throw the tick away
+                        delay(TICK_GAP_MS)
+                        // A check that passes reloads into the site: wait it out
+                        // rather than read a document half replaced.
+                        page = settled(System.currentTimeMillis() + 20_000)
+                        Log.i(TAG, "ticked the check's box: " +
+                            if (page != null && !looksLikeBrowserCheck(page)) "it let us through" else "still a check")
+                        continue
+                    }
+                    // The check says what it wants. One that only wants waiting gets
+                    // longer before anyone is bothered with it; one that wants a tick
+                    // goes to the reader once the app's own ticks haven't done it,
+                    // rather than after a silent wait it was never going to come out of.
+                    val patience = when (kind) {
+                        CheckKind.Interactive -> if (ticksLeft > 0) TICKING_MS else 0L
+                        CheckKind.Waiting -> maxOf(patienceMs, WAITING_PATIENCE_MS)
+                        else -> patienceMs
+                    }
+                    if (!shown && mayShow && now - started > patience) {
+                        shown = true
+                        Log.i(TAG, "the check needs a visible browser; showing it")
+                        onShown()
+                        show()
+                        // A fresh go at the check in a window that is on screen and
+                        // being drawn. Some checks never finish in one that isn't,
+                        // and sit there restarting themselves instead.
+                        navigate(landing)
+                        page = settled(now + 20_000)
+                        deadline = System.currentTimeMillis() + interactiveMs
+                        ticksLeft = 1
+                        lastTick = 0L
+                        continue
+                    }
+                    // While it is still ours to deal with, ask again every so often:
+                    // a check that has quietly issued its cookie usually only needs
+                    // the page fetched once more to be let through. Never once the
+                    // window is on screen, where a reload lands under the reader's
+                    // own hands.
+                    if (!shown && retries < MAX_RETRIES && now - lastRetry > RETRY_MS) {
+                        retries++
+                        lastRetry = now
+                        Log.i(TAG, "still a check; asking again (${retries}/$MAX_RETRIES)")
+                        navigate(landing)
+                        page = settled(now + 20_000)
+                        continue
+                    }
+                    delay(1_000)
+                    page = html()
                 }
-                // The check says what it wants. One that only wants waiting gets
-                // longer before anyone is bothered with it; one that wants a tick
-                // goes to the reader once the app's own ticks haven't done it,
-                // rather than after a silent wait it was never going to come out of.
-                val patience = when (kind) {
-                    CheckKind.Interactive -> if (ticksLeft > 0) TICKING_MS else 0L
-                    CheckKind.Waiting -> maxOf(patienceMs, WAITING_PATIENCE_MS)
-                    else -> patienceMs
-                }
-                if (!shown && mayShow && now - started > patience) {
-                    shown = true
-                    Log.i(TAG, "the check needs a visible browser; showing it")
-                    onShown()
-                    show()
-                    // A fresh go at the check in a window that is on screen and
-                    // being drawn. Some checks never finish in one that isn't,
-                    // and sit there restarting themselves instead.
-                    navigate(landing)
-                    page = settled(now + 20_000)
-                    deadline = System.currentTimeMillis() + interactiveMs
-                    ticksLeft = 1
-                    lastTick = 0L
-                    continue
-                }
-                // While it is still ours to deal with, ask again every so often:
-                // a check that has quietly issued its cookie usually only needs
-                // the page fetched once more to be let through. Never once the
-                // window is on screen, where a reload lands under the reader's
-                // own hands.
-                if (!shown && retries < MAX_RETRIES && now - lastRetry > RETRY_MS) {
-                    retries++
-                    lastRetry = now
-                    Log.i(TAG, "still a check; asking again (${retries}/$MAX_RETRIES)")
-                    navigate(landing)
-                    page = settled(now + 20_000)
-                    continue
-                }
-                delay(1_000)
-                page = html()
+                val landed = page?.takeIf { !looksLikeBrowserCheck(it) } ?: return null
+                if (landing == url) return landed
+                // The front page was only the way in; the page actually wanted is
+                // asked for from inside it.
+                fromInsideThePage(url)?.let { return it }
+                // The way in was open and the page itself is behind a check: a site
+                // that guards only its chapters (FuckNovelpia's chapter.php). The
+                // check is met there, waited on, ticked and shown the same way,
+                // rather than the page read once and given up on as a check.
+                landing = url
+                navigate(landing) ?: return null
+                page = settled(deadline)
             }
-            val landed = page?.takeIf { !looksLikeBrowserCheck(it) } ?: return null
-            // The front page was only the way in; the page actually wanted is
-            // asked for from inside it.
-            return if (landing == url) landed else fromInsideThePage(url) ?: navigateTo(url, deadline)
         } catch (e: Exception) {
             Log.w(TAG, "couldn't drive the browser: ${e.message}")
             stop()
@@ -373,13 +383,6 @@ object SystemBrowser {
             delay(100)
         }
         return html()
-    }
-
-    /** Load a page in the window itself, the slow way, when nothing else works. */
-    private suspend fun navigateTo(url: String, deadline: Long): String? {
-        navigate(url) ?: return null
-        return settled(maxOf(deadline, System.currentTimeMillis() + 30_000))
-            ?.takeIf { !looksLikeBrowserCheck(it) }
     }
 
     /** A GET asked for from inside a page of the same site, when one is open.
