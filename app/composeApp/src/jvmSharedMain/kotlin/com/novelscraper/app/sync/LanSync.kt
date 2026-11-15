@@ -152,6 +152,10 @@ class LanSync internal constructor(
     /** Every address on this device's network, to ask one by one while no
      *  device has been met (null: never; a phone has no firewall to get past). */
     private val sweepTargets: (() -> List<InetSocketAddress>)? = null,
+    /** Where each device was last met (device id to host:port), kept between runs. */
+    private val remembered: () -> Map<String, String> = { emptyMap() },
+    /** A meeting went through with a device at an address, to be [remembered]. */
+    private val onMet: (device: String, address: String) -> Unit = { _, _ -> },
     private val now: () -> Long = System::currentTimeMillis,
 ) {
     /**
@@ -235,10 +239,14 @@ class LanSync internal constructor(
         publish()
     }
 
-    /** Swap files with every device met lately, and those given by address. */
+    /** Swap files with every device met lately, those given by address, and
+     *  where the others were last met. */
     suspend fun exchangeAll(): Unit = withContext(Dispatchers.IO) {
-        val recent = peers.values.filter { now() - it.lastSeen < PEER_TTL_MS }.map { it.address }
-        for (address in (recent + manualPeers()).distinct()) {
+        val recentPeers = peers.values.filter { now() - it.lastSeen < PEER_TTL_MS }
+        val recent = recentPeers.map { it.address }
+        val seen = recentPeers.map { it.device }.toSet()
+        val earlier = remembered().filterKeys { it !in seen && it != device }.values
+        for (address in (recent + manualPeers() + earlier).distinct()) {
             val (host, port) = splitAddress(address) ?: continue
             runCatching { exchange(host, port) }.onFailure { Log.d(TAG, "no exchange with $address: ${it.message}") }
         }
@@ -516,6 +524,7 @@ class LanSync internal constructor(
     }
 
     private fun met(other: String, otherName: String?, address: String?) {
+        if (!address.isNullOrEmpty()) runCatching { onMet(other, address) }
         val known = peers[other]
         peers[other] = Peer(
             other, otherName ?: known?.name ?: "Another device",

@@ -115,6 +115,8 @@ object SyncSettings {
             manualPeers = { prefs.getStringSet(KEY_PEERS).orEmpty().toList() },
             // A computer may have a firewall that lets nothing in; a phone doesn't.
             sweepTargets = if (isDesktop) ({ LanSync.localSweep(LanSync.DISCOVERY_PORT) }) else null,
+            remembered = ::rememberedPeers,
+            onMet = ::rememberPeer,
         ).also { _lan.value = it }
         lan.device = Library.store.syncDevice()
         hearLocalNetwork(true)
@@ -135,6 +137,21 @@ object SyncSettings {
         val lan = _lan.value ?: return
         lan.device = Library.store.syncDevice()
         lan.exchangeAll()
+    }
+
+    /** Where each device was last met, from "device\taddress\twhen" entries. */
+    private fun knownEntries(): List<List<String>> = prefs.getStringSet(KEY_KNOWN).orEmpty()
+        .map { it.split('\t') }.filter { it.size == 3 }
+
+    private fun rememberedPeers(): Map<String, String> = knownEntries().associate { it[0] to it[1] }
+
+    @Synchronized
+    private fun rememberPeer(device: String, address: String) {
+        val others = knownEntries().filter { it[0] != device }
+        if (rememberedPeers()[device] == address) return
+        // The newest few: a device not met in a long while is likely gone.
+        val kept = others.sortedByDescending { it[2].toLongOrNull() ?: 0 }.take(MAX_KNOWN - 1).map { it.joinToString("\t") }
+        prefs.putStringSet(KEY_KNOWN, (kept + "$device\t$address\t${System.currentTimeMillis()}").toSet())
     }
 
     /** A device given by address, for networks that keep devices from hearing
@@ -201,7 +218,7 @@ object SyncSettings {
         stopLan()
         _lan.value = null
         localFolder.clear()
-        listOf(KEY_PROVIDER, KEY_CODE, KEY_PEERS, KEY_DAV_URL, KEY_DAV_USER, KEY_DAV_PASSWORD, KEY_PASSPHRASE)
+        listOf(KEY_PROVIDER, KEY_CODE, KEY_PEERS, KEY_KNOWN, KEY_DAV_URL, KEY_DAV_USER, KEY_DAV_PASSWORD, KEY_PASSPHRASE)
             .forEach(prefs::remove)
         pairKeys = null
         _state.value = null
@@ -213,6 +230,8 @@ object SyncSettings {
     private const val KEY_PROVIDER = "provider"
     private const val KEY_CODE = "lan_code"
     private const val KEY_PEERS = "lan_peers"
+    private const val KEY_KNOWN = "lan_known"
+    private const val MAX_KNOWN = 8
     private const val KEY_DAV_URL = "webdav_url"
     private const val KEY_DAV_USER = "webdav_user"
     private const val KEY_DAV_PASSWORD = "webdav_password"

@@ -46,6 +46,7 @@ class LanSyncTest {
         targets: List<InetSocketAddress> = emptyList(),
         sweep: (() -> List<InetSocketAddress>)? = null,
         firewalled: Boolean = false,
+        val known: MutableMap<String, String> = java.util.concurrent.ConcurrentHashMap(),
     ) {
         val lib = LibraryStore(jdbcLibraryDriver(null), Source(), now = { clock })
         val folder = LocalFolder(Files.createTempDirectory("lan").toFile().also { dirs += it })
@@ -61,6 +62,7 @@ class LanSyncTest {
         val lan = LanSync(
             folder, keys, runBlocking { lib.syncDevice() }, "device", onReceived = { received++ },
             discoveryPort = discoveryPort, serverPort = 0, extraTargets = targets, sweepTargets = sweep,
+            remembered = { known }, onMet = { device, address -> known[device] = address },
         ).also { it.turnsAwayCallers = firewalled; it.start(); started += it }
 
         /** What the runner does: sync the library with its own folder. */
@@ -293,6 +295,21 @@ class LanSyncTest {
         val pc = Device(code)
         assertTrue(phone.lan.exchange("127.0.0.1", pc.lan.port))
         assertFalse(phone.lan.state.value.peers.single { it.device == pc.lan.device }.unreachable)
+    }
+
+    /** Where a device was met is kept, so after a restart it is called again
+     *  without waiting to hear it (a firewall, a network that drops broadcasts). */
+    @Test
+    fun aDeviceMetBeforeIsCalledAgainAfterARestart() = runBlocking<Unit> {
+        val a = Device(code); val b = Device(code)
+        assertTrue(a.meet(b))
+        assertEquals("127.0.0.1:${b.lan.port}", a.known[b.lan.device], "A keeps where B was")
+        a.lan.stop()
+        val again = Device(code, known = a.known)   // A's next start: nothing heard, nothing typed in
+        addNovel(b); b.sync()
+        again.lan.exchangeAll()
+        again.sync()
+        assertEquals(1, libraryOf(again).size)
     }
 
     @Test
