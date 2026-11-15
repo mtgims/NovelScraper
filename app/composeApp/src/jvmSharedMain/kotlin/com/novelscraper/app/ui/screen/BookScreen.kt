@@ -1,5 +1,20 @@
 package com.novelscraper.app.ui.screen
 
+import androidx.compose.material.icons.automirrored.outlined.MenuBook
+import androidx.compose.material.icons.automirrored.outlined.PlaylistAddCheck
+import androidx.compose.material.icons.outlined.AudioFile
+import androidx.compose.material.icons.outlined.CheckCircle
+import androidx.compose.material.icons.outlined.Checklist
+import androidx.compose.material.icons.outlined.DeleteOutline
+import androidx.compose.material.icons.outlined.DoneAll
+import androidx.compose.material.icons.outlined.FileDownloadOff
+import androidx.compose.material.icons.outlined.PlaylistRemove
+import androidx.compose.material.icons.outlined.RadioButtonUnchecked
+import androidx.compose.material.icons.outlined.RecordVoiceOver
+import androidx.compose.material.icons.outlined.Refresh
+import androidx.compose.material.icons.outlined.RemoveDone
+import androidx.compose.material.icons.outlined.SwapHoriz
+import com.novelscraper.app.ui.components.MenuItem
 import com.novelscraper.app.platform.PlatformBackHandler
 import androidx.compose.foundation.background
 import androidx.compose.material3.VerticalDivider
@@ -42,7 +57,6 @@ import androidx.compose.material3.AssistChip
 import androidx.compose.material3.Button
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.DropdownMenu
-import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.FilterChip
 import androidx.compose.material3.FilterChipDefaults
@@ -164,34 +178,27 @@ fun BookScreen(
                         Icon(Icons.Filled.MoreVert, contentDescription = "More")
                     }
                     DropdownMenu(expanded = menuOpen, onDismissRequest = { menuOpen = false }) {
-                        DropdownMenuItem(
-                            text = { Text("Check for new chapters") },
-                            onClick = { menuOpen = false; vm.checkForNewChapters() },
-                        )
-                        if (b.downloadedCountOf(chapters) > 0) DropdownMenuItem(
-                            text = { Text("Remove downloads") },
-                            onClick = { menuOpen = false; vm.removeDownloads() },
-                        )
-                        if (BookHooks.narration != null) DropdownMenuItem(
-                            text = { Text("Narration") },
-                            onClick = { menuOpen = false; showNarration = true },
-                        )
-                        if (b.isSource) DropdownMenuItem(
-                            text = { Text("Migrate to another source") },
-                            onClick = { menuOpen = false; onMigrate() },
-                        )
-                        DropdownMenuItem(
-                            text = { Text("Save as audio") },
-                            onClick = { menuOpen = false; showAudio = true },
-                        )
-                        DropdownMenuItem(
-                            text = { Text("Save as EPUB") },
-                            onClick = { menuOpen = false; vm.saveEpub(b.title, b.author) },
-                        )
-                        if (b.inLibrary) DropdownMenuItem(
-                            text = { Text("Remove from library") },
-                            onClick = { menuOpen = false; showDelete = true },
-                        )
+                        MenuItem("Check for new chapters", Icons.Outlined.Refresh) {
+                            menuOpen = false; vm.checkForNewChapters()
+                        }
+                        if (b.downloadedCountOf(chapters) > 0) MenuItem("Remove downloads", Icons.Outlined.FileDownloadOff) {
+                            menuOpen = false; vm.removeDownloads()
+                        }
+                        if (BookHooks.narration != null) MenuItem("Narration", Icons.Outlined.RecordVoiceOver) {
+                            menuOpen = false; showNarration = true
+                        }
+                        if (b.isSource) MenuItem("Migrate to another source", Icons.Outlined.SwapHoriz) {
+                            menuOpen = false; onMigrate()
+                        }
+                        MenuItem("Save as audio", Icons.Outlined.AudioFile) {
+                            menuOpen = false; showAudio = true
+                        }
+                        MenuItem("Save as EPUB", Icons.AutoMirrored.Outlined.MenuBook) {
+                            menuOpen = false; vm.saveEpub(b.title, b.author)
+                        }
+                        if (b.inLibrary) MenuItem("Remove from library", Icons.Outlined.DeleteOutline) {
+                            menuOpen = false; showDelete = true
+                        }
                     }
                 },
             )
@@ -334,19 +341,27 @@ private fun BookContent(
         val isRead = ch.position in readSet
         return buildList {
             if (before.isNotEmpty()) {
-                add(MenuAction("Mark previous as read") { vm.setPositionsRead(before, true) })
-                add(MenuAction("Mark previous as unread") { vm.setPositionsRead(before, false) })
+                add(MenuAction("Mark previous as read", Icons.AutoMirrored.Outlined.PlaylistAddCheck) {
+                    vm.setPositionsRead(before, true)
+                })
+                add(MenuAction("Mark previous as unread", Icons.Outlined.PlaylistRemove) {
+                    vm.setPositionsRead(before, false)
+                })
             }
-            add(MenuAction(if (isRead) "Mark as unread" else "Mark as read") {
+            // The same marks the chapter list shows beside each chapter.
+            add(MenuAction(
+                if (isRead) "Mark as unread" else "Mark as read",
+                if (isRead) Icons.Outlined.RadioButtonUnchecked else Icons.Outlined.CheckCircle,
+            ) {
                 vm.setChapterRead(ch.position, !isRead)
             })
             if (others.isNotEmpty()) {
-                add(MenuAction("Mark all others as read") { vm.setPositionsRead(others, true) })
-                add(MenuAction("Mark all others as unread") { vm.setPositionsRead(others, false) })
+                add(MenuAction("Mark all others as read", Icons.Outlined.DoneAll) { vm.setPositionsRead(others, true) })
+                add(MenuAction("Mark all others as unread", Icons.Outlined.RemoveDone) { vm.setPositionsRead(others, false) })
             }
             // A hold used to start picking chapters out, and now opens this, so
             // the way in has to be here or it is gone.
-            add(MenuAction("Select chapters") { selection = selection + ch.position })
+            add(MenuAction("Select chapters", Icons.Outlined.Checklist) { selection = selection + ch.position })
         }
     }
 

@@ -1,5 +1,7 @@
 package com.novelscraper.app.ui.components
 
+import androidx.compose.material.icons.outlined.DeleteOutline
+import androidx.compose.material.icons.outlined.Edit
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
 import androidx.compose.foundation.combinedClickable
@@ -14,7 +16,6 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.DropdownMenu
-import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
@@ -60,12 +61,12 @@ fun CollectionTabs(
                     onLongClick = { menuFor = c.id },
                 )
                 DropdownMenu(expanded = menuFor == c.id, onDismissRequest = { menuFor = null }) {
-                    DropdownMenuItem(text = { Text("Rename") }, onClick = {
+                    MenuItem("Rename", Icons.Outlined.Edit) {
                         menuFor = null; editing = EditState(c.id, c.name)
-                    })
-                    DropdownMenuItem(text = { Text("Delete") }, onClick = {
+                    }
+                    MenuItem("Delete", Icons.Outlined.DeleteOutline) {
                         menuFor = null; confirmDelete = c
-                    })
+                    }
                 }
             }
         }

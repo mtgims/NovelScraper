@@ -38,7 +38,6 @@ import com.novelscraper.app.platform.isDesktop
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.offset
 import androidx.compose.material3.DropdownMenu
-import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.geometry.Offset
@@ -237,10 +236,7 @@ fun ChapterRow(
     Box(Modifier.offset { IntOffset(pressedAt.x.roundToInt(), pressedAt.y.roundToInt()) }) {
         DropdownMenu(expanded = menuOpen, onDismissRequest = { menuOpen = false }) {
             for (action in actions) {
-                DropdownMenuItem(
-                    text = { Text(action.label) },
-                    onClick = { menuOpen = false; action.onSelect() },
-                )
+                MenuItem(action.label, action.icon) { menuOpen = false; action.onSelect() }
             }
         }
     }

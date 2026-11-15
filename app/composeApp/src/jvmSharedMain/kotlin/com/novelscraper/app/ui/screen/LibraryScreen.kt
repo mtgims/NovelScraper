@@ -1,5 +1,10 @@
 package com.novelscraper.app.ui.screen
 
+import androidx.compose.material.icons.outlined.Book
+import androidx.compose.material.icons.outlined.DeleteOutline
+import androidx.compose.material.icons.outlined.DoneAll
+import androidx.compose.material.icons.outlined.Download
+import androidx.compose.material.icons.outlined.FileDownloadOff
 import androidx.compose.animation.animateColorAsState
 import androidx.compose.foundation.border
 import androidx.compose.foundation.hoverable
@@ -179,14 +184,14 @@ fun LibraryScreen(onOpenBook: (Int) -> Unit) {
                         items(display, key = { it.id }) { book ->
                             ReorderableItem(reorderState, key = book.id) { dragging ->
                                 val menu = listOf(
-                                    MenuAction("Open") { onOpenBook(book.id) },
-                                    MenuAction("Download all chapters") {
+                                    MenuAction("Open", Icons.Outlined.Book) { onOpenBook(book.id) },
+                                    MenuAction("Download all chapters", Icons.Outlined.Download) {
                                         vm.downloadAll(book.id)
                                         showToast("Downloading ${book.title}…")
                                     },
-                                    MenuAction("Mark all read") { vm.markAllRead(book.id) },
-                                    MenuAction("Remove downloads") { vm.removeDownloads(book.id) },
-                                    MenuAction("Remove from library") { vm.removeFromLibrary(book.id) },
+                                    MenuAction("Mark all read", Icons.Outlined.DoneAll) { vm.markAllRead(book.id) },
+                                    MenuAction("Remove downloads", Icons.Outlined.FileDownloadOff) { vm.removeDownloads(book.id) },
+                                    MenuAction("Remove from library", Icons.Outlined.DeleteOutline) { vm.removeFromLibrary(book.id) },
                                 )
                                 BookCard(
                                     menu = menu,

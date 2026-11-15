@@ -1,5 +1,7 @@
 package com.novelscraper.app.ui.components
 
+import androidx.compose.material3.Icon
+import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.combinedClickable
 import androidx.compose.material3.DropdownMenu
@@ -21,8 +23,17 @@ import androidx.compose.ui.input.pointer.PointerEventType
 import androidx.compose.ui.input.pointer.isSecondaryPressed
 import androidx.compose.ui.input.pointer.pointerInput
 
-/** One line of a context menu. */
-data class MenuAction(val label: String, val onSelect: () -> Unit)
+/** One line of a context menu, with the icon every menu line has. */
+data class MenuAction(val label: String, val icon: ImageVector, val onSelect: () -> Unit)
+
+/** A menu line: its icon, then its label. Every menu in the app uses this. */
+@Composable
+fun MenuItem(label: String, icon: ImageVector, onClick: () -> Unit) =
+    DropdownMenuItem(
+        text = { Text(label) },
+        leadingIcon = { Icon(icon, contentDescription = null) },
+        onClick = onClick,
+    )
 
 /**
  * The menu a thing offers when asked, which on a computer means a right-click.
@@ -82,13 +93,10 @@ fun WithContextMenu(
         ) {
             DropdownMenu(expanded = open, onDismissRequest = { open = false }) {
                 for (action in actions) {
-                    DropdownMenuItem(
-                        text = { Text(action.label) },
-                        onClick = {
-                            open = false
-                            action.onSelect()
-                        },
-                    )
+                    MenuItem(action.label, action.icon) {
+                        open = false
+                        action.onSelect()
+                    }
                 }
             }
         }
