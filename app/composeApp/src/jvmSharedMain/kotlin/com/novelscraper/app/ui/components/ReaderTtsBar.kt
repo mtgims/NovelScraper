@@ -276,68 +276,29 @@ private fun SleepTimerRow() {
 @Composable
 private fun VoicePicker(current: String, onPick: (String) -> Unit) {
     val voices = rememberSystemVoices()
-    var open by remember { mutableStateOf(false) }
-
     val label = if (current.isBlank()) "Default voice"
     else voices.firstOrNull { it.name == current }?.label ?: current
 
-    Box {
-        Row(
-            Modifier.fillMaxWidth().clickable { open = true }.padding(vertical = 8.dp),
-            verticalAlignment = Alignment.CenterVertically,
-        ) {
-            Text("Voice", style = MaterialTheme.typography.labelMedium,
-                color = MaterialTheme.colorScheme.onSurfaceVariant)
-            Text(label, style = MaterialTheme.typography.bodyMedium,
-                modifier = Modifier.padding(start = 10.dp))
-        }
-        DropdownMenu(expanded = open, onDismissRequest = { open = false }) {
-            DropdownMenuItem(text = { Text("Default voice") }, onClick = { onPick(""); open = false })
-            voices.forEach { v ->
-                DropdownMenuItem(text = { Text(v.label) }, onClick = { onPick(v.name); open = false })
-            }
-        }
+    VoiceDropdown(label = "Voice", value = label) { close ->
+        VoiceItem("Default voice", current.isBlank()) { onPick(""); close() }
+        voices.forEach { v -> VoiceItem(v.label, v.name == current) { onPick(v.name); close() } }
     }
 }
 
 /** Switch among already-downloaded Piper voices (new ones are added in Settings). */
 @Composable
 private fun PiperVoiceDropdown(current: String, onPick: (String) -> Unit) {
-    var open by remember { mutableStateOf(false) }
     val installed = TtsModels.PIPER_VOICES.filter { TtsModels.isModelReady(it.id) }
     val cur = TtsModels.PIPER_VOICES.firstOrNull { it.id == current }
 
-    Box {
-        Row(
-            Modifier.fillMaxWidth().clickable { open = true }.padding(vertical = 8.dp),
-            verticalAlignment = Alignment.CenterVertically,
-        ) {
-            Text("Voice", style = MaterialTheme.typography.labelMedium,
-                color = MaterialTheme.colorScheme.onSurfaceVariant)
-            Text(cur?.let { "${it.name} · ${it.accent}" } ?: "Amy",
-                style = MaterialTheme.typography.bodyMedium,
-                modifier = Modifier.weight(1f).padding(start = 10.dp))
-            Icon(Icons.Filled.ArrowDropDown, contentDescription = null,
-                tint = MaterialTheme.colorScheme.onSurfaceVariant)
-        }
-        DropdownMenu(expanded = open, onDismissRequest = { open = false }) {
-            installed.forEach { v ->
-                DropdownMenuItem(
-                    text = { Text("${v.name} · ${v.accent}") },
-                    onClick = { onPick(v.id); open = false },
-                    trailingIcon = if (v.id == current) {
-                        { Icon(Icons.Filled.Check, contentDescription = null,
-                            tint = MaterialTheme.colorScheme.primary) }
-                    } else null,
-                )
-            }
-            DropdownMenuItem(
-                text = {
-                    Text("More voices in Settings…", style = MaterialTheme.typography.labelSmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant)
-                },
-                onClick = { open = false }, enabled = false,
-            )
-        }
+    VoiceDropdown(label = "Voice", value = cur?.let { "${it.name} · ${it.accent}" } ?: "Amy") { close ->
+        installed.forEach { v -> VoiceItem("${v.name} · ${v.accent}", v.id == current) { onPick(v.id); close() } }
+        DropdownMenuItem(
+            text = {
+                Text("More voices in Settings…", style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant)
+            },
+            onClick = close, enabled = false,
+        )
     }
 }
