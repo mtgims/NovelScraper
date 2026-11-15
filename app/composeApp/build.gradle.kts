@@ -69,6 +69,13 @@ val desktopFonts = tasks.register<Sync>("desktopFonts") {
     into(layout.buildDirectory.dir("generated/desktopFonts"))
 }
 
+// The changelog, shipped inside both apps so they can show what changed
+// (update/Changelog.kt reads it as /changelog/CHANGELOG.md).
+val changelogResource = tasks.register<Sync>("changelogResource") {
+    from(rootProject.file("CHANGELOG.md")) { into("changelog") }
+    into(layout.buildDirectory.dir("generated/changelog"))
+}
+
 // The shared code of every app, as a Kotlin Multiplatform library. Source sets:
 //   jvmSharedMain  everything that runs the same on Android and desktop: models,
 //                  networking, view models, screens, theme, extensions. Android,
@@ -118,6 +125,7 @@ kotlin {
 
     sourceSets {
         getByName("jvmSharedMain") {
+            resources.srcDir(changelogResource)
             dependencies {
                 implementation("org.jetbrains.compose.runtime:runtime:1.12.0")
                 implementation("org.jetbrains.compose.foundation:foundation:1.12.0")

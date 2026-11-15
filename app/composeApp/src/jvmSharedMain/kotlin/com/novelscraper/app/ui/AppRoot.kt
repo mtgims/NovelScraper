@@ -39,6 +39,8 @@ import com.novelscraper.app.ui.browse.BrowseScreen
 import com.novelscraper.app.ui.browse.ExtensionsScreen
 import com.novelscraper.app.ui.browse.GlobalSearchScreen
 import com.novelscraper.app.ui.browse.MigrateScreen
+import com.novelscraper.app.ui.screen.ChangelogScreen
+import com.novelscraper.app.ui.screen.WhatsNewPrompt
 import com.novelscraper.app.ui.browse.MigrateFromScreen
 import com.novelscraper.app.ui.browse.MigrateSourcesScreen
 import com.novelscraper.app.ui.browse.SourceScreen
@@ -201,8 +203,9 @@ private fun MainApp() {
                 )
             }
             composable("stats") { StatsScreen() }
+            composable("changelog") { ChangelogScreen(onBack = { nav.popBackStack() }) }
             composable("settings") {
-                SettingsScreen()
+                SettingsScreen(onChangelog = { nav.navigate("changelog") })
             }
             composable(
                 "book/{id}",
@@ -233,6 +236,8 @@ private fun MainApp() {
 
                 // A source asking for a browser check can come from any screen.
                 SiteCheckPrompt()
+                // Once after an update: what came with it.
+                WhatsNewPrompt(onOpenAll = { nav.navigate("changelog") })
                 // So can a site's page asked for: a source's, a novel's, a check's.
                 LaunchedEffect(Unit) {
                     WebPages.requests.collect { r ->

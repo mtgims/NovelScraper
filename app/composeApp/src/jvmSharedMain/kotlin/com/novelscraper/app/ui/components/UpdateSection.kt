@@ -31,7 +31,7 @@ import com.novelscraper.app.update.AppUpdates
  * which is a thing nobody remembers to do. The app asks the same page itself.
  */
 @Composable
-fun UpdateSection() {
+fun UpdateSection(onChangelog: () -> Unit = {}) {
     val state by AppUpdates.state.collectAsState()
 
     Column(Modifier.fillMaxWidth().padding(top = 8.dp)) {
@@ -70,6 +70,10 @@ fun UpdateSection() {
             }
         }
 
+        TextButton(onClick = onChangelog, modifier = Modifier.padding(top = 2.dp)) {
+            Text("What's new in each version")
+        }
+
         (state as? AppUpdates.State.Downloading)?.let { s ->
             val fraction = if (s.total > 0) s.done.toFloat() / s.total else 0f
             Column(Modifier.padding(top = 8.dp)) {
@@ -94,7 +98,7 @@ fun UpdateSection() {
                 )
             }
             Row(horizontalArrangement = Arrangement.spacedBy(4.dp), modifier = Modifier.padding(top = 4.dp)) {
-                TextButton(onClick = { openInBrowser(AppUpdates.RELEASES_PAGE) }) { Text("What's new") }
+                TextButton(onClick = { openInBrowser(AppUpdates.RELEASES_PAGE) }) { Text("Release page") }
                 TextButton(onClick = { AppUpdates.dismiss() }) { Text("Not now") }
             }
         }

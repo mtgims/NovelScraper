@@ -83,14 +83,14 @@ import com.novelscraper.app.ui.theme.ThemeController
  * A wide window shows the list and the open page side by side.
  */
 @Composable
-fun SettingsScreen() {
+fun SettingsScreen(onChangelog: () -> Unit = {}) {
     var open by rememberSaveable { mutableStateOf<String?>(null) }
     BoxWithConstraints(Modifier.fillMaxSize()) {
         if (maxWidth >= TWO_PANES) {
             val page = open?.let { SettingsPage.valueOf(it) } ?: SettingsPage.APPEARANCE
             Row(Modifier.fillMaxSize()) {
                 Scrolling(Modifier.width(380.dp)) {
-                    Overview(selected = page, onOpen = { open = it.name })
+                    Overview(selected = page, onOpen = { open = it.name }, onChangelog = onChangelog)
                 }
                 VerticalDivider(color = MaterialTheme.colorScheme.outline)
                 Box(Modifier.weight(1f)) {
@@ -116,7 +116,7 @@ fun SettingsScreen() {
                 },
                 label = "settings page",
             ) { name ->
-                if (name == null) Scrolling { Overview(selected = null, onOpen = { open = it.name }) }
+                if (name == null) Scrolling { Overview(selected = null, onOpen = { open = it.name }, onChangelog = onChangelog) }
                 else PageWithBack(SettingsPage.valueOf(name), onBack = { open = null })
             }
         }
@@ -139,7 +139,7 @@ internal enum class SettingsPage(val title: String, val icon: ImageVector, val c
 private val TWO_PANES = 840.dp
 
 @Composable
-private fun Overview(selected: SettingsPage?, onOpen: (SettingsPage) -> Unit) {
+private fun Overview(selected: SettingsPage?, onOpen: (SettingsPage) -> Unit, onChangelog: () -> Unit) {
     Text("Settings", style = MaterialTheme.typography.headlineMedium)
     SettingsGroup {
         SettingsPage.entries.forEachIndexed { i, p ->
@@ -163,7 +163,7 @@ private fun Overview(selected: SettingsPage?, onOpen: (SettingsPage) -> Unit) {
         }
     }
     SettingsGroup(title = "This app") {
-        GroupBody { UpdateSection() }
+        GroupBody { UpdateSection(onChangelog) }
     }
 }
 
