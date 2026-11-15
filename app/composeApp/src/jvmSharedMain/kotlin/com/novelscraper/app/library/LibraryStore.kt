@@ -102,12 +102,16 @@ class LibraryStore(
                 counts?.total?.toInt() ?: 0, r?.sentence?.toInt())
         }
 
-    /** Words in the chapters of [id] that are read and whose text is on this
-     *  device (downloaded, or kept from reading them). */
-    suspend fun wordsRead(id: Int): Int = io {
-        chapters.readText(id.toLong()).executeAsList().sumOf { html ->
-            com.novelscraper.app.platform.htmlToPlain(html).split(WHITESPACE).count { it.isNotBlank() }
-        }
+    /** The words in [id]'s read chapters whose text is on this device
+     *  (downloaded, or kept from reading them), and how many chapters that is. */
+    suspend fun wordsRead(id: Int): WordSample = io {
+        val texts = chapters.readText(id.toLong()).executeAsList()
+        WordSample(
+            words = texts.sumOf { html ->
+                com.novelscraper.app.platform.htmlToPlain(html).split(WHITESPACE).count { it.isNotBlank() }.toLong()
+            },
+            chapters = texts.size,
+        )
     }
 
     /** The library as it is now (for a one-off pass, not a screen). */
@@ -761,7 +765,7 @@ class LibraryStore(
         rating = rating?.toInt(), inLibrary = true, pluginId = plugin_id, path = path,
         summary = summary, genres = genres, status = status, webUrl = web_url, collectionIds = cols,
         chapterCount = chapter_count.toInt(), unreadCount = unread_count.toInt(), downloadedCount = downloaded_count.toInt(),
-        checkedAt = checked_at,
+        checkedAt = checked_at, openedAt = opened_at,
     )
 
     private suspend fun <T> io(block: () -> T): T = withContext(Dispatchers.IO) { block() }

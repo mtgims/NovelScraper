@@ -25,6 +25,8 @@ data class LibBook(
     val downloadedCount: Int = 0,
     /** When the chapter list was last fetched (0 = never). */
     val checkedAt: Long = 0,
+    /** When a chapter of it was last opened, or the novel first opened (0 = never). */
+    val openedAt: Long = 0,
 ) {
     val isSource: Boolean get() = pluginId != null
     /** Read out of an EPUB on this device: no source to fetch from. */

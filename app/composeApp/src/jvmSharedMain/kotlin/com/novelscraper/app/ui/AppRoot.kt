@@ -202,7 +202,7 @@ private fun MainApp() {
                     onOpenNovel = { id -> nav.navigate("book/$id") },
                 )
             }
-            composable("stats") { StatsScreen() }
+            composable("stats") { StatsScreen(onOpenNovel = { id -> nav.navigate("book/$id") }) }
             composable("changelog") { ChangelogScreen(onBack = { nav.popBackStack() }) }
             composable("settings") {
                 SettingsScreen(onChangelog = { nav.navigate("changelog") })
