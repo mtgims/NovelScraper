@@ -96,7 +96,9 @@ fun NavRail(
                     label = item.label,
                     selected = current == item.route,
                     labelled = labelled,
-                    icon = { tint -> Icon(item.icon, contentDescription = item.label, tint = tint) },
+                    icon = { tint ->
+                        Badged(badgeFor(item.route), item.label) { Icon(item.icon, contentDescription = item.label, tint = tint) }
+                    },
                     onClick = { onSelect(item.route) },
                 )
             }

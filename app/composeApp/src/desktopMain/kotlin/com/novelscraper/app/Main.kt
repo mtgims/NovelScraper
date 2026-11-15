@@ -27,6 +27,7 @@ import com.novelscraper.app.data.LibraryPrefs
 import com.novelscraper.app.data.ReaderPrefs
 import com.novelscraper.app.update.AppUpdates
 import com.novelscraper.app.extensions.Extensions
+import com.novelscraper.app.extensions.ExtensionUpdates
 import com.novelscraper.app.library.Library
 import com.novelscraper.app.library.LibrarySyncRunner
 import com.novelscraper.app.net.Net
@@ -58,6 +59,8 @@ fun initApp() {
     // A quiet look at the releases page on startup: a reader who didn't
     // ask isn't told that GitHub was unreachable.
     AppUpdates.check(quietly = true)
+    // Likewise for the sources: newer versions are counted on Browse.
+    ExtensionUpdates.checkQuietly()
     Library.init()
     // Before any sync runs, so other desktops' expressive settings land.
     NovelVoicings.attach(Library.store)

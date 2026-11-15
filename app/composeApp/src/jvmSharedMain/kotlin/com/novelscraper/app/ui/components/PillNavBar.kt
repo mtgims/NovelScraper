@@ -20,12 +20,18 @@ import androidx.compose.material.icons.filled.BarChart
 import androidx.compose.material.icons.filled.Explore
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material.icons.filled.Sync
+import androidx.compose.material3.Badge
+import androidx.compose.material3.BadgedBox
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.collectAsState
+import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -34,6 +40,24 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 
 internal data class NavItem(val route: String, val label: String, val icon: ImageVector)
+
+/** The number shown on a destination: Browse counts the sources with an update waiting. */
+@Composable
+internal fun badgeFor(route: String): Int {
+    if (route != "browse") return 0
+    val offers by com.novelscraper.app.extensions.ExtensionUpdates.offers.collectAsState()
+    return offers.size
+}
+
+/** [icon] with [count] on its corner, or the icon alone for none. */
+@Composable
+internal fun Badged(count: Int, label: String, icon: @Composable () -> Unit) {
+    if (count <= 0) return icon()
+    BadgedBox(
+        badge = { Badge { Text(if (count > 99) "99+" else "$count") } },
+        modifier = Modifier.semantics { contentDescription = "$label, $count source updates" },
+    ) { icon() }
+}
 
 /** The app's destinations, in one place: the pill on a phone and the rail on a
  *  computer are two ways of showing the same list. */
@@ -67,14 +91,14 @@ fun PillNavBar(current: String?, onSelect: (String) -> Unit, modifier: Modifier 
             horizontalArrangement = Arrangement.spacedBy(2.dp),
         ) {
             navItems.forEach { item ->
-                PillItem(item, selected = current == item.route) { onSelect(item.route) }
+                PillItem(item, selected = current == item.route, badge = badgeFor(item.route)) { onSelect(item.route) }
             }
         }
     }
 }
 
 @Composable
-private fun PillItem(item: NavItem, selected: Boolean, onClick: () -> Unit) {
+private fun PillItem(item: NavItem, selected: Boolean, badge: Int, onClick: () -> Unit) {
     val bg = if (selected) MaterialTheme.colorScheme.primaryContainer else MaterialTheme.colorScheme.surface.copy(alpha = 0f)
     val fg = if (selected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant
     Row(
@@ -89,7 +113,7 @@ private fun PillItem(item: NavItem, selected: Boolean, onClick: () -> Unit) {
             .padding(horizontal = 12.dp, vertical = 8.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        Icon(item.icon, contentDescription = item.label, tint = fg)
+        Badged(badge, item.label) { Icon(item.icon, contentDescription = item.label, tint = fg) }
         AnimatedVisibility(
             visible = selected,
             enter = fadeIn() + expandHorizontally(),

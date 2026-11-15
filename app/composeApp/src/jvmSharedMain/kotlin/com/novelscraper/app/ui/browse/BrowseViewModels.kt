@@ -14,6 +14,7 @@ import com.novelscraper.app.library.Library
 import com.novelscraper.app.extensions.SiteBlockedException
 import com.novelscraper.app.extensions.SiteChallengeException
 import com.novelscraper.app.extensions.SiteChecks
+import com.novelscraper.app.extensions.ExtensionUpdates
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -80,6 +81,7 @@ class ExtensionsViewModel : ViewModel() {
         _ui.update { it.copy(loading = true) }
         viewModelScope.launch {
             val r = Extensions.available()
+            ExtensionUpdates.noteCatalogue(r.plugins, r.failed)
             _ui.update { it.copy(loading = false, available = r.plugins, failedRepos = r.failed) }
         }
     }
@@ -122,6 +124,7 @@ class ExtensionsViewModel : ViewModel() {
         val plugin = offered.plugins.firstOrNull { it.id == id }
             ?: error("that repository no longer offers it")
         Extensions.install(plugin)
+        ExtensionUpdates.noteCatalogue(offered.plugins, offered.failed)
         _ui.update { it.copy(available = offered.plugins, failedRepos = offered.failed) }
         loadSynced()
     }

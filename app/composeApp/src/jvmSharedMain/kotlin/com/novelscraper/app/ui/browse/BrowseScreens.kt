@@ -101,6 +101,7 @@ import coil3.request.crossfade
 import com.novelscraper.app.data.ReaderPrefs
 import com.novelscraper.app.data.Sentences
 import com.novelscraper.app.extensions.Extensions
+import com.novelscraper.app.extensions.ExtensionUpdates
 import com.novelscraper.app.extensions.InstalledPlugin
 import com.novelscraper.app.extensions.RepoPlugin
 import com.novelscraper.app.platform.PlatformBackHandler
@@ -160,6 +161,9 @@ fun BrowseScreen(
     onMigrate: () -> Unit = {},
 ) {
     val installed by Extensions.installed.collectAsState()
+    val updates by ExtensionUpdates.offers.collectAsState()
+    // Opening Browse after a few hours asks the repositories again.
+    LaunchedEffect(Unit) { ExtensionUpdates.checkQuietly() }
     Column(Modifier.fillMaxSize()) {
         ScreenTitle("Browse") {
             TextButton(onClick = onMigrate) {
@@ -167,7 +171,9 @@ fun BrowseScreen(
                 Text("Migrate", modifier = Modifier.padding(start = 6.dp))
             }
             TextButton(onClick = onManage) {
-                Icon(Icons.Filled.Extension, contentDescription = null, modifier = Modifier.size(18.dp))
+                com.novelscraper.app.ui.components.Badged(updates.size, "Extensions") {
+                    Icon(Icons.Filled.Extension, contentDescription = null, modifier = Modifier.size(18.dp))
+                }
                 Text("Extensions", modifier = Modifier.padding(start = 6.dp))
             }
         }
@@ -190,6 +196,9 @@ fun BrowseScreen(
                 LazyColumn(
                     contentPadding = PaddingValues(bottom = if (isDesktop) 24.dp else 104.dp),
                 ) {
+                    if (updates.isNotEmpty()) item(key = "updates") {
+                        UpdatesBanner(updates.map { it.name }, onManage)
+                    }
                     item(key = "search-all") {
                         // Looks like a search box, and opens the search of every source.
                         Row(
@@ -248,6 +257,34 @@ private fun SourceRow(
                 color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 1, overflow = TextOverflow.Ellipsis)
         }
         trailing()
+    }
+}
+
+/** Sources with a newer version waiting, named, with the way to update them. */
+@Composable
+private fun UpdatesBanner(names: List<String>, onOpen: () -> Unit) {
+    Row(
+        Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 6.dp)
+            .clip(RoundedCornerShape(16.dp))
+            .background(MaterialTheme.colorScheme.secondaryContainer)
+            .clickable(onClick = onOpen)
+            .padding(start = 16.dp, end = 8.dp, top = 10.dp, bottom = 10.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Icon(Icons.Filled.Extension, null, tint = MaterialTheme.colorScheme.onSecondaryContainer)
+        Column(Modifier.weight(1f).padding(start = 12.dp)) {
+            Text(
+                if (names.size == 1) "An update for ${names[0]}" else "Updates for ${names.size} sources",
+                style = MaterialTheme.typography.titleSmall,
+                color = MaterialTheme.colorScheme.onSecondaryContainer,
+            )
+            if (names.size > 1) Text(
+                names.joinToString(", "),
+                style = MaterialTheme.typography.bodySmall, maxLines = 1, overflow = TextOverflow.Ellipsis,
+                color = MaterialTheme.colorScheme.onSecondaryContainer,
+            )
+        }
+        TextButton(onClick = onOpen) { Text("Update") }
     }
 }
 
@@ -312,7 +349,9 @@ fun ExtensionsScreen(onBack: () -> Unit) {
             },
         )
         PrimaryTabRow(selectedTabIndex = tab) {
-            Tab(tab == 0, { tab = 0 }, text = { Text(if (updates.isEmpty()) "Installed" else "Installed (${updates.size} updates)") })
+            Tab(tab == 0, { tab = 0 }, text = {
+                Text(when (updates.size) { 0 -> "Installed"; 1 -> "Installed (1 update)"; else -> "Installed (${updates.size} updates)" })
+            })
             Tab(tab == 1, { tab = 1 }, text = { Text("Available") })
         }
         OutlinedTextField(
