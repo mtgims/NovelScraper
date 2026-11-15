@@ -281,6 +281,12 @@ tasks.withType<Test>().configureEach {
     systemProperty("htmlParity.extra", providers.gradleProperty("htmlParityExtra").getOrElse(""))
     // LivePluginTest (real sites) runs only with -PlivePlugins=<id>[,<id>...].
     systemProperty("live.plugins", providers.gradleProperty("livePlugins").getOrElse(""))
+    // PluginBenchmark (recorded pages, no network) runs only with -PbenchRepo=<extensions checkout>.
+    systemProperty("bench.repo", providers.gradleProperty("benchRepo").getOrElse(""))
+    systemProperty("bench.only", providers.gradleProperty("benchOnly").getOrElse(""))
+    systemProperty("bench.rounds", providers.gradleProperty("benchRounds").getOrElse("3"))
+    systemProperty("bench.live", providers.gradleProperty("benchLive").getOrElse(""))
+    systemProperty("bench.dump", providers.gradleProperty("benchDump").getOrElse(""))
     systemProperty("live.repo", providers.gradleProperty("liveRepo").getOrElse(""))
     systemProperty("live.search", providers.gradleProperty("liveSearch").getOrElse(""))
     // Where LivePluginTest records what the sites answered, for offline replays.
@@ -305,6 +311,7 @@ tasks.withType<Test>().configureEach {
     systemProperty("fetch.browser", providers.gradleProperty("fetchBrowser").getOrElse(""))
     testLogging {
         if (providers.gradleProperty("livePlugins").isPresent ||
+            providers.gradleProperty("benchRepo").isPresent ||
             providers.gradleProperty("liveBrowser").isPresent ||
             providers.gradleProperty("fetchBrowser").isPresent ||
             providers.gradleProperty("liveTts").isPresent ||
