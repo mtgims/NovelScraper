@@ -4,6 +4,12 @@ import com.novelscraper.app.extensions.SiteChecks
 import com.novelscraper.app.platform.WebPages
 import com.novelscraper.app.platform.hasInAppBrowser
 import androidx.compose.foundation.background
+import com.novelscraper.app.ui.screen.cardColor
+import androidx.compose.ui.unit.Dp
+import androidx.compose.ui.graphics.Color
+import androidx.compose.material3.FilledTonalButton
+import androidx.compose.foundation.lazy.grid.GridItemSpan
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.material3.VerticalDivider
 import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.BoxWithConstraints
@@ -29,6 +35,7 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.grid.GridCells
 import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
 import androidx.compose.foundation.lazy.grid.itemsIndexed
+import androidx.compose.foundation.lazy.grid.items as gridItems
 import androidx.compose.foundation.lazy.grid.rememberLazyGridState
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.itemsIndexed
@@ -243,20 +250,26 @@ private fun SourceRow(
             .padding(horizontal = 20.dp, vertical = 10.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        Box(
-            Modifier.size(40.dp).clip(RoundedCornerShape(8.dp)).background(MaterialTheme.colorScheme.surfaceVariant),
-            contentAlignment = Alignment.Center,
-        ) {
-            Text(name.take(1).uppercase(), style = MaterialTheme.typography.titleMedium,
-                color = MaterialTheme.colorScheme.onSurfaceVariant)
-            RemoteImage(iconUrl, emptyMap(), null, Modifier.fillMaxSize())
-        }
+        SourceIcon(name, iconUrl, 40.dp)
         Column(Modifier.weight(1f).padding(start = 14.dp)) {
             Text(name, style = MaterialTheme.typography.titleSmall, maxLines = 1, overflow = TextOverflow.Ellipsis)
             Text("${languageName(lang)} · $subtitle", style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 1, overflow = TextOverflow.Ellipsis)
         }
         trailing()
+    }
+}
+
+/** A source's icon, or its initial where it has none. */
+@Composable
+private fun SourceIcon(name: String, iconUrl: String, size: Dp) {
+    Box(
+        Modifier.size(size).clip(RoundedCornerShape(size / 5)).background(MaterialTheme.colorScheme.surfaceVariant),
+        contentAlignment = Alignment.Center,
+    ) {
+        Text(name.take(1).uppercase(), style = MaterialTheme.typography.titleMedium,
+            color = MaterialTheme.colorScheme.onSurfaceVariant)
+        RemoteImage(iconUrl, emptyMap(), null, Modifier.fillMaxSize())
     }
 }
 
@@ -339,107 +352,242 @@ fun ExtensionsScreen(onBack: () -> Unit) {
     fun matches(name: String, site: String, l: String) =
         (query.isBlank() || name.contains(query, true) || site.contains(query, true)) && (lang == null || l == lang)
 
-    Column(Modifier.fillMaxSize()) {
-        TopAppBar(
-            title = { Text("Extensions") },
-            navigationIcon = { IconButton(onClick = onBack) { Icon(Icons.AutoMirrored.Filled.ArrowBack, "Back") } },
-            actions = {
-                TextButton(onClick = { showRepos = true }) { Text("Repositories") }
-                IconButton(onClick = vm::refresh) { Icon(Icons.Filled.Refresh, "Refresh") }
-            },
-        )
-        PrimaryTabRow(selectedTabIndex = tab) {
-            Tab(tab == 0, { tab = 0 }, text = {
-                Text(when (updates.size) { 0 -> "Installed"; 1 -> "Installed (1 update)"; else -> "Installed (${updates.size} updates)" })
-            })
-            Tab(tab == 1, { tab = 1 }, text = { Text("Available") })
-        }
+    val installedLabel = when (updates.size) { 0 -> "Installed"; 1 -> "Installed (1 update)"; else -> "Installed (${updates.size} updates)" }
+    val search: @Composable (Modifier) -> Unit = { m ->
         OutlinedTextField(
             value = query, onValueChange = { query = it }, singleLine = true,
             placeholder = { Text("Search sources") },
             leadingIcon = { Icon(Icons.Filled.Search, null) },
-            modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 8.dp),
+            modifier = m,
         )
+    }
+    val languageChips: @Composable (Modifier) -> Unit = { m ->
         if (tab == 1 && languages.size > 1) {
-            Row(Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()).padding(horizontal = 12.dp), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+            Row(m.fillMaxWidth().horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                 FilterChip(lang == null, { lang = null }, label = { Text("All") })
                 languages.forEach { l -> FilterChip(lang == l, { lang = if (lang == l) null else l }, label = { Text(languageName(l)) }) }
             }
         }
+    }
+    val failed: @Composable () -> Unit = {
         ui.failedRepos.forEach {
             Text("Couldn't load $it", color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodySmall,
                 modifier = Modifier.padding(horizontal = 20.dp, vertical = 2.dp))
         }
-        when {
-            tab == 0 -> {
-                val list = installed.filter { matches(it.name, it.site, it.lang) }
-                if (list.isEmpty()) Centered { Text("Nothing installed yet. Pick sources under Available.") }
-                else LazyColumn(contentPadding = PaddingValues(bottom = 104.dp)) {
-                    items(list, key = { it.id }) { p ->
+    }
+
+    BoxWithConstraints(Modifier.fillMaxSize()) {
+        // A window this wide gets the computer's layout: one toolbar, and the
+        // sources as cards in a grid rather than a phone's list stretched across.
+        val wide = maxWidth >= EXTENSIONS_WIDE
+        Column(Modifier.fillMaxSize()) {
+            TopAppBar(
+                title = { Text("Extensions") },
+                navigationIcon = { IconButton(onClick = onBack) { Icon(Icons.AutoMirrored.Filled.ArrowBack, "Back") } },
+                actions = {
+                    TextButton(onClick = { showRepos = true }) { Text("Repositories") }
+                    IconButton(onClick = vm::refresh) { Icon(Icons.Filled.Refresh, "Refresh") }
+                },
+            )
+            if (wide) {
+                ContentWidth(max = EXTENSIONS_MAX_WIDTH) {
+                    Column {
+                        Row(
+                            Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 8.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                        ) {
+                            TabPills(listOf(installedLabel, "Available"), tab) { tab = it }
+                            Spacer(Modifier.weight(1f).widthIn(min = 16.dp))
+                            search(Modifier.width(340.dp))
+                        }
+                        languageChips(Modifier.padding(horizontal = 16.dp, vertical = 4.dp))
+                        failed()
+                    }
+                }
+            } else {
+                PrimaryTabRow(selectedTabIndex = tab) {
+                    Tab(tab == 0, { tab = 0 }, text = { Text(installedLabel) })
+                    Tab(tab == 1, { tab = 1 }, text = { Text("Available") })
+                }
+                search(Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 8.dp))
+                languageChips(Modifier.padding(horizontal = 12.dp))
+                failed()
+            }
+            val spinner: @Composable () -> Unit = { CircularProgressIndicator(Modifier.size(22.dp), strokeWidth = 2.dp) }
+            when {
+                tab == 0 -> {
+                    val list = installed.filter { matches(it.name, it.site, it.lang) }.map { p ->
                         val offer = updateOffers[p.id]
-                        SourceRow(p.name, p.lang, p.iconUrl, "v${p.version}", null) {
-                            if (p.id in ui.busy) CircularProgressIndicator(Modifier.size(22.dp), strokeWidth = 2.dp)
-                            else Row {
-                                if (offer != null) TextButton(onClick = { vm.install(offer) }) { Text("Update") }
+                        SourceEntry(p.id, p.name, p.lang, p.iconUrl, "v${p.version}", p.site) { cards ->
+                            if (p.id in ui.busy) spinner()
+                            else Row(verticalAlignment = Alignment.CenterVertically) {
+                                if (offer != null) {
+                                    if (cards) FilledTonalButton(onClick = { vm.install(offer) }) { Text("Update") }
+                                    else TextButton(onClick = { vm.install(offer) }) { Text("Update") }
+                                }
                                 TextButton(onClick = { vm.uninstall(p) }) { Text("Remove") }
                             }
                         }
                     }
+                    if (list.isEmpty()) Centered { Text("Nothing installed yet. Pick sources under Available.") }
+                    else SourceList(listOf(null to list), wide)
                 }
-            }
-            repos.isEmpty() -> Centered {
-                Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                    Text("No repositories yet.", style = MaterialTheme.typography.titleMedium)
-                    Text(
-                        "Sources come from extension repositories. Add one by its address " +
-                            "(the URL of its index.json), then install the sources you want.",
-                        style = MaterialTheme.typography.bodyMedium, textAlign = TextAlign.Center,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        modifier = Modifier.padding(top = 6.dp, bottom = 14.dp).widthIn(max = 460.dp),
-                    )
-                    Button(onClick = { showRepos = true }) { Text("Add a repository") }
+                repos.isEmpty() -> Centered {
+                    Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                        Text("No repositories yet.", style = MaterialTheme.typography.titleMedium)
+                        Text(
+                            "Sources come from extension repositories. Add one by its address " +
+                                "(the URL of its index.json), then install the sources you want.",
+                            style = MaterialTheme.typography.bodyMedium, textAlign = TextAlign.Center,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            modifier = Modifier.padding(top = 6.dp, bottom = 14.dp).widthIn(max = 460.dp),
+                        )
+                        Button(onClick = { showRepos = true }) { Text("Add a repository") }
+                    }
                 }
-            }
-            ui.loading && ui.available.isEmpty() -> Centered { CircularProgressIndicator() }
-            else -> {
-                val list = ui.available.filter { it.id !in installedIds && matches(it.name, it.site, it.lang) }
-                    .sortedWith(compareBy({ languageRank(it.lang) }, { it.name.lowercase() }))
-                // Sources another device has whose repository this one does not
-                // list, so they appear nowhere else. Installing one adds the
-                // repository first.
-                val elsewhere = synced.filter { (id, _) -> offered[id] == null && matches(id, id, "") }
-                LazyColumn(contentPadding = PaddingValues(bottom = 104.dp)) {
-                    if (elsewhere.isNotEmpty()) {
-                        item {
-                            Text(
-                                "On your other devices",
-                                style = MaterialTheme.typography.labelLarge,
-                                color = MaterialTheme.colorScheme.primary,
-                                modifier = Modifier.padding(start = 20.dp, top = 12.dp, bottom = 2.dp),
-                            )
-                        }
-                        items(elsewhere, key = { "synced-" + it.first }) { (id, repo) ->
-                            SourceRow(id, "", "", repo, null) {
-                                if (id in ui.busy) CircularProgressIndicator(Modifier.size(22.dp), strokeWidth = 2.dp)
-                                else TextButton(onClick = { vm.installSynced(id, repo) }) { Text("Install") }
-                            }
-                        }
-                        item { HorizontalDivider(Modifier.padding(vertical = 8.dp)) }
+                ui.loading && ui.available.isEmpty() -> Centered { CircularProgressIndicator() }
+                else -> {
+                    val install: @Composable (Boolean, () -> Unit) -> Unit = { cards, onClick ->
+                        if (cards) FilledTonalButton(onClick = onClick) { Text("Install") }
+                        else TextButton(onClick = onClick) { Text("Install") }
                     }
                     // Keyed by repository too: the same id may now legitimately
                     // be offered by two, and a repeated key crashes the list.
-                    items(list, key = { "${it.id}@${it.repo}" }) { p ->
-                        SourceRow(p.name, p.lang, p.iconUrl, "v${p.version}", null) {
-                            if (p.id in ui.busy) CircularProgressIndicator(Modifier.size(22.dp), strokeWidth = 2.dp)
-                            else TextButton(onClick = { vm.install(p) }) { Text("Install") }
+                    val list = ui.available.filter { it.id !in installedIds && matches(it.name, it.site, it.lang) }
+                        .sortedWith(compareBy({ languageRank(it.lang) }, { it.name.lowercase() }))
+                        .map { p ->
+                            SourceEntry("${p.id}@${p.repo}", p.name, p.lang, p.iconUrl, "v${p.version}", p.site) { cards ->
+                                if (p.id in ui.busy) spinner() else install(cards) { vm.install(p) }
+                            }
                         }
-                    }
+                    // Sources another device has whose repository this one does not
+                    // list, so they appear nowhere else. Installing one adds the
+                    // repository first.
+                    val elsewhere = synced.filter { (id, _) -> offered[id] == null && matches(id, id, "") }
+                        .map { (id, repo) ->
+                            SourceEntry("synced-$id", id, "", "", repo, "") { cards ->
+                                if (id in ui.busy) spinner() else install(cards) { vm.installSynced(id, repo) }
+                            }
+                        }
+                    SourceList(
+                        listOfNotNull(elsewhere.takeIf { it.isNotEmpty() }?.let { "On your other devices" to it }, null to list),
+                        wide,
+                    )
                 }
             }
         }
     }
 
     if (showRepos) RepositoriesDialog(repos, onAdd = vm::addRepo, onRemove = vm::removeRepo, onDismiss = { showRepos = false })
+}
+
+private val EXTENSIONS_WIDE = 840.dp
+private val EXTENSIONS_MAX_WIDTH = 1100.dp
+
+/** One source as the Extensions screen lists it; [actions] are told whether they sit on a card. */
+private class SourceEntry(
+    val key: String,
+    val name: String,
+    val lang: String,
+    val iconUrl: String,
+    val detail: String,
+    val site: String,
+    val actions: @Composable (cards: Boolean) -> Unit,
+)
+
+/** [sections] as a phone's list, or on a wide window as a grid of cards; a section may have a title. */
+@Composable
+private fun SourceList(sections: List<Pair<String?, List<SourceEntry>>>, wide: Boolean) {
+    if (wide) {
+        ContentWidth(max = EXTENSIONS_MAX_WIDTH) {
+            LazyVerticalGrid(
+                columns = GridCells.Adaptive(minSize = 320.dp),
+                contentPadding = PaddingValues(start = 16.dp, end = 16.dp, top = 8.dp, bottom = 32.dp),
+                horizontalArrangement = Arrangement.spacedBy(12.dp),
+                verticalArrangement = Arrangement.spacedBy(12.dp),
+                modifier = Modifier.fillMaxSize(),
+            ) {
+                sections.forEach { (title, entries) ->
+                    if (title != null) item(key = "title-$title", span = { GridItemSpan(maxLineSpan) }) {
+                        Text(
+                            title, style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.primary,
+                            modifier = Modifier.padding(start = 4.dp, top = 4.dp),
+                        )
+                    }
+                    gridItems(entries, key = { it.key }) { e -> SourceCard(e) }
+                }
+            }
+        }
+    } else {
+        LazyColumn(contentPadding = PaddingValues(bottom = 104.dp)) {
+            sections.forEachIndexed { i, (title, entries) ->
+                if (title != null) item(key = "title-$title") {
+                    Text(
+                        title, style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.primary,
+                        modifier = Modifier.padding(start = 20.dp, top = 12.dp, bottom = 2.dp),
+                    )
+                }
+                items(entries, key = { it.key }) { e -> SourceRow(e.name, e.lang, e.iconUrl, e.detail, null) { e.actions(false) } }
+                if (title != null && i < sections.lastIndex) item(key = "divider-$i") { HorizontalDivider(Modifier.padding(vertical = 8.dp)) }
+            }
+        }
+    }
+}
+
+/** A source as a card: its icon, name, language and version, and its site, with what can be done to it. */
+@Composable
+private fun SourceCard(e: SourceEntry) {
+    Surface(
+        shape = RoundedCornerShape(16.dp),
+        color = cardColor(),
+        border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline),
+        modifier = Modifier.fillMaxWidth(),
+    ) {
+        Row(Modifier.padding(start = 16.dp, end = 10.dp, top = 14.dp, bottom = 14.dp), verticalAlignment = Alignment.CenterVertically) {
+            SourceIcon(e.name, e.iconUrl, 44.dp)
+            Column(Modifier.weight(1f).padding(start = 14.dp, end = 8.dp)) {
+                Text(
+                    e.name, style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.SemiBold,
+                    maxLines = 1, overflow = TextOverflow.Ellipsis,
+                )
+                Text(
+                    listOf(languageName(e.lang).takeIf { e.lang.isNotBlank() }, e.detail).filterNotNull().filter { it.isNotBlank() }.joinToString(" · "),
+                    style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    maxLines = 1, overflow = TextOverflow.Ellipsis,
+                )
+                // Always a line, blank or not, so the cards in a row stand the same height.
+                Text(
+                    siteHost(e.site), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    maxLines = 1, overflow = TextOverflow.Ellipsis,
+                )
+            }
+            e.actions(true)
+        }
+    }
+}
+
+/** "https://www.example.com/" as "example.com". */
+private fun siteHost(site: String): String =
+    site.trim().removePrefix("https://").removePrefix("http://").removePrefix("www.").trimEnd('/')
+
+/** Two or more choices as pills in a track, the chosen one filled. */
+@Composable
+private fun TabPills(labels: List<String>, selected: Int, onSelect: (Int) -> Unit) {
+    val c = MaterialTheme.colorScheme
+    Row(Modifier.clip(RoundedCornerShape(50)).background(c.surfaceContainerHigh).padding(4.dp)) {
+        labels.forEachIndexed { i, label ->
+            val on = i == selected
+            Text(
+                label, style = MaterialTheme.typography.labelLarge,
+                color = if (on) c.onPrimaryContainer else c.onSurfaceVariant,
+                maxLines = 1,
+                modifier = Modifier.clip(RoundedCornerShape(50))
+                    .background(if (on) c.primaryContainer else Color.Transparent)
+                    .clickable { onSelect(i) }
+                    .padding(horizontal = 18.dp, vertical = 9.dp),
+            )
+        }
+    }
 }
 
 @Composable
