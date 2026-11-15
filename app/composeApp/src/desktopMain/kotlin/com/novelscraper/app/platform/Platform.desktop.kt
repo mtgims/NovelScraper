@@ -60,40 +60,51 @@ actual fun hearLocalNetwork(on: Boolean) {}
 
 /**
  * Windows asks the person itself the first time the app listens, so only
- * Linux needs telling. Asked of systemd, which needs no privileges; the rule
- * is limited to the network this computer is on.
+ * Linux needs telling. Whether ufw or firewalld runs is asked of systemd,
+ * which needs no privileges; ufw's rules are read and only what this network
+ * lacks is asked for ([Firewall]).
  */
-actual fun firewallHint(ports: Pair<Int, Int>): String? {
+actual fun firewallHint(ports: Pair<Int, Int>): FirewallAdvice? {
     if (System.getProperty("os.name").startsWith("Windows", ignoreCase = true)) return null
     fun active(unit: String) = runCatching {
         val p = ProcessBuilder("systemctl", "is-active", unit).redirectErrorStream(true).start()
         p.inputStream.bufferedReader().readText().trim() == "active" && p.waitFor() == 0
     }.getOrDefault(false)
-    val net = localNetwork() ?: "192.168.0.0/16"
-    val (udp, tcp) = ports
-    return when {
-        active("ufw") ->
-            "sudo ufw allow from $net to any port $udp proto udp && sudo ufw allow from $net to any port $tcp proto tcp"
-        active("firewalld") ->
-            "sudo firewall-cmd --permanent --add-rich-rule='rule family=ipv4 source address=$net port port=$udp protocol=udp accept' " +
-                "--add-rich-rule='rule family=ipv4 source address=$net port port=$tcp protocol=tcp accept' && sudo firewall-cmd --reload"
-        else -> null
-    }
-}
-
-/** The local network this computer is on, as 192.168.0.0/24. */
-private fun localNetwork(): String? = runCatching {
-    java.net.NetworkInterface.getNetworkInterfaces().toList()
-        .filter { it.isUp && !it.isLoopback && !it.isVirtual }
-        .flatMap { it.interfaceAddresses }
-        .firstOrNull { it.address is java.net.Inet4Address && it.address.isSiteLocalAddress && it.networkPrefixLength in 8..30 }
-        ?.let { a ->
-            val bits = a.networkPrefixLength.toInt()
-            val ip = a.address.address.fold(0L) { acc, b -> (acc shl 8) or (b.toLong() and 0xff) }
-            val masked = ip and (0xffffffffL shl (32 - bits)) and 0xffffffffL
-            "${masked shr 24 and 255}.${masked shr 16 and 255}.${masked shr 8 and 255}.${masked and 255}/$bits"
+    fun setting(path: String, key: String) = Firewall.read(path)?.lineSequence()
+        ?.firstOrNull { it.trim().startsWith("$key=") }?.substringAfter('=')?.trim()?.trim('"')
+    val net = Firewall.localNetwork() ?: return null
+    val wanted = listOf(Firewall.Port("udp", ports.first), Firewall.Port("tcp", ports.second))
+    val (root, elsewhere) = when {
+        active("ufw") -> {
+            // Running as a service but switched off, or letting everything in.
+            if (setting("/etc/ufw/ufw.conf", "ENABLED") == "no") return null
+            if (setting("/etc/default/ufw", "DEFAULT_INPUT_POLICY") == "ACCEPT") return null
+            val rules = Firewall.read("/etc/ufw/user.rules")
+            if (rules == null) Firewall.ufwCommand(net, wanted) to emptyList()
+            else {
+                val need = Firewall.need(net, wanted, Firewall.parseUfw(rules))
+                if (need.missing.isEmpty()) return null
+                Firewall.ufwCommand(net, need.missing) to need.elsewhere
+            }
         }
-}.getOrNull()
+        active("firewalld") -> Firewall.firewalldCommand(net, wanted) to emptyList()
+        else -> return null
+    }
+    val pkexec = System.getenv("PATH").orEmpty().split(':').map { java.io.File(it, "pkexec") }.firstOrNull { it.canExecute() }
+    return FirewallAdvice(
+        network = net.toString(),
+        command = root.split(" && ").joinToString(" && ") { "sudo $it" },
+        elsewhere = elsewhere,
+        canApply = pkexec != null,
+        apply = {
+            // The system's own password prompt, for this one command.
+            pkexec != null && runCatching {
+                ProcessBuilder(pkexec.path, "/bin/sh", "-c", root).redirectErrorStream(true).start()
+                    .apply { inputStream.readAllBytes() }.waitFor() == 0
+            }.getOrDefault(false)
+        },
+    )
+}
 
 actual fun htmlToPlain(html: String): String = HtmlPlainText.convert(html)
 

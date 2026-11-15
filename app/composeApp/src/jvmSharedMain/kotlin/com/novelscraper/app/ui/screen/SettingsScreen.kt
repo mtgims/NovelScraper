@@ -73,6 +73,7 @@ import com.novelscraper.app.sync.FolderAuthException
 import com.novelscraper.app.sync.SyncNewerFormatException
 import com.novelscraper.app.sync.SyncNotEncryptedException
 import com.novelscraper.app.sync.SyncPassphraseNeededException
+import com.novelscraper.app.platform.FirewallAdvice
 import com.novelscraper.app.platform.firewallHint
 import com.novelscraper.app.sync.LanSync
 import com.novelscraper.app.sync.SyncCode
@@ -318,20 +319,42 @@ private fun LanStatus() {
 /** On a computer whose firewall keeps the other devices out: how to let them in. */
 @Composable
 private fun FirewallHint() {
-    val hint by produceState<String?>(null) {
+    val scope = rememberCoroutineScope()
+    var checks by remember { mutableStateOf(0) }
+    var busy by remember { mutableStateOf(false) }
+    val advice by produceState<FirewallAdvice?>(null, checks) {
         value = withContext(Dispatchers.IO) { firewallHint(LanSync.DISCOVERY_PORT to LanSync.SERVER_PORT) }
     }
-    hint?.let { cmd ->
-        Text(
-            "This computer's firewall keeps the other devices out. To let them in from this " +
-                "network only, run in a terminal:",
-            style = MaterialTheme.typography.bodySmall,
-            modifier = Modifier.padding(top = 8.dp),
-        )
-        SelectionContainer {
-            Text(cmd, style = MaterialTheme.typography.bodySmall.copy(fontFamily = FontFamily.Monospace),
-                modifier = Modifier.padding(top = 4.dp))
-        }
+    val a = advice ?: return
+    Text(
+        if (a.elsewhere.isNotEmpty())
+            "This computer's firewall lets the other devices in from ${a.elsewhere.joinToString(", ")}, but it is " +
+                "on ${a.network} now. Until they're let in, they sync only when this computer calls them."
+        else "This computer's firewall keeps the other devices out. Until they're let in, they sync only when " +
+            "this computer calls them.",
+        style = MaterialTheme.typography.bodySmall,
+        modifier = Modifier.padding(top = 8.dp),
+    )
+    if (a.canApply) {
+        TextButton(enabled = !busy, onClick = {
+            busy = true
+            scope.launch {
+                val ok = withContext(Dispatchers.IO) { a.apply() }
+                busy = false
+                showToast(if (ok) "Done. Your devices can reach this computer on ${a.network} now." else "Nothing was changed.")
+                checks++
+                if (ok) LibrarySyncRunner.soon()
+            }
+        }) { Text(if (busy) "Waiting for the password…" else "Let them in from ${a.network}") }
+    }
+    Text(
+        if (a.canApply) "Or run this in a terminal:" else "To let them in from ${a.network} only, run in a terminal:",
+        style = MaterialTheme.typography.bodySmall,
+        modifier = Modifier.padding(top = 4.dp),
+    )
+    SelectionContainer {
+        Text(a.command, style = MaterialTheme.typography.bodySmall.copy(fontFamily = FontFamily.Monospace),
+            modifier = Modifier.padding(top = 4.dp))
     }
 }
 

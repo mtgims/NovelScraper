@@ -109,7 +109,7 @@ private val multicastLock by lazy {
 }
 
 /** Android lets a local app's sockets be reached on the Wi-Fi as they are. */
-actual fun firewallHint(ports: Pair<Int, Int>): String? = null
+actual fun firewallHint(ports: Pair<Int, Int>): FirewallAdvice? = null
 
 actual fun hearLocalNetwork(on: Boolean) {
     runCatching { if (on) multicastLock.acquire() else if (multicastLock.isHeld) multicastLock.release() }

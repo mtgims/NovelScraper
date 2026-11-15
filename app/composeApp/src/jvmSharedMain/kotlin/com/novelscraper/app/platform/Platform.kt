@@ -93,10 +93,24 @@ expect val deviceName: String
  *  while [on]. */
 expect fun hearLocalNetwork(on: Boolean)
 
+/**
+ * How to let the other devices through this computer's firewall, from
+ * [network] only: [command] to run in a terminal, or [apply] to have the
+ * system ask for the password. [elsewhere]: the networks the firewall lets
+ * them in from now, when those aren't this one (a different router).
+ */
+class FirewallAdvice(
+    val network: String,
+    val command: String,
+    val elsewhere: List<String>,
+    val canApply: Boolean,
+    internal val apply: () -> Boolean,
+)
+
 /** When this device's firewall would keep the others out (a Linux desktop
- *  with ufw or firewalld running): the command that lets them in from the
- *  local network only. Null when there is nothing to do. */
-expect fun firewallHint(ports: Pair<Int, Int>): String?
+ *  with ufw or firewalld running): what lets them in from the local network
+ *  only. Null when there is nothing to do. Blocking: call off the main thread. */
+expect fun firewallHint(ports: Pair<Int, Int>): FirewallAdvice?
 
 /**
  * Chapter HTML to plain text, one paragraph per line, with U+FFFC standing in for
