@@ -214,7 +214,7 @@ object SystemBrowser {
         // is loaded the slow way per site per session, not one per request.
         val origin = originOf(url)
         var landing = if (origin != null && currentOrigin() != origin) origin else url
-        val started = System.currentTimeMillis()
+        var started = System.currentTimeMillis()
         var deadline = started + loadMs
         var shown = false
         try {
@@ -307,6 +307,9 @@ object SystemBrowser {
                 // check is met there, waited on, ticked and shown the same way,
                 // rather than the page read once and given up on as a check.
                 landing = url
+                // Its check gets the whole of its patience, not what the way
+                // in left of it, before the window is put on the reader's screen.
+                started = System.currentTimeMillis()
                 navigate(landing) ?: return null
                 page = settled(deadline)
             }
