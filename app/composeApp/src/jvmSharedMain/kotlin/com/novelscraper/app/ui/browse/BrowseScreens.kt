@@ -102,6 +102,7 @@ import com.novelscraper.app.extensions.RepoPlugin
 import com.novelscraper.app.platform.PlatformBackHandler
 import com.novelscraper.app.platform.openInBrowser
 import com.novelscraper.app.platform.showToast
+import com.novelscraper.app.ui.components.listedCover
 import com.novelscraper.app.ui.components.RemoteImage
 import com.novelscraper.app.ui.components.ContentWidth
 import com.novelscraper.app.platform.isDesktop
@@ -490,7 +491,7 @@ fun SourceScreen(
                         ) {
                             Text(novel.name.take(2).uppercase(), style = MaterialTheme.typography.headlineMedium,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant)
-                            RemoteImage(novel.cover, ui.imageHeaders, novel.name, Modifier.fillMaxSize())
+                            RemoteImage(listedCover(pluginId, novel), ui.imageHeaders, novel.name, Modifier.fillMaxSize())
                         }
                         Text(novel.name, style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.SemiBold,
                             maxLines = 2, overflow = TextOverflow.Ellipsis, modifier = Modifier.padding(top = 6.dp))

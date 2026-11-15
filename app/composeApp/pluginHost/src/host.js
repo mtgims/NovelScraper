@@ -358,6 +358,7 @@ g.__loadPlugin = (pluginId, rawCode) => {
     lang: plugin.lang, icon: plugin.icon, hasFilters: !!plugin.filters,
     hasParsePage: typeof plugin.parsePage === 'function',
     hasResolveUrl: typeof plugin.resolveUrl === 'function',
+    hasCoverOf: typeof plugin.coverOf === 'function',
     imageRequestInit: plugin.imageRequestInit,
   });
 };
@@ -402,4 +403,12 @@ g.__chapter = async (id, path) => {
 g.__resolveUrl = (id, path, isNovel) => {
   const p = need(id);
   return typeof p.resolveUrl === 'function' ? String(p.resolveUrl(path, !!isNovel)) : '';
+};
+// A NovelScraper addition to the format: a novel's cover on its own, for a
+// source whose lists leave covers out. Optional; '' when there is none.
+g.__cover = async (id, path) => {
+  const p = need(id);
+  if (typeof p.coverOf !== 'function') return '';
+  const url = await p.coverOf(path);
+  return url ? String(url) : '';
 };

@@ -11,6 +11,8 @@ import kotlin.test.AfterTest
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFailsWith
+import kotlin.test.assertFalse
+import kotlin.test.assertNull
 import kotlin.test.assertTrue
 
 /** The plugin host, offline: a fake LNReader-format plugin against a local server. */
@@ -154,6 +156,23 @@ class PluginRuntimeTest {
             SiteChecks.dismiss()
             assertEquals(listOf("dragon"), p.search("dragon", 1, unattended = true).map { it.name },
                 "and the next call is an ordinary one")
+        }
+    }
+
+    @Test fun aSourceCanOfferANovelsCoverOnItsOwn() = runBlocking {
+        PluginRuntime.load("fake", plugin, env).use { assertFalse(it.info.hasCoverOf) }
+        val withCovers = plugin.replace("async parseChapter(path) {", """async coverOf(path) {
+            if (path === 'cf') { await fetchApi(site + 'cf'); return undefined; }
+            return path === 'n/1' ? site + 'covers/1.jpg' : undefined;
+          }
+          async parseChapter(path) {""")
+        PluginRuntime.load("fake", withCovers, env).use { p ->
+            assertTrue(p.info.hasCoverOf)
+            assertEquals("$base/covers/1.jpg", p.cover("n/1"))
+            assertNull(p.cover("n/2"), "a novel without one")
+            SiteChecks.dismiss()
+            assertFailsWith<SiteChallengeException> { p.cover("cf") }
+            assertNull(SiteChecks.pending.value, "a cover nobody asked for puts no check in front of the reader")
         }
     }
 

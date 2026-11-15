@@ -69,6 +69,7 @@ import com.novelscraper.app.platform.PlatformBackHandler
 import com.novelscraper.app.platform.isDesktop
 import com.novelscraper.app.platform.showToast
 import com.novelscraper.app.ui.components.RemoteImage
+import com.novelscraper.app.ui.components.listedCover
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -332,7 +333,7 @@ private fun SourceResultsRow(
                         ) {
                             Text(novel.name.take(2).uppercase(), style = MaterialTheme.typography.titleLarge,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant)
-                            RemoteImage(novel.cover, row.imageHeaders, novel.name, Modifier.fillMaxSize())
+                            RemoteImage(listedCover(row.pluginId, novel), row.imageHeaders, novel.name, Modifier.fillMaxSize())
                         }
                         Text(novel.name, style = MaterialTheme.typography.bodySmall, fontWeight = FontWeight.SemiBold,
                             maxLines = 2, overflow = TextOverflow.Ellipsis,

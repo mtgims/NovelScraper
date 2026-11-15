@@ -106,6 +106,14 @@ class PluginRuntime private constructor(
     suspend fun resolveUrl(path: String, isNovel: Boolean): String? =
         call("__resolveUrl(${q(info.id)}, ${q(path)}, $isNovel)").ifBlank { null }
 
+    /**
+     * The novel at [path]'s cover, from a source whose lists leave covers out
+     * ([PluginInfo.hasCoverOf]); null when it has none. Never asked for by the
+     * reader directly, so a site check is reported rather than shown.
+     */
+    suspend fun cover(path: String): String? =
+        call("__cover(${q(info.id)}, ${q(path)})", unattended = true).ifBlank { null }
+
     override fun close() = js.close()
 
     /**

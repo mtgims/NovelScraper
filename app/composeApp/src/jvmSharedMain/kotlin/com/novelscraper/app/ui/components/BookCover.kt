@@ -6,6 +6,8 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.produceState
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.layout.ContentScale
@@ -17,6 +19,8 @@ import coil3.network.httpHeaders
 import coil3.request.ImageRequest
 import coil3.request.crossfade
 import com.novelscraper.app.extensions.Extensions
+import com.novelscraper.app.extensions.MissingCovers
+import com.novelscraper.app.extensions.NovelItem
 import com.novelscraper.app.library.LibBook
 import com.novelscraper.app.net.Net
 
@@ -40,6 +44,18 @@ fun RemoteImage(
         contentScale = contentScale,
         modifier = modifier,
     )
+}
+
+/**
+ * A listed novel's cover: the list's own, else looked up while the novel is on
+ * screen, for sources whose lists leave covers out ([MissingCovers]).
+ */
+@Composable
+fun listedCover(pluginId: String, novel: NovelItem): String? {
+    val cover by produceState(novel.cover, pluginId, novel.path) {
+        if (value.isNullOrBlank()) MissingCovers.of(pluginId, novel.path)?.let { value = it }
+    }
+    return cover
 }
 
 /** The cover image URL for a library novel, or null for none. */

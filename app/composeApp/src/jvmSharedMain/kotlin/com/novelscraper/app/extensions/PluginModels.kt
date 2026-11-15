@@ -52,6 +52,8 @@ data class PluginInfo(
     val hasFilters: Boolean = false,
     val hasParsePage: Boolean = false,
     val hasResolveUrl: Boolean = false,
+    /** Offers a novel's cover on its own ([PluginRuntime.cover]), for lists that leave covers out. */
+    val hasCoverOf: Boolean = false,
     /** Headers to send when loading this source's images (covers). */
     val imageRequestInit: JsonObject? = null,
 )
