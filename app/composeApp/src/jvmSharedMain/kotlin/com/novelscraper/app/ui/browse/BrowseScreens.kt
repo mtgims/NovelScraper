@@ -45,6 +45,9 @@ import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.MoreVert
+import androidx.compose.material3.DropdownMenu
+import com.novelscraper.app.ui.components.MenuItem
 import androidx.compose.material.icons.outlined.SwapHoriz
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.ChevronLeft
@@ -160,6 +163,9 @@ private fun languageRank(lang: String): Int {
 
 // --- Browse (tab): installed sources ----------------------------------------------------
 
+/** Below this Browse's title actions are icons; the labelled ones need about this much beside the title. */
+private val LABELLED_ACTIONS = 600.dp
+
 @Composable
 fun BrowseScreen(
     onOpenSource: (String) -> Unit,
@@ -172,16 +178,39 @@ fun BrowseScreen(
     // Opening Browse after a few hours asks the repositories again.
     LaunchedEffect(Unit) { ExtensionUpdates.checkQuietly() }
     Column(Modifier.fillMaxSize()) {
-        ScreenTitle("Browse") {
-            TextButton(onClick = onMigrate) {
-                Icon(Icons.Outlined.SwapHoriz, contentDescription = null, modifier = Modifier.size(18.dp))
-                Text("Migrate", modifier = Modifier.padding(start = 6.dp))
-            }
-            TextButton(onClick = onManage) {
-                com.novelscraper.app.ui.components.Badged(updates.size, "Extensions") {
-                    Icon(Icons.Filled.Extension, contentDescription = null, modifier = Modifier.size(18.dp))
+        // On a phone two labelled buttons leave the title no room: Extensions
+        // becomes its icon (the update count rides on it) and Migrate, seldom
+        // wanted, goes into a menu.
+        BoxWithConstraints {
+            val narrow = maxWidth < LABELLED_ACTIONS
+            var menuOpen by remember { mutableStateOf(false) }
+            ScreenTitle("Browse") {
+                if (narrow) {
+                    IconButton(onClick = onManage) {
+                        com.novelscraper.app.ui.components.Badged(updates.size, "Extensions") {
+                            Icon(Icons.Filled.Extension, contentDescription = "Extensions")
+                        }
+                    }
+                    Box {
+                        IconButton(onClick = { menuOpen = true }) {
+                            Icon(Icons.Filled.MoreVert, contentDescription = "More")
+                        }
+                        DropdownMenu(expanded = menuOpen, onDismissRequest = { menuOpen = false }) {
+                            MenuItem("Migrate novels", Icons.Outlined.SwapHoriz) { menuOpen = false; onMigrate() }
+                        }
+                    }
+                } else {
+                    TextButton(onClick = onMigrate) {
+                        Icon(Icons.Outlined.SwapHoriz, contentDescription = null, modifier = Modifier.size(18.dp))
+                        Text("Migrate", modifier = Modifier.padding(start = 6.dp))
+                    }
+                    TextButton(onClick = onManage) {
+                        com.novelscraper.app.ui.components.Badged(updates.size, "Extensions") {
+                            Icon(Icons.Filled.Extension, contentDescription = null, modifier = Modifier.size(18.dp))
+                        }
+                        Text("Extensions", modifier = Modifier.padding(start = 6.dp))
+                    }
                 }
-                Text("Extensions", modifier = Modifier.padding(start = 6.dp))
             }
         }
         if (installed.isEmpty()) {
