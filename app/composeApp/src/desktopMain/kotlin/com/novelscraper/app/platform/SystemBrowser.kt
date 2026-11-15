@@ -184,10 +184,13 @@ object SystemBrowser {
         loadMs: Long,
         /** Nothing from this machine or its network may come back (see [reachedPrivate]). */
         publicOnly: Boolean = false,
+        /** Nobody is waiting on this page in particular: a check that wants a
+         *  person ends the load instead of coming on screen. */
+        unattended: Boolean = false,
         onShown: () -> Unit = {},
     ): String? {
         reachedPrivate = false
-        val page = loadPage(url, patienceMs, interactiveMs, loadMs, onShown)
+        val page = loadPage(url, patienceMs, interactiveMs, loadMs, unattended, onShown)
         if (publicOnly && reachedPrivate) {
             Log.w(TAG, "$url reached a private address in the browser: not handed back")
             return null
@@ -200,6 +203,7 @@ object SystemBrowser {
         patienceMs: Long,
         interactiveMs: Long,
         loadMs: Long,
+        unattended: Boolean,
         onShown: () -> Unit,
     ): String? {
         if (!start()) return null
@@ -265,6 +269,10 @@ object SystemBrowser {
                         CheckKind.Interactive -> if (ticksLeft > 0) TICKING_MS else 0L
                         CheckKind.Waiting -> maxOf(patienceMs, WAITING_PATIENCE_MS)
                         else -> patienceMs
+                    }
+                    if (!shown && unattended && now - started > patience) {
+                        Log.i(TAG, "the check wants a person, and nobody asked for this page: left")
+                        return null
                     }
                     if (!shown && mayShow && now - started > patience) {
                         shown = true

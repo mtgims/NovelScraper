@@ -21,6 +21,9 @@ class InnerPageCheckTest {
         createContext("/") { ex ->
             val passed = ex.requestHeaders["Cookie"].orEmpty().any { "pass=1" in it }
             val (code, body) = when {
+                // A check that never passes by itself: it wants a person.
+                ex.requestURI.path == "/guarded" ->
+                    403 to "<html><head><title>Just a moment...</title></head><body><p>Checking</p></body></html>"
                 ex.requestURI.path != "/chapter" ->
                     200 to "<html><head><title>Home</title></head><body><p>front page</p></body></html>"
                 passed -> 200 to "<html><head><title>Chapter 1</title></head><body><p>the chapter text</p></body></html>"
@@ -42,6 +45,24 @@ class InnerPageCheckTest {
         server.stop(0)
         SystemBrowser.mayShow = true
         SystemBrowser.endItBehindOurBack()
+        // Until it is gone it still looks alive, and the next test would reach
+        // for it (LiveBrowserTest waits the same).
+        if (live) Thread.sleep(2_000)
+    }
+
+    @Test fun aPageNobodyAskedForGivesUpRatherThanShowItsCheck() = runBlocking<Unit> {
+        if (!live) return@runBlocking
+        // On screen if anything asks for it: the test is that nothing does.
+        SystemBrowser.mayShow = true
+        var shown = false
+        val started = System.currentTimeMillis()
+        val page = SystemBrowser.load(
+            "http://127.0.0.1:${server.address.port}/guarded",
+            patienceMs = 3_000, interactiveMs = 60_000, loadMs = 90_000, unattended = true,
+        ) { shown = true }
+        assertTrue(page == null, "no page past a check nobody answered")
+        assertTrue(!shown, "and no window put up for it")
+        assertTrue(System.currentTimeMillis() - started < 60_000, "given up once a person was wanted, not at the deadline")
     }
 
     @Test fun aCheckOnlyOnTheChapterIsWaitedOut() = runBlocking<Unit> {

@@ -145,7 +145,7 @@ private fun languageRank(lang: String): Int {
 // --- Browse (tab): installed sources ----------------------------------------------------
 
 @Composable
-fun BrowseScreen(onOpenSource: (String) -> Unit, onManage: () -> Unit) {
+fun BrowseScreen(onOpenSource: (String) -> Unit, onManage: () -> Unit, onSearchAll: () -> Unit = {}) {
     val installed by Extensions.installed.collectAsState()
     Column(Modifier.fillMaxSize()) {
         ScreenTitle("Browse") {
@@ -173,6 +173,22 @@ fun BrowseScreen(onOpenSource: (String) -> Unit, onManage: () -> Unit) {
                 LazyColumn(
                     contentPadding = PaddingValues(bottom = if (isDesktop) 24.dp else 104.dp),
                 ) {
+                    item(key = "search-all") {
+                        // Looks like a search box, and opens the search of every source.
+                        Row(
+                            Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 6.dp)
+                                .clip(RoundedCornerShape(28.dp))
+                                .background(MaterialTheme.colorScheme.surfaceVariant)
+                                .clickable(onClick = onSearchAll)
+                                .padding(horizontal = 16.dp, vertical = 14.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                        ) {
+                            Icon(Icons.Filled.Search, null, tint = MaterialTheme.colorScheme.onSurfaceVariant)
+                            Text("Search all sources", style = MaterialTheme.typography.bodyLarge,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                modifier = Modifier.padding(start = 12.dp))
+                        }
+                    }
                     items(installed, key = { it.id }) { p ->
                         SourceRow(
                             p.name, p.lang, p.iconUrl,
@@ -406,9 +422,17 @@ private fun RepositoriesDialog(
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun SourceScreen(pluginId: String, onBack: () -> Unit, onOpenNovel: (bookId: Int) -> Unit) {
+fun SourceScreen(
+    pluginId: String,
+    onBack: () -> Unit,
+    onOpenNovel: (bookId: Int) -> Unit,
+    /** Opened from a search of every source: this source's results for it. */
+    initialQuery: String? = null,
+) {
     PlatformBackHandler(onBack = onBack)
-    val vm: SourceViewModel = viewModel(key = "source-$pluginId") { SourceViewModel(pluginId) }
+    val vm: SourceViewModel = viewModel(key = "source-$pluginId-${initialQuery.orEmpty()}") {
+        SourceViewModel(pluginId, initialQuery)
+    }
     val ui by vm.ui.collectAsState()
     var query by rememberSaveable { mutableStateOf(ui.query) }
     val grid = rememberLazyGridState()

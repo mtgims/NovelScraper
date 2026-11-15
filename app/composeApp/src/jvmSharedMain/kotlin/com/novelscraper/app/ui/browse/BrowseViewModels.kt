@@ -155,12 +155,14 @@ data class SourceUi(
     val imageHeaders: Map<String, String> = emptyMap(),
 )
 
-class SourceViewModel(private val pluginId: String) : ViewModel() {
+class SourceViewModel(private val pluginId: String, initialQuery: String? = null) : ViewModel() {
     private val _ui = MutableStateFlow(SourceUi())
     val ui: StateFlow<SourceUi> = _ui.asStateFlow()
     private var job: Job? = null
 
-    init { show(SourceMode.Popular) }
+    init {
+        if (initialQuery.isNullOrBlank()) show(SourceMode.Popular) else show(SourceMode.Search, initialQuery)
+    }
 
     /** Open a novel from the list: its local id (a row is made the first time). */
     fun open(item: NovelItem, onReady: (Int) -> Unit) {

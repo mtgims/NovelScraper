@@ -61,7 +61,7 @@ private var frame: JFrame? = null
  * drawn, and some want a tick in a box. It goes away again once the page comes
  * through. One page at a time, so a chapter download doesn't open twelve.
  */
-actual suspend fun fetchThroughBrowser(url: String, publicOnly: Boolean): String? = browserTabLock.withLock {
+actual suspend fun fetchThroughBrowser(url: String, publicOnly: Boolean, unattended: Boolean): String? = browserTabLock.withLock {
     // The reader's own browser first: it is current, it has the graphics card
     // behind it, and checks that turn the bundled one away pass in it.
     if (SystemBrowser.available) {
@@ -72,7 +72,7 @@ actual suspend fun fetchThroughBrowser(url: String, publicOnly: Boolean): String
         val patience = if (SiteChecks.wantsPerson(url)) IMPATIENCE_MS else PATIENCE_MS
         val host = runCatching { java.net.URI(url).host }.getOrNull() ?: url
         var askedPerson = false
-        val page = SystemBrowser.load(url, patience, INTERACTIVE_MS, LOAD_MS, publicOnly) {
+        val page = SystemBrowser.load(url, patience, INTERACTIVE_MS, LOAD_MS, publicOnly, unattended) {
             askedPerson = true
             SiteChecks.neededPerson(url)
             // The window appearing by itself explains nothing on its own.
@@ -106,6 +106,8 @@ actual suspend fun fetchThroughBrowser(url: String, publicOnly: Boolean): String
         var page = source(view)
         while (page != null && looksLikeBrowserCheck(page) && System.currentTimeMillis() < deadline) {
             if (!shown && System.currentTimeMillis() - started > PATIENCE_MS) {
+                // Nobody asked for this page in particular: no window for it.
+                if (unattended) return null
                 shown = true
                 Log.i(TAG, "the check needs a visible browser; showing it")
                 withContext(Dispatchers.Main) { showFrame() }

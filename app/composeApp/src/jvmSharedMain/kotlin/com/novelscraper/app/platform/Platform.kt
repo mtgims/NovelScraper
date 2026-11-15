@@ -222,8 +222,11 @@ expect val canFetchThroughBrowser: Boolean
  * [publicOnly]: nothing from this machine or its local network may come back
  * (a source asked). The browser looks names up and follows redirects for
  * itself, so this is checked inside it, not just on [url].
+ *
+ * [unattended]: nobody is waiting on this page in particular, so a check that
+ * wants a person gives up instead of putting a window on screen.
  */
-expect suspend fun fetchThroughBrowser(url: String, publicOnly: Boolean): String?
+expect suspend fun fetchThroughBrowser(url: String, publicOnly: Boolean, unattended: Boolean = false): String?
 
 /** What a request made from inside the browser came back with. */
 data class BrowserReply(val status: Int, val body: String)

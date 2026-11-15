@@ -34,6 +34,7 @@ import com.novelscraper.app.data.LibraryPrefs
 import com.novelscraper.app.platform.encodeRouteArg
 import com.novelscraper.app.ui.browse.BrowseScreen
 import com.novelscraper.app.ui.browse.ExtensionsScreen
+import com.novelscraper.app.ui.browse.GlobalSearchScreen
 import com.novelscraper.app.ui.browse.SourceScreen
 import com.novelscraper.app.ui.components.PillNavBar
 import com.novelscraper.app.ui.components.NavRail
@@ -125,12 +126,25 @@ private fun MainApp() {
                 BrowseScreen(
                     onOpenSource = { id -> nav.navigate("source/${encodeRouteArg(id)}") },
                     onManage = { nav.navigate("extensions") },
+                    onSearchAll = { nav.navigate("search") },
+                )
+            }
+            composable("search") {
+                GlobalSearchScreen(
+                    initialQuery = "",
+                    onBack = { nav.popBackStack() },
+                    onPick = { vm, plugin, item -> vm.open(plugin, item) { id -> nav.navigate("book/$id") } },
+                    onOpenSource = { plugin, q -> nav.navigate(sourceRoute(plugin, q)) },
                 )
             }
             composable("extensions") { ExtensionsScreen(onBack = { nav.popBackStack() }) }
-            composable("source/{plugin}") { e ->
+            composable(
+                "source/{plugin}?q={q}",
+                arguments = listOf(navArgument("q") { type = NavType.StringType; nullable = true; defaultValue = null }),
+            ) { e ->
                 val plugin = e.arguments!!.read { getString("plugin") }
                 SourceScreen(
+                    initialQuery = e.arguments!!.read { getStringOrNull("q") },
                     pluginId = plugin,
                     onBack = { nav.popBackStack() },
                     onOpenNovel = { id -> nav.navigate("book/$id") },
@@ -180,6 +194,10 @@ private fun MainApp() {
         }
     }
 }
+
+/** One source's page, showing its results for [query] (from a search of every source). */
+private fun sourceRoute(plugin: String, query: String) =
+    "source/${encodeRouteArg(plugin)}?q=${encodeRouteArg(query)}"
 
 /** Go to a top-level destination, keeping each tab's own back stack. */
 private fun go(nav: androidx.navigation.NavHostController, from: String?, dest: String) {

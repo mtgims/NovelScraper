@@ -27,7 +27,8 @@ private const val LOAD_MS = 45_000L
 /** Loads the page in an offscreen WebView, which the site sees as a browser,
  *  and returns the document it ends up with. */
 @SuppressLint("SetJavaScriptEnabled")
-actual suspend fun fetchThroughBrowser(url: String, publicOnly: Boolean): String? = lock.withLock {
+// The WebView here is never shown, so an unattended page is fetched like any other.
+actual suspend fun fetchThroughBrowser(url: String, publicOnly: Boolean, unattended: Boolean): String? = lock.withLock {
     withContext(Dispatchers.Main) {
         val view = WebView(appContext).apply {
             settings.javaScriptEnabled = true

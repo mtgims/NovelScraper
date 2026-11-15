@@ -78,11 +78,19 @@ class PluginRuntime private constructor(
      *  the browser included (or there was no browser to ask). */
     @Volatile private var blockedUrl: String? = null
 
+    /** The current call was nobody's in particular ([search]'s unattended). */
+    @Volatile private var unattended = false
+
     suspend fun popular(page: Int, latest: Boolean = false): List<NovelItem> =
         decode(call("__popular(${q(info.id)}, $page, $latest)"))
 
-    suspend fun search(term: String, page: Int = 1): List<NovelItem> =
-        decode(call("__search(${q(info.id)}, ${q(term)}, $page)"))
+    /**
+     * [unattended]: nobody asked this source in particular (a search of every
+     * source at once). A browser check is then reported, never put in front of
+     * the reader: no window, no prompt.
+     */
+    suspend fun search(term: String, page: Int = 1, unattended: Boolean = false): List<NovelItem> =
+        decode(call("__search(${q(info.id)}, ${q(term)}, $page)", unattended))
 
     suspend fun novel(path: String): SourceNovel =
         decode(call("__novel(${q(info.id)}, ${q(path)})"))
@@ -112,7 +120,9 @@ class PluginRuntime private constructor(
 
     /** Run a host.js entry point and return its (string) result, or throw the
      *  plugin's error as [PluginException]. */
-    private suspend fun call(expr: String): String = mutex.withLock {
+    private suspend fun call(expr: String, unattended: Boolean = false): String = mutex.withLock {
+        // Calls take turns under the lock, so this is this call's alone.
+        this.unattended = unattended
         try {
             evaluateCall(expr)
         } catch (e: TimeoutCancellationException) {
@@ -137,6 +147,7 @@ class PluginRuntime private constructor(
             // replies of up to 16 MiB for as long as the source stayed loaded.
             cancelRequests()
             synchronized(responseBodies) { responseBodies.clear() }
+            this.unattended = false
         }
     }
 
@@ -164,8 +175,9 @@ class PluginRuntime private constructor(
             // say so rather than showing "nothing found".
             challengedUrl?.let { url ->
                 if (empty) {
-                    // The app can offer to open this in a real browser.
-                    SiteChecks.needed(url)
+                    // The app can offer to open this in a real browser, when
+                    // someone asked for this source.
+                    if (!unattended) SiteChecks.needed(url)
                     throw SiteChallengeException(info.id, url)
                 }
             }
@@ -505,7 +517,7 @@ class PluginRuntime private constructor(
     /** The page as a real browser sees it, shaped like a fetch response. */
     private suspend fun browserResponse(url: String, publicOnly: Boolean): String? {
         if (!canFetchThroughBrowser) return null
-        val html = runCatching { fetchThroughBrowser(url, publicOnly) }
+        val html = runCatching { fetchThroughBrowser(url, publicOnly, unattended) }
             .onFailure { Log.w(TAG, "browser fetch failed: ${it.message}") }
             .getOrNull()?.takeIf { it.isNotBlank() } ?: return null
         if (looksLikeBrowserCheck(html)) {

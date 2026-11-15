@@ -85,6 +85,7 @@ class PluginRuntimeTest {
               cover: ${'$'}(a).attr('data-c') ? new URL(${'$'}(a).attr('data-c'), site).href : undefined })).get();
           }
           async searchNovels(term, page) {
+            if (term === 'cf') { await fetchApi(site + 'cf'); return []; }
             const form = new URLSearchParams({ q: term, page: String(page) });
             await fetchApi(site + 'search', { method: 'POST', body: form });
             const fd = new FormData(); fd.append('x', '1');
@@ -139,6 +140,20 @@ class PluginRuntimeTest {
             assertTrue("broken on purpose" in e.message!!)
             assertFailsWith<SiteChallengeException> { p.chapter("cf") }
             assertEquals("<p>after</p>", p.chapter("after"), "the runtime keeps working after a failure")
+        }
+    }
+
+    @Test fun aSearchNobodyAskedForReportsItsCheckWithoutPrompting() = runBlocking {
+        PluginRuntime.load("fake", plugin, env).use { p ->
+            SiteChecks.dismiss()
+            assertFailsWith<SiteChallengeException> { p.search("cf", 1, unattended = true) }
+            assertEquals(null, SiteChecks.pending.value, "searching every source puts no prompt up")
+            // The same search asked of this source alone offers the check.
+            assertFailsWith<SiteChallengeException> { p.search("cf", 1) }
+            assertEquals("$base/cf", SiteChecks.pending.value)
+            SiteChecks.dismiss()
+            assertEquals(listOf("dragon"), p.search("dragon", 1, unattended = true).map { it.name },
+                "and the next call is an ordinary one")
         }
     }
 
