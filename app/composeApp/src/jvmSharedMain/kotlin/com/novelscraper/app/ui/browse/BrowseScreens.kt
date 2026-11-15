@@ -38,6 +38,7 @@ import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.outlined.SwapHoriz
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.ChevronLeft
 import androidx.compose.material.icons.filled.ChevronRight
@@ -152,10 +153,19 @@ private fun languageRank(lang: String): Int {
 // --- Browse (tab): installed sources ----------------------------------------------------
 
 @Composable
-fun BrowseScreen(onOpenSource: (String) -> Unit, onManage: () -> Unit, onSearchAll: () -> Unit = {}) {
+fun BrowseScreen(
+    onOpenSource: (String) -> Unit,
+    onManage: () -> Unit,
+    onSearchAll: () -> Unit = {},
+    onMigrate: () -> Unit = {},
+) {
     val installed by Extensions.installed.collectAsState()
     Column(Modifier.fillMaxSize()) {
         ScreenTitle("Browse") {
+            TextButton(onClick = onMigrate) {
+                Icon(Icons.Outlined.SwapHoriz, contentDescription = null, modifier = Modifier.size(18.dp))
+                Text("Migrate", modifier = Modifier.padding(start = 6.dp))
+            }
             TextButton(onClick = onManage) {
                 Icon(Icons.Filled.Extension, contentDescription = null, modifier = Modifier.size(18.dp))
                 Text("Extensions", modifier = Modifier.padding(start = 6.dp))

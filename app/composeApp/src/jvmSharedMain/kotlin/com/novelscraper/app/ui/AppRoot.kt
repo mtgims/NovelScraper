@@ -39,6 +39,8 @@ import com.novelscraper.app.ui.browse.BrowseScreen
 import com.novelscraper.app.ui.browse.ExtensionsScreen
 import com.novelscraper.app.ui.browse.GlobalSearchScreen
 import com.novelscraper.app.ui.browse.MigrateScreen
+import com.novelscraper.app.ui.browse.MigrateFromScreen
+import com.novelscraper.app.ui.browse.MigrateSourcesScreen
 import com.novelscraper.app.ui.browse.SourceScreen
 import com.novelscraper.app.ui.components.PillNavBar
 import com.novelscraper.app.ui.components.NavRail
@@ -131,6 +133,20 @@ private fun MainApp() {
                     onOpenSource = { id -> nav.navigate("source/${encodeRouteArg(id)}") },
                     onManage = { nav.navigate("extensions") },
                     onSearchAll = { nav.navigate("search") },
+                    onMigrate = { nav.navigate("migrate-sources") },
+                )
+            }
+            composable("migrate-sources") {
+                MigrateSourcesScreen(
+                    onBack = { nav.popBackStack() },
+                    onPick = { id -> nav.navigate("migrate-from/${encodeRouteArg(id)}") },
+                )
+            }
+            composable("migrate-from/{plugin}") { e ->
+                MigrateFromScreen(
+                    pluginId = e.arguments!!.read { getString("plugin") },
+                    onBack = { nav.popBackStack() },
+                    onOpenSource = { plugin, q -> nav.navigate(sourceRoute(plugin, q)) },
                 )
             }
             composable("search") {
