@@ -69,7 +69,13 @@ data class InstalledPlugin(
 object Extensions {
 
     private const val TAG = "Extensions"
-    private const val MAX_RUNNING = 4
+    /**
+     * Sources kept loaded. One holds 3 to 13 MiB once its calls are done
+     * (about 5 typically, measured 2026-11-15), and searching everything asks
+     * this many at once: at 4, 15 sources took 2.8 s; at 8, 1.6 to 2.0 s,
+     * about as long as the slowest source alone.
+     */
+    internal const val MAX_RUNNING = 8
     /** The largest repository index or plugin code accepted (both are kilobytes). */
     private const val MAX_REPO_BYTES = 8L * 1024 * 1024
 

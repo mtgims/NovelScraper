@@ -216,7 +216,7 @@ class GlobalSearchViewModel(initialQuery: String, private val exclude: String?) 
 
     companion object {
         /** Sources asked at once: as many as the app keeps running. */
-        const val PARALLEL = 4
+        const val PARALLEL = Extensions.MAX_RUNNING
     }
 }
 
