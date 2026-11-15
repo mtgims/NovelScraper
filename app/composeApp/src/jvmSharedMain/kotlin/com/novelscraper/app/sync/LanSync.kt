@@ -119,6 +119,14 @@ internal object Replication {
  *   nothing to anyone without the code and can't be used to follow a device.
  *   Where a network keeps devices from hearing each other, the other device's
  *   address can be given by hand ([manualPeers]).
+ * - **Getting past a firewall that lets nothing in.** A Linux computer with
+ *   ufw's "deny incoming" hears no broadcasts and takes no calls, though it
+ *   may call out. So every announcement heard is answered, straight to the
+ *   port it came from, and while it has met nobody such a computer also
+ *   announces itself to each address of its own network ([sweepTargets]).
+ *   The answer to that comes back to where the computer sent from, which its
+ *   firewall lets in as a reply; the computer then knows where the other
+ *   device is and calls it.
  * - **Trusting each other.** A connection starts with each side proving, over
  *   the other's random nonce, that it holds the code. Nothing is listed or sent
  *   before both have.
@@ -141,6 +149,9 @@ class LanSync internal constructor(
     /** Where announcements go besides the network's broadcast addresses (tests). */
     private val extraTargets: List<InetSocketAddress> = emptyList(),
     private val manualPeers: () -> List<String> = { emptyList() },
+    /** Every address on this device's network, to ask one by one while no
+     *  device has been met (null: never; a phone has no firewall to get past). */
+    private val sweepTargets: (() -> List<InetSocketAddress>)? = null,
     private val now: () -> Long = System::currentTimeMillis,
 ) {
     /** A device met: [address] as host:port, [lastSync] when they last swapped files (0: not yet). */
@@ -175,6 +186,12 @@ class LanSync internal constructor(
     @Volatile private var server: ServerSocket? = null
     @Volatile private var udp: DatagramSocket? = null
     @Volatile private var running = false
+
+    /** Closes every connection at once, as a firewall that lets nothing in would (tests). */
+    @Volatile internal var turnsAwayCallers = false
+
+    /** When each asker (host:port) was last answered, so one is answered once in a while. */
+    private val answered = ConcurrentHashMap<String, Long>()
 
     /** The port the server got: [serverPort] if it was free, any other if not. */
     val port: Int get() = server?.localPort ?: 0
@@ -224,20 +241,32 @@ class LanSync internal constructor(
 
     private fun window() = now() / TAG_WINDOW_MS
 
+    private fun announcement(answer: Boolean = false) = buildJsonObject {
+        put("app", "novelscraper"); put("v", 1)
+        put("tag", keys.tag(window())); put("device", device)
+        put("port", port); put("name", name)
+        if (answer) put("re", true)
+    }.toString().toByteArray()
+
     private fun announceLoop(gen: Int) {
         announcing.incrementAndGet()
-        val socket = DatagramSocket().apply { broadcast = true }
-        try { socket.use {
+        // Sent from the listening socket when there is one: an answer to an
+        // announcement made to one address comes back to the port it was sent
+        // from, and only then does a firewall take it for a reply.
+        val own = DatagramSocket().apply { broadcast = true }
+        var rounds = 0
+        try { own.use {
             while (running && gen == generation) {
-                val port = port
+                val socket = udp ?: own
                 if (port > 0) {
-                    val msg = buildJsonObject {
-                        put("app", "novelscraper"); put("v", 1)
-                        put("tag", keys.tag(window())); put("device", device)
-                        put("port", port); put("name", name)
-                    }.toString().toByteArray()
+                    val msg = announcement()
                     for (target in broadcastTargets()) {
                         runCatching { socket.send(DatagramPacket(msg, msg.size, target)) }
+                    }
+                    if (rounds++ % SWEEP_EVERY == 0 && peers.values.none { now() - it.lastSync < PEER_TTL_MS }) {
+                        for (target in sweepTargets?.invoke().orEmpty()) {
+                            runCatching { socket.send(DatagramPacket(msg, msg.size, target)) }
+                        }
                     }
                 }
                 Thread.sleep(ANNOUNCE_MS)
@@ -274,6 +303,15 @@ class LanSync internal constructor(
             val other = msg.str("device") ?: continue
             if (other == device) continue
             val port = msg["port"]?.jsonPrimitive?.content?.toIntOrNull() ?: continue
+            // Answer, straight back to where it came from, unless it is itself
+            // an answer: the asker may hear nothing else from this device.
+            val asker = "${packet.address.hostAddress}:${packet.port}"
+            val t = now()
+            if (msg["re"]?.jsonPrimitive?.content != "true" && t - (answered[asker] ?: 0) >= ANSWER_MS && this.port > 0) {
+                answered[asker] = t
+                val reply = announcement(answer = true)
+                runCatching { socket.send(DatagramPacket(reply, reply.size, packet.socketAddress)) }
+            }
             val address = "${packet.address.hostAddress}:$port"
             val known = peers[other]
             peers[other] = Peer(other, msg.str("name") ?: "Another device", address, now(), known?.lastSync ?: 0)
@@ -365,6 +403,7 @@ class LanSync internal constructor(
     private fun serve(server: ServerSocket) {
         while (running) {
             val s = try { server.accept() } catch (_: IOException) { break }
+            if (turnsAwayCallers) { runCatching { s.close() }; continue }
             // A thread per connection, so a bounded number of them: anyone on
             // the network can connect, proof or not.
             if (!sessionSlots.tryAcquire()) {
@@ -526,6 +565,13 @@ class LanSync internal constructor(
         private const val PEER_TTL_MS = 2 * 60_000L
         private const val RESYNC_MS = 30_000L
         private const val JITTER_MS = 2_000L
+        /** Ask the network address by address every this many announcements (30 s). */
+        private const val SWEEP_EVERY = 6
+        /** Answer one asker at most this often. */
+        private const val ANSWER_MS = 10_000L
+        /** The most addresses a sweep asks: a /22. A bigger network is a
+         *  workplace's, where knocking on every door isn't welcome. */
+        private const val MAX_SWEEP = 1022
         private const val CONNECT_MS = 3_000
         private const val READ_MS = 20_000
         private const val MAX_FRAME = 17 * 1024 * 1024
@@ -559,6 +605,38 @@ class LanSync internal constructor(
                 .filter { it is Inet4Address && it.isSiteLocalAddress }
                 .mapNotNull { it.hostAddress }
         }.getOrDefault(emptyList())
+
+        /**
+         * Every other address on this device's local networks, at [port]: the
+         * networks with a broadcast address (not a VPN's tunnel), private, and
+         * no bigger than [MAX_SWEEP] addresses.
+         */
+        fun localSweep(port: Int): List<InetSocketAddress> = runCatching {
+            val out = ArrayList<InetSocketAddress>()
+            for (nif in NetworkInterface.getNetworkInterfaces()) {
+                if (!nif.isUp || nif.isLoopback) continue
+                for (a in nif.interfaceAddresses) {
+                    val ip = a.address as? Inet4Address ?: continue
+                    if (!ip.isSiteLocalAddress || a.broadcast == null) continue
+                    val hosts = sweepHosts(ip.address, a.networkPrefixLength.toInt())
+                    if (out.size + hosts.size > MAX_SWEEP) continue
+                    hosts.mapTo(out) { InetSocketAddress(it, port) }
+                }
+            }
+            out
+        }.getOrDefault(emptyList())
+
+        /** The other host addresses of [ip]'s /[bits] network (none past [MAX_SWEEP]). */
+        internal fun sweepHosts(ip: ByteArray, bits: Int): List<InetAddress> {
+            if (bits !in 22..30) return emptyList()
+            val self = ip.fold(0L) { acc, b -> (acc shl 8) or (b.toLong() and 0xff) }
+            val mask = (0xffffffffL shl (32 - bits)) and 0xffffffffL
+            val net = self and mask
+            val last = net or (mask.inv() and 0xffffffffL)
+            return (net + 1 until last).filter { it != self }.map { h ->
+                InetAddress.getByAddress(byteArrayOf((h shr 24).toByte(), (h shr 16).toByte(), (h shr 8).toByte(), h.toByte()))
+            }
+        }
 
         private fun daemon(name: String, block: () -> Unit) =
             Thread(block, name).apply { isDaemon = true }.start()

@@ -7,6 +7,7 @@ import com.novelscraper.app.platform.KeyValueStore
 import com.novelscraper.app.platform.appFilesDir
 import com.novelscraper.app.platform.deviceName
 import com.novelscraper.app.platform.hearLocalNetwork
+import com.novelscraper.app.platform.isDesktop
 import com.novelscraper.app.platform.settingsStore
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -112,6 +113,8 @@ object SyncSettings {
         val lan = _lan.value ?: LanSync(
             localFolder, keysOf(code), Library.store.syncDevice(), deviceName, onReceived,
             manualPeers = { prefs.getStringSet(KEY_PEERS).orEmpty().toList() },
+            // A computer may have a firewall that lets nothing in; a phone doesn't.
+            sweepTargets = if (isDesktop) ({ LanSync.localSweep(LanSync.DISCOVERY_PORT) }) else null,
         ).also { _lan.value = it }
         lan.device = Library.store.syncDevice()
         hearLocalNetwork(true)

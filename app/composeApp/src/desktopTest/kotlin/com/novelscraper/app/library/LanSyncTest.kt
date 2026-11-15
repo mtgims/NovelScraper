@@ -44,6 +44,8 @@ class LanSyncTest {
         var clock: Long = 1_000_000,
         discoveryPort: Int = 0,
         targets: List<InetSocketAddress> = emptyList(),
+        sweep: (() -> List<InetSocketAddress>)? = null,
+        firewalled: Boolean = false,
     ) {
         val lib = LibraryStore(jdbcLibraryDriver(null), Source(), now = { clock })
         val folder = LocalFolder(Files.createTempDirectory("lan").toFile().also { dirs += it })
@@ -58,8 +60,8 @@ class LanSyncTest {
         }
         val lan = LanSync(
             folder, keys, runBlocking { lib.syncDevice() }, "device", onReceived = { received++ },
-            discoveryPort = discoveryPort, serverPort = 0, extraTargets = targets,
-        ).also { it.start(); started += it }
+            discoveryPort = discoveryPort, serverPort = 0, extraTargets = targets, sweepTargets = sweep,
+        ).also { it.turnsAwayCallers = firewalled; it.start(); started += it }
 
         /** What the runner does: sync the library with its own folder. */
         suspend fun sync() = lib.syncFolder(folder, null, cache, keys.key)
@@ -242,6 +244,71 @@ class LanSyncTest {
         a.sync(); b.sync()
         assertEquals(2, libraryOf(a).size)
         assertEquals(2, libraryOf(b).size)
+    }
+
+    /**
+     * A computer whose firewall lets nothing in (ufw's "deny incoming" with no
+     * rule for this network): the phone hears it and is turned away, and the
+     * phone's own broadcasts never reach it. Its asking the network address
+     * by address gets an answer the firewall lets in as a reply, so it learns
+     * where the phone is and calls it, which a firewall lets out.
+     */
+    @Test
+    fun aComputerThatLetsNothingInStillFindsAndMeetsThePhone() = runBlocking<Unit> {
+        val pcPort = freeUdpPort(); val phonePort = freeUdpPort()
+        val loop = InetAddress.getLoopbackAddress()
+        val phone = Device(code, discoveryPort = phonePort)   // its broadcasts reach nobody
+        val pc = Device(
+            code, discoveryPort = pcPort, firewalled = true,
+            sweep = { listOf(InetSocketAddress(loop, phonePort)) },
+        )
+        val deadline = System.currentTimeMillis() + 15_000
+        while (System.currentTimeMillis() < deadline && pc.lan.state.value.peers.none { it.lastSync > 0 }) Thread.sleep(100)
+        assertTrue(pc.lan.state.value.peers.any { it.device == phone.lan.device && it.lastSync > 0 }, "the PC met the phone")
+        addNovel(phone); phone.sync()
+        pc.lan.exchangeAll()
+        pc.sync()
+        assertEquals(1, libraryOf(pc).size, "and took the phone's library")
+    }
+
+    @Test
+    fun aSweepAsksEveryOtherAddressOfASmallNetworkOnly() {
+        val hosts = LanSync.sweepHosts(byteArrayOf(192.toByte(), 168.toByte(), 1, 161.toByte()), 24)
+        assertEquals(253, hosts.size, "254 hosts less this one")
+        assertEquals("192.168.1.1", hosts.first().hostAddress)
+        assertEquals("192.168.1.254", hosts.last().hostAddress)
+        assertTrue(hosts.none { it.hostAddress == "192.168.1.161" })
+        assertTrue(LanSync.sweepHosts(byteArrayOf(10, 0, 0, 5), 16).isEmpty(), "a /16 is not swept")
+        assertTrue(LanSync.sweepHosts(byteArrayOf(10, 151.toByte(), 183.toByte(), 144.toByte()), 32).isEmpty(), "nor a tunnel's /32")
+    }
+
+    /** Answers are never answered, and a device answers one asker once in a while, not per packet. */
+    @Test
+    fun answersDoNotBounceBackAndForth() = runBlocking<Unit> {
+        val a = freeUdpPort()
+        val listener = DatagramSocket(0).apply { soTimeout = 1_500 }
+        val d = Device(code, discoveryPort = a)
+        val keys = PairKeys(code)
+        fun ask(re: Boolean) {
+            val msg = """{"app":"novelscraper","v":1,"tag":"${keys.tag(System.currentTimeMillis() / 600_000)}",""" +
+                """"device":"other","port":1,"name":"x"${if (re) ",\"re\":true" else ""}}"""
+            listener.send(java.net.DatagramPacket(msg.toByteArray(), msg.length, InetAddress.getLoopbackAddress(), a))
+        }
+        fun answers(): Int {
+            var n = 0
+            val buf = ByteArray(2048)
+            while (true) {
+                val p = java.net.DatagramPacket(buf, buf.size)
+                try { listener.receive(p) } catch (_: java.net.SocketTimeoutException) { return n }
+                if (String(p.data, 0, p.length).contains("\"re\":true")) n++
+            }
+        }
+        ask(re = true)
+        assertEquals(0, answers(), "an answer gets no answer")
+        repeat(5) { ask(re = false) }
+        assertEquals(1, answers(), "five asks in a row, one answer")
+        listener.close()
+        d.lan.stop()
     }
 
     @Test
