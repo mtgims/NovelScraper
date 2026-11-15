@@ -14,6 +14,7 @@ import okhttp3.Protocol
 import okhttp3.Response
 import okhttp3.ResponseBody.Companion.toResponseBody
 import java.io.File
+import kotlinx.coroutines.launch
 import kotlin.test.Test
 
 /**
@@ -120,6 +121,7 @@ class PluginBenchmark {
                 dumpSeq = 0
                 val lines = mutableListOf<String>()
                 val rt = timed("load", lines) { PluginRuntime.load(id, code, env) } ?: run { println("[$id] $lines"); return@forEach }
+                var idleKiB = 0L
                 rt.use { p ->
                     val popular = timed("popular", lines, { it.size }) { p.popular(1) }.orEmpty()
                     pause(); timed("latest", lines, { it.size }) { p.popular(1, latest = true) }
@@ -132,8 +134,11 @@ class PluginBenchmark {
                         timed("chapter", lines, { it.length }) { p.chapter(first.path) } ?: continue
                         break
                     }
+                    idleKiB = (PluginRuntime::class.java.getDeclaredField("js").apply { isAccessible = true }
+                        .get(p) as com.dokar.quickjs.QuickJs).memoryUsage.memoryUsedSize / 1024
                 }
-                println("[$id] round ${round + 1}: ${lines.joinToString(", ")}")
+                // What a loaded source holds once its calls are done (the runtime is closed by now, so measured before).
+                println("[$id] round ${round + 1}: ${lines.joinToString(", ")}, idle ${idleKiB} KiB")
             }
         }
     }
@@ -151,6 +156,44 @@ class PluginBenchmark {
         override fun connectEnd(call: okhttp3.Call, inetSocketAddress: java.net.InetSocketAddress, proxy: java.net.Proxy, protocol: Protocol?) {
             val all = (System.nanoTime() - conn0) / 1_000_000
             println("[$id]   new connection to ${call.request().url.host}: dns ${dns}ms, tcp ${all - tls}ms, tls ${tls}ms")
+        }
+    }
+
+    /**
+     * Live, with -PbenchSearch=<n>[,<n>...]: one search on every recorded source,
+     * n sources at a time, as the app's search-everything does; the runs
+     * alternate and are spaced out, so no site is asked twice in a row.
+     */
+    @Test fun searchEverything() = runBlocking {
+        val repo = repo ?: return@runBlocking
+        val widths = System.getProperty("bench.search").orEmpty().split(',').mapNotNull { it.trim().toIntOrNull() }
+        if (widths.isEmpty()) return@runBlocking
+        val index = Json.parseToJsonElement(File(repo, "index.json").readText()).jsonArray
+            .associateBy { it.jsonObject["id"]!!.jsonPrimitive.content }
+        val codes = File(repo, "recordings").listFiles()!!.sortedBy { it.name }.mapNotNull { dir ->
+            val entry = index[dir.name]?.jsonObject ?: return@mapNotNull null
+            dir.name to File(repo, entry["url"]!!.jsonPrimitive.content.substringAfter("/master/")).readText()
+        }
+        val env = PluginEnvironment(OkHttpClient.Builder().cookieJar(BrowserCookieJar()).build(),
+            "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36",
+            storage = { mutableMapOf() })
+        for ((n, width) in widths.withIndex()) {
+            if (n > 0) kotlinx.coroutines.delay(20_000)
+            val slots = kotlinx.coroutines.sync.Semaphore(width)
+            val done = java.util.concurrent.ConcurrentHashMap<String, String>()
+            val t0 = System.nanoTime()
+            kotlinx.coroutines.coroutineScope {
+                for ((id, code) in codes) launch(kotlinx.coroutines.Dispatchers.Default) {
+                    slots.acquire()
+                    try {
+                        val s0 = System.nanoTime()
+                        val r = runCatching { PluginRuntime.load(id, code, env).use { it.search("sword", 1, unattended = true).size } }
+                        done[id] = "${(System.nanoTime() - s0) / 1_000_000}ms " + (r.getOrNull()?.toString() ?: "failed")
+                    } finally { slots.release() }
+                }
+            }
+            println("[search] $width at a time: all ${codes.size} in ${(System.nanoTime() - t0) / 1_000_000}ms; " +
+                done.toSortedMap().entries.joinToString(", ") { "${it.key.removePrefix("novelscraper.")} ${it.value}" })
         }
     }
 }

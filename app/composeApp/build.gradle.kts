@@ -287,6 +287,7 @@ tasks.withType<Test>().configureEach {
     systemProperty("bench.rounds", providers.gradleProperty("benchRounds").getOrElse("3"))
     systemProperty("bench.live", providers.gradleProperty("benchLive").getOrElse(""))
     systemProperty("bench.dump", providers.gradleProperty("benchDump").getOrElse(""))
+    systemProperty("bench.search", providers.gradleProperty("benchSearch").getOrElse(""))
     systemProperty("live.repo", providers.gradleProperty("liveRepo").getOrElse(""))
     systemProperty("live.search", providers.gradleProperty("liveSearch").getOrElse(""))
     // Where LivePluginTest records what the sites answered, for offline replays.
