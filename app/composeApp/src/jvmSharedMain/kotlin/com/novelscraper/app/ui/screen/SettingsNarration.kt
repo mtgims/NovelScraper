@@ -72,7 +72,8 @@ internal fun narrationSummary(): String {
     val supertonic by ReaderPrefs.supertonicSpeaker.collectAsState()
     val piper by ReaderPrefs.piperVoice.collectAsState()
     val downloads by ModelDownloads.progress.collectAsState()
-    val ready = remember(engine, piper, downloads) {
+    val done = downloads.filterValues { it is KokoroDownloader.Progress.Done }.keys
+    val ready = remember(engine, piper, done) {
         TtsModels.isModelReady(if (engine == ReaderPrefs.ENGINE_PIPER) piper else engine)
     }
     val name = engines().firstOrNull { it.id == engine }?.name ?: engine
@@ -144,12 +145,14 @@ private fun PiperVoiceList() {
     val selected by ReaderPrefs.piperVoice.collectAsState()
     val downloads by ModelDownloads.progress.collectAsState()
     val busy = downloads.values.any { it.running }
+    // Looked at again only when a download lands, not on every tick of one.
+    val done = downloads.filterValues { it is KokoroDownloader.Progress.Done }.keys
 
     TtsModels.PIPER_VOICES.groupBy { it.accent }.forEach { (accent, voices) ->
         GroupSubhead(accent)
         voices.forEach { v ->
             val progress = downloads[v.id]
-            val installed = remember(downloads, v.id) { TtsModels.isModelReady(v.id) }
+            val installed = remember(done, v.id) { TtsModels.isModelReady(v.id) }
             val fetching = progress?.running == true
             val status = when (progress) {
                 is KokoroDownloader.Progress.Downloading ->
@@ -196,7 +199,8 @@ private fun NeuralModel(engine: String) {
     val supertonicSpeaker by ReaderPrefs.supertonicSpeaker.collectAsState()
     val downloads by ModelDownloads.progress.collectAsState()
     val progress = downloads[engine]
-    val installed = remember(engine, downloads) { TtsModels.isModelReady(engine) }
+    val done = downloads.filterValues { it is KokoroDownloader.Progress.Done }.keys
+    val installed = remember(engine, done) { TtsModels.isModelReady(engine) }
 
     val blurb = when (engine) {
         ReaderPrefs.ENGINE_KOKORO ->

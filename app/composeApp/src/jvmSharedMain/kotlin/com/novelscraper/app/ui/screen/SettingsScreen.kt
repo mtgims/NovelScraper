@@ -107,6 +107,8 @@ fun SettingsScreen() {
             AnimatedContent(
                 targetState = open,
                 transitionSpec = {
+                    // A window fades between pages, as the rest of the app does there.
+                    if (isDesktop) return@AnimatedContent fadeIn(tween(120)) togetherWith fadeOut(tween(120))
                     val forward = targetState != null
                     val dir = if (forward) SlideDirection.Left else SlideDirection.Right
                     (slideIntoContainer(dir, tween(240)) + fadeIn(tween(240))) togetherWith

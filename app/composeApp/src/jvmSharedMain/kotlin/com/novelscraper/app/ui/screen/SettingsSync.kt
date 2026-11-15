@@ -110,6 +110,7 @@ internal fun SyncPage() {
     var showCode by remember { mutableStateOf(false) }
     var addPeer by remember { mutableStateOf(false) }
     var deleting by remember { mutableStateOf(false) }
+    var disconnecting by remember { mutableStateOf(false) }
     var busy by remember { mutableStateOf(false) }
     val scope = rememberCoroutineScope()
     val chevron: @Composable () -> Unit = {
@@ -214,13 +215,7 @@ internal fun SyncPage() {
                     summary = "Stop syncing. The library stays on this device.",
                     icon = Icons.Outlined.LinkOff,
                     enabled = !busy,
-                    onClick = {
-                        busy = true
-                        scope.launch {
-                            try { SyncSettings.disconnect(); showToast("Sync is off. The library stays on this device.") }
-                            finally { busy = false }
-                        }
-                    },
+                    onClick = { disconnecting = true },
                 )
                 if (c.provider == SyncSettings.Provider.WEBDAV) {
                     GroupDivider(inset = ROW_TEXT_INSET)
@@ -235,6 +230,32 @@ internal fun SyncPage() {
                 }
             }
             if (deleting) DeleteSyncedDataDialog(c, onDismiss = { deleting = false })
+            // One tap on a row away from the ones people use most, and undone
+            // only with a code from another device: asked first.
+            if (disconnecting) AlertDialog(
+                onDismissRequest = { disconnecting = false },
+                title = { Text("Stop syncing?") },
+                text = {
+                    Text(
+                        if (c.provider == SyncSettings.Provider.LAN)
+                            "This device stops syncing with your others. The library stays on it. To sync again, " +
+                                "enter the sync code shown on one of your other devices."
+                        else "This device stops syncing through the folder. The library stays on it, and so does " +
+                            "what is in the folder."
+                    )
+                },
+                confirmButton = {
+                    TextButton(onClick = {
+                        disconnecting = false
+                        busy = true
+                        scope.launch {
+                            try { SyncSettings.disconnect(); showToast("Sync is off. The library stays on this device.") }
+                            finally { busy = false }
+                        }
+                    }) { Text("Stop syncing") }
+                },
+                dismissButton = { TextButton(onClick = { disconnecting = false }) { Text("Cancel") } },
+            )
         }
     }
     if (webdav) WebDavDialog(onDismiss = { webdav = false })
