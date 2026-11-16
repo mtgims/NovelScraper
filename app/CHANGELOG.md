@@ -3,6 +3,25 @@
 Newest first.
 
 
+## 1.3.3, 2026-11-16 · `versionCode 106`
+
+Narration on an NVIDIA graphics card works from the AppImage. The card was
+never actually tried there, so narration stayed on the processor whatever the
+setting said.
+
+### On the computer
+- **GPU narration works from the AppImage.** Turning it on tries the voice on
+  the graphics card in a second copy of the app, and from the AppImage that
+  copy never started, so every card was taken to have failed. It starts now:
+  an RTX 3060 narrates about four times faster than the processor beside it.
+  A card an earlier version marked as failed is tried again by itself; the
+  first narration after the update still uses the processor while it is
+  tried, and the card takes over from the next one.
+- **GPU files in use are no longer offered for removal** as files "from an
+  earlier version" when the graphics card doesn't answer at start, as can
+  happen after a driver update until the computer restarts.
+
+
 ## 1.3.2, 2026-11-16 · `versionCode 105`
 
 Collections no longer show twice when two devices each had a copy, a source

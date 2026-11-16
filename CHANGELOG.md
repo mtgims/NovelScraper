@@ -13,6 +13,16 @@ since moved to a repository of their own; this one holds the apps.
 
 ## 2026-11-16
 
+- **1.3.3: GPU narration from the AppImage.** jpackage's Linux launcher
+  re-runs itself and marks the second step with `_JPACKAGE_LAUNCHER`, which
+  stays in the app's environment; the GPU probe's copy of the launcher
+  inherited it and passed `--gpu-probe` to Java as a JVM option, so every
+  probe failed and was remembered. `GpuVoice.probeProcess` starts it without
+  the variable (RTX 3060: RTF 0.07 against 0.25 on the processor); failures
+  recorded by another app version are retried (`probes-failed-in`); with no
+  backend detected no pack is stale (`stalePacks`); every removal of GPU files
+  is logged, and a failed probe's last lines go to the app log.
+
 - **1.3.2: collections once, a warmer browser, a narrow update card.**
   Collections whose key migration 3 rekeyed after enrollment had no sync
   record; after each pull `settleUnsyncedShelves` merges such a collection
