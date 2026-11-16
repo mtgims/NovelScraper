@@ -21,11 +21,18 @@ object KokoroEngine {
     private fun defaultThreads(): Int = defaultTtsThreads()
 
     /** Set when the way the model should be built has changed (the desktop's
-     *  GPU pack finished testing): the next [ensureLoaded] builds it afresh. A
-     *  plain flag, so it can be set without waiting on a generation. */
+     *  GPU pack finished testing): the next [generate] or [ensureLoaded]
+     *  builds it afresh. A plain flag, so it can be set without waiting on a
+     *  generation. */
     @Volatile private var reload = false
 
     fun reloadOnNextUse() { reload = true }
+
+    /** How a model is built; replaced in tests. */
+    internal var build: (TtsModels.Spec, String, Int) -> TtsModel = ::buildOfflineTts
+
+    /** The threads the loaded model was asked for, to rebuild it the same way. */
+    private var loadedThreads = 0
 
     /**
      * Load [modelId] ("kokoro" or a Piper voice id), rebuilding if a different one
@@ -42,13 +49,32 @@ object KokoroEngine {
         val built = tryBuild(modelId, threads) ?: return false
         tts = built
         loadedId = modelId
+        loadedThreads = threads
         Log.i(TAG, "loaded id=$modelId threads=$threads sr=$sampleRate speakers=$numSpeakers")
         return true
     }
 
+    /**
+     * Rebuilds the loaded model between two sentences when [reloadOnNextUse]
+     * asked for it, so narration already under way moves to the graphics card
+     * once the card has been tried, instead of at the next Listen: the test
+     * runs while the processor reads, and a long listen could stay there for
+     * hours. The new model is built before the old one goes, so a build that
+     * fails leaves the voice that was playing.
+     */
+    private fun rebuildIfAsked() {
+        if (!reload) return
+        val id = loadedId ?: return
+        reload = false
+        val built = tryBuild(id, loadedThreads.coerceAtLeast(1)) ?: return
+        runCatching { tts?.release() }
+        tts = built
+        Log.i(TAG, "reloaded id=$id while narrating")
+    }
+
     private fun tryBuild(modelId: String, threads: Int): TtsModel? {
         return try {
-            buildOfflineTts(TtsModels.spec(modelId), TtsModels.modelDir(modelId).absolutePath, threads)
+            build(TtsModels.spec(modelId), TtsModels.modelDir(modelId).absolutePath, threads)
         } catch (t: Throwable) {
             Log.w(TAG, "build failed (id=$modelId): ${t.message}")
             null
@@ -63,6 +89,7 @@ object KokoroEngine {
      */
     @Synchronized
     fun generate(text: String, speaker: Int, speed: Float): FloatArray {
+        rebuildIfAsked()
         val engine = tts ?: return FloatArray(0)
         // Drop image placeholders — an illustration is its own "sentence" in the
         // shared split, but there's nothing to speak; treat it as silence.
@@ -110,5 +137,6 @@ object KokoroEngine {
         runCatching { tts?.release() }
         tts = null
         loadedId = null
+        loadedThreads = 0
     }
 }
