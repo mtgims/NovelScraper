@@ -3,6 +3,19 @@
 Newest first.
 
 
+## 1.3.4, 2026-11-16 · `versionCode 107`
+
+Narration moves to the graphics card as soon as the card has been tried,
+without waiting for the next Listen.
+
+### On the computer
+- **Narration under way moves to the graphics card.** The card is tried while
+  the processor reads, and until now the answer only counted from the next
+  Listen, so a long listen begun before it stayed on the processor. Now it
+  moves between two sentences; if the card's voice can't be built, the one
+  already speaking carries on.
+
+
 ## 1.3.3, 2026-11-16 · `versionCode 106`
 
 Narration on an NVIDIA graphics card works from the AppImage. The card was

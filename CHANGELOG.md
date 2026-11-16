@@ -13,6 +13,12 @@ since moved to a repository of their own; this one holds the apps.
 
 ## 2026-11-16
 
+- **1.3.4: narration moves to the card mid-listen.** A passing probe set
+  `KokoroEngine.reloadOnNextUse`, read only by `ensureLoaded` at the next
+  Listen. `generate` now rebuilds between sentences when it is set
+  (`rebuildIfAsked`), building the new model before releasing the old so a
+  failed build keeps the old one. `KokoroEngine.build` is the test seam.
+
 - **1.3.3: GPU narration from the AppImage.** jpackage's Linux launcher
   re-runs itself and marks the second step with `_JPACKAGE_LAUNCHER`, which
   stays in the app's environment; the GPU probe's copy of the launcher
