@@ -4,6 +4,7 @@ import com.novelscraper.app.net.Net
 import com.novelscraper.app.platform.DesktopDirs
 import com.novelscraper.app.platform.Log
 import com.novelscraper.app.platform.Os
+import com.novelscraper.app.platform.appVersion
 import com.novelscraper.app.platform.settingsStore
 import com.sun.jna.Native
 import com.sun.jna.WString
@@ -140,13 +141,27 @@ object GpuVoice {
     /** Packs this machine no longer uses, such as the CUDA pack 0.44.0
      *  installed on Windows before DirectML took its place. */
     private val stale: List<File>
-        get() = root.listFiles().orEmpty().filter { it.name != backend?.packId }
+        get() = stalePacks(root, backend)
+
+    /**
+     * The packs in [root] other than [current]'s. None when no backend was
+     * found: a card that didn't answer this run (nvidia-smi failing until a
+     * reboot after a driver update) says nothing about which pack is current,
+     * and every pack, the one in use included, would otherwise be offered for
+     * removal as "from an earlier version".
+     */
+    internal fun stalePacks(root: File, current: Backend?): List<File> =
+        if (current == null) emptyList()
+        else root.listFiles().orEmpty().filter { it.name != current.packId }
 
     val staleBytes: Long
         get() = stale.sumOf { d -> d.walkTopDown().filter { it.isFile }.sumOf { it.length() } }
 
     /** None of them is loaded: only the current backend's pack ever is. */
-    fun removeStale() = stale.forEach { it.deleteRecursively() }
+    fun removeStale() = stale.forEach {
+        Log.i(TAG, "removing ${it.name}, a pack this machine no longer uses")
+        it.deleteRecursively()
+    }
 
     // --- what this machine has ------------------------------------------------------
 
@@ -371,7 +386,10 @@ object GpuVoice {
                 return
             }
             // Anything left from an earlier pack, or from a download cut short.
-            root.listFiles().orEmpty().filter { it.name != pack.packId }.forEach { it.deleteRecursively() }
+            root.listFiles().orEmpty().filter { it.name != pack.packId }.forEach {
+                Log.i(TAG, "removing ${it.name} before downloading ${pack.packId}")
+                it.deleteRecursively()
+            }
             tmpDir.deleteRecursively(); tmpDir.mkdirs()
 
             val http = Net.client.newBuilder().readTimeout(60, TimeUnit.SECONDS).build()
@@ -473,9 +491,11 @@ object GpuVoice {
     fun remove() {
         setEnabled(false)
         if (active) {
+            Log.i(TAG, "the GPU files are in use: removing them at the next start")
             prefs.putBoolean("remove-pending", true)
             return
         }
+        Log.i(TAG, "removing the GPU files, as asked")
         root.deleteRecursively()
         prefs.putBoolean("remove-pending", false)
     }
@@ -494,6 +514,7 @@ object GpuVoice {
         if (nativeLoaded) return active
         nativeLoaded = true
         if (removalPending) {
+            Log.i(TAG, "removing the GPU files, as asked last run")
             runCatching { root.deleteRecursively() }
             prefs.putBoolean("remove-pending", false)
         }
@@ -511,6 +532,7 @@ object GpuVoice {
      */
     fun probeResult(spec: TtsModels.Spec, modelDir: String): Boolean? {
         val pack = backend ?: return false
+        forgetOldFailures()
         val key = "${pack.packId}/${File(modelDir).name}"
         prefs.getStringSet(PROBES_OK).orEmpty().firstOrNull { it.startsWith("$key=") }?.let { found ->
             useAdapter(found.substringAfter('=').toIntOrNull() ?: 0)
@@ -574,11 +596,8 @@ object GpuVoice {
             _state.value = State.Testing(adapter + 1, adapters.last + 1)
             Log.i(TAG, "trying ${File(modelDir).name} on adapter $adapter in a separate process")
             val rtf = runCatching {
-                val p = ProcessBuilder(command + listOf(PROBE_ARG, spec.kind, spec.onnx, modelDir))
+                val p = probeProcess(command + listOf(PROBE_ARG, spec.kind, spec.onnx, modelDir), adapter, log)
                     .directory(DesktopDirs.cache)
-                    .redirectErrorStream(true)
-                    .redirectOutput(ProcessBuilder.Redirect.appendTo(log))
-                    .apply { environment()[ADAPTER_VARIABLE] = adapter.toString() }
                     .start()
                 probeProcess = p
                 // A card that needs longer than this for two sentences is far
@@ -589,6 +608,10 @@ object GpuVoice {
                 else log.readLines().lastOrNull { it.startsWith("rtf=") }?.substringAfter('=')?.toDoubleOrNull()
             }.getOrNull()
             Log.i(TAG, "adapter $adapter: ${rtf?.let { "RTF %.2f".format(it) } ?: "couldn't narrate"}")
+            // What the copy said is the only clue to why; it went to its own log.
+            if (rtf == null) runCatching {
+                log.readLines().filter { it.isNotBlank() }.takeLast(3).forEach { Log.w(TAG, "probe: ${it.take(300)}") }
+            }
             if (rtf != null && rtf < MAX_RTF && (best == null || rtf < best.second)) best = adapter to rtf
         }
         val chosen = best
@@ -597,9 +620,52 @@ object GpuVoice {
             useAdapter(chosen.first)
         } else {
             prefs.putStringSet(PROBES_FAILED, prefs.getStringSet(PROBES_FAILED).orEmpty() + key)
+            prefs.putString(PROBES_FAILED_IN, appVersion)
             problem = PROBE_FAILED
         }
         return chosen != null
+    }
+
+    /**
+     * The copy of the app a probe runs in.
+     *
+     * Without [JPACKAGE_STAGE]: jpackage's Linux launcher starts in two steps,
+     * re-running itself with that variable set to mark the second, and the
+     * variable stays in the app's environment. A copy of the launcher that
+     * inherits it skips the first step and hands the app's own arguments to
+     * Java, which refused `--gpu-probe` as an unknown option, so up to 1.3.2
+     * no card was ever tried from the AppImage. A run from source starts
+     * `java` itself and never saw it.
+     */
+    internal fun probeProcess(
+        command: List<String>,
+        adapter: Int,
+        log: File,
+        inherited: Map<String, String> = System.getenv(),
+    ): ProcessBuilder = ProcessBuilder(command)
+        .redirectErrorStream(true)
+        .redirectOutput(ProcessBuilder.Redirect.appendTo(log))
+        .apply {
+            environment().clear()
+            environment().putAll(inherited)
+            environment().remove(JPACKAGE_STAGE)
+            environment()[ADAPTER_VARIABLE] = adapter.toString()
+        }
+
+    private const val JPACKAGE_STAGE = "_JPACKAGE_LAUNCHER"
+
+    /**
+     * Failures found by another version of the app are tried again: the update
+     * may be what fixes them, as 1.3.3 fixed the probe itself. Without this a
+     * failure stands until the switch is turned off and on.
+     */
+    internal fun forgetOldFailures() {
+        if (prefs.getString(PROBES_FAILED_IN, null) == appVersion) return
+        if (prefs.getStringSet(PROBES_FAILED).isNullOrEmpty().not()) {
+            Log.i(TAG, "trying the card again: its failure was found by another version")
+        }
+        prefs.remove(PROBES_FAILED)
+        prefs.putString(PROBES_FAILED_IN, appVersion)
     }
 
     /** Slower than this and a card isn't worth it: the voice must stay well
@@ -634,6 +700,8 @@ object GpuVoice {
     const val PROBE_ARG = "--gpu-probe"
     private const val PROBES_OK = "probes-ok"
     private const val PROBES_FAILED = "probes-failed"
+    /** The app version that found the failures in [PROBES_FAILED]. */
+    private const val PROBES_FAILED_IN = "probes-failed-in"
     private const val PROBE_FAILED =
         "The graphics card couldn't narrate with this voice when it was tried, so narration uses the processor."
 
