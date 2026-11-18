@@ -100,6 +100,7 @@ fun main(args: Array<String>) {
     if (args.firstOrNull() == com.novelscraper.app.tts.GpuVoice.PROBE_ARG) {
         kotlin.system.exitProcess(com.novelscraper.app.tts.GpuVoice.runProbe(args.drop(1)))
     }
+    claimTheLibrary(args)
     initApp()
     com.novelscraper.app.ui.screen.SettingsHooks.narration = {
         com.novelscraper.app.ui.components.GpuAccelerationSetting()
@@ -162,6 +163,7 @@ fun main(args: Array<String>) {
             resizable = true,
         ) {
             window.minimumSize = java.awt.Dimension(420, 560)
+            mainWindow = window
             // On Windows the window gets its system frame back, minus the title
             // bar, which the app draws (see WindowsFrame).
             if (Os.isWindows) {
@@ -224,6 +226,50 @@ fun AppContent(titleBar: (@Composable () -> Unit)? = null) {
                 ToastHost(Modifier.padding(bottom = 96.dp))
             }
             }
+        }
+    }
+}
+
+/** The one copy of the app on this data folder (see SingleInstance). */
+private val instance by lazy { com.novelscraper.app.platform.SingleInstance(DesktopDirs.data) }
+
+@Volatile private var mainWindow: java.awt.Window? = null
+
+/**
+ * Takes the library for this copy, or hands over to the copy that already has
+ * it (brought to the front) and quits. Started by an update, it waits for the
+ * old copy to finish closing.
+ */
+private fun claimTheLibrary(args: Array<String>) {
+    val log = com.novelscraper.app.platform.Log
+    val afterUpdate = com.novelscraper.app.platform.SingleInstance.AFTER_UPDATE_ARG in args
+    if (!instance.acquire(if (afterUpdate) 30_000 else 0)) {
+        if (instance.wakeOther(5_000)) {
+            log.i("Main", "NovelScraper is already open; brought it to the front")
+            kotlin.system.exitProcess(0)
+        }
+        // No answer: the other copy is closing, or has stopped responding.
+        if (!instance.acquire(10_000)) {
+            log.w("Main", "another copy holds the library and isn't answering")
+            runCatching {
+                javax.swing.JOptionPane.showMessageDialog(
+                    null,
+                    "NovelScraper is already running but isn't responding. Close it and try again.",
+                    "NovelScraper", javax.swing.JOptionPane.WARNING_MESSAGE,
+                )
+            }
+            kotlin.system.exitProcess(1)
+        }
+    }
+    instance.watch {
+        javax.swing.SwingUtilities.invokeLater {
+            val w = mainWindow ?: return@invokeLater
+            (w as? java.awt.Frame)?.let { f ->
+                if (f.extendedState and java.awt.Frame.ICONIFIED != 0) f.extendedState = f.extendedState and java.awt.Frame.ICONIFIED.inv()
+            }
+            w.isVisible = true
+            w.toFront()
+            w.requestFocus()
         }
     }
 }

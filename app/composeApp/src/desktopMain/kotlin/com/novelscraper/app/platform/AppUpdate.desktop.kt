@@ -77,7 +77,9 @@ actual suspend fun installUpdate(file: File): Boolean = withContext(Dispatchers.
         )
         running.setExecutable(true, false)
         Log.i("Updates", "updated ${running.name}; restarting")
-        ProcessBuilder(running.absolutePath)
+        // Told it follows an update, the new copy waits for this one to let go
+        // of the library rather than bringing this closing window forward.
+        ProcessBuilder(running.absolutePath, SingleInstance.AFTER_UPDATE_ARG)
             .redirectOutput(ProcessBuilder.Redirect.DISCARD)
             .redirectError(ProcessBuilder.Redirect.DISCARD)
             .start()
