@@ -265,7 +265,7 @@ fun BrowseScreen(
 }
 
 @Composable
-private fun SourceRow(
+internal fun SourceRow(
     name: String,
     lang: String,
     iconUrl: String,

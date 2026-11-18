@@ -132,7 +132,7 @@ fun WhatsNewPrompt(onOpenAll: () -> Unit) {
 }
 
 @Composable
-private fun ReleaseCard(r: Changelog.Release) {
+internal fun ReleaseCard(r: Changelog.Release) {
     Surface(
         shape = RoundedCornerShape(20.dp),
         color = cardColor(),

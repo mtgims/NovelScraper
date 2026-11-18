@@ -228,7 +228,7 @@ private val MAX_WIDTH = 1100.dp
 private enum class Sort(val label: String) { Progress("Progress"), Recent("Recent"), Title("Title") }
 
 @Composable
-private fun StatsContent(s: ReadingStats, words: WordSample?, onOpenNovel: (Int) -> Unit) {
+internal fun StatsContent(s: ReadingStats, words: WordSample?, onOpenNovel: (Int) -> Unit) {
     var sort by rememberSaveable { mutableStateOf(Sort.Progress) }
     val sorted = remember(s, sort) {
         when (sort) {

@@ -232,6 +232,8 @@ kotlin {
                 // A real https server on localhost, for what follows (or doesn't) a redirect.
                 implementation("com.squareup.okhttp3:okhttp-tls:4.12.0")
                 implementation("com.squareup.okhttp3:mockwebserver:4.12.0")
+                // Screens drawn at phone sizes, checked for text pushed out of its box.
+                implementation("org.jetbrains.compose.ui:ui-test:1.12.0")
             }
         }
         getByName("androidHostTest") {
