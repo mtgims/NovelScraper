@@ -49,6 +49,8 @@ import com.novelscraper.app.ui.theme.ThemeController
 import okio.Path.Companion.toOkioPath
 import org.jetbrains.skia.Image
 import java.io.File
+import kotlinx.coroutines.flow.distinctUntilChanged
+import kotlinx.coroutines.launch
 
 /** Everything App.onCreate does on Android, before the first window. */
 fun initApp() {
@@ -101,6 +103,8 @@ fun main(args: Array<String>) {
         kotlin.system.exitProcess(com.novelscraper.app.tts.GpuVoice.runProbe(args.drop(1)))
     }
     claimTheLibrary(args)
+    // Before anything is logged: the end of the log is the last session's.
+    com.novelscraper.app.ui.components.UncleanExit.begin()
     initApp()
     com.novelscraper.app.ui.screen.SettingsHooks.narration = {
         com.novelscraper.app.ui.components.GpuAccelerationSetting()
@@ -115,7 +119,21 @@ fun main(args: Array<String>) {
     }
     // Settings are saved in the background; make sure pending saves land however
     // the app exits (window close, SIGTERM).
-    Runtime.getRuntime().addShutdownHook(Thread { Extensions.flushStorage(); PropertiesStore.flush() })
+    // The hook is also what tells the next start this session closed properly
+    // (it runs for every exit but a crash, a kill or a power cut).
+    Runtime.getRuntime().addShutdownHook(Thread {
+        Extensions.flushStorage(); PropertiesStore.flush()
+        com.novelscraper.app.ui.components.UncleanExit.marker.end()
+    })
+    // What the app is doing, for the report should it die doing it.
+    @OptIn(kotlinx.coroutines.DelicateCoroutinesApi::class)
+    kotlinx.coroutines.GlobalScope.launch(kotlinx.coroutines.Dispatchers.Default) {
+        kotlinx.coroutines.flow.combine(TtsController.state, com.novelscraper.app.tts.KokoroEngine.notice) { s, _ ->
+            if (!s.playing) null
+            else "narrating “${s.chapterTitle}” on " +
+                (if (com.novelscraper.app.tts.GpuVoice.onCard) "the graphics card" else "the processor")
+        }.distinctUntilChanged().collect { com.novelscraper.app.ui.components.UncleanExit.marker.doing(it) }
+    }
     // The desktop app is "in the foreground" while it runs: keep syncing (when
     // sync is set up).
     LibrarySyncRunner.onForeground()
@@ -224,6 +242,7 @@ fun AppContent(titleBar: (@Composable () -> Unit)? = null) {
             Box(Modifier.fillMaxSize()) {
                 AppRoot()
                 ToastHost(Modifier.padding(bottom = 96.dp))
+                com.novelscraper.app.ui.components.UncleanExitPrompt()
             }
             }
         }
