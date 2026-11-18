@@ -302,6 +302,9 @@ tasks.withType<Test>().configureEach {
     // LiveGpuTest fetches the GPU pack (about 2 GB) and narrates on the card.
     systemProperty("live.gpu", providers.gradleProperty("liveGpu").getOrElse(""))
     systemProperty("live.gpu.model", providers.gradleProperty("liveGpuModel").getOrElse(""))
+    systemProperty("live.gpu.soak", providers.gradleProperty("liveGpuSoak").getOrElse(""))
+    systemProperty("live.gpu.soak.rounds", providers.gradleProperty("liveGpuSoakRounds").getOrElse("3"))
+    systemProperty("live.gpu.soak.threads", providers.gradleProperty("liveGpuSoakThreads").getOrElse("0"))
     // LiveBrowserTest drives the browser on this machine; needs a display.
     systemProperty("live.browser", providers.gradleProperty("liveBrowser").getOrElse(""))
     systemProperty("live.dump", providers.gradleProperty("liveDump").getOrElse(""))
@@ -316,7 +319,8 @@ tasks.withType<Test>().configureEach {
             providers.gradleProperty("liveBrowser").isPresent ||
             providers.gradleProperty("fetchBrowser").isPresent ||
             providers.gradleProperty("liveTts").isPresent ||
-            providers.gradleProperty("liveGpu").isPresent
+            providers.gradleProperty("liveGpu").isPresent ||
+            providers.gradleProperty("liveGpuSoak").isPresent
         ) showStandardStreams = true
     }
 }

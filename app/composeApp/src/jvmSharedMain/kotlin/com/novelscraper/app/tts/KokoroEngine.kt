@@ -35,6 +35,42 @@ object KokoroEngine {
     private var loadedThreads = 0
 
     /**
+     * The one thread the native model is built, run and released on. ONNX
+     * Runtime's CUDA provider keeps working memory for each thread that runs
+     * a model, about 1 GB each over time, and gives none of it back while the
+     * model lives. Narration generates from a coroutine pool, so sentences
+     * landed on worker after worker: on 2026-11-17 the card filled after 37
+     * minutes, the runtime aborted the app, and the driver was left refusing
+     * new windows. On one thread the card holds a flat 2.2 GB.
+     */
+    private val worker = java.util.concurrent.Executors.newSingleThreadExecutor { r ->
+        Thread(r, "narration-voice").apply { isDaemon = true }
+    }
+    @Volatile private var workerThread: Thread? = null
+
+    /** Runs [block] on [worker] and waits for it. The wait ignores interrupts
+     *  (and restores the flag after): a caller giving up mid-sentence must not
+     *  leave a build or release running behind its back. */
+    private fun <T> onWorker(block: () -> T): T {
+        if (Thread.currentThread() === workerThread) return block()
+        val task = worker.submit(java.util.concurrent.Callable { workerThread = Thread.currentThread(); block() })
+        var interrupted = false
+        try {
+            while (true) {
+                try {
+                    return task.get()
+                } catch (_: InterruptedException) {
+                    interrupted = true
+                } catch (e: java.util.concurrent.ExecutionException) {
+                    throw e.cause ?: e
+                }
+            }
+        } finally {
+            if (interrupted) Thread.currentThread().interrupt()
+        }
+    }
+
+    /**
      * Load [modelId] ("kokoro" or a Piper voice id), rebuilding if a different one
      * is active. False if the model isn't present or native init throws (caller
      * falls back to device TTS). Plain CPU EP (XNNPACK measured slower here).
@@ -43,7 +79,8 @@ object KokoroEngine {
     fun ensureLoaded(modelId: String, numThreads: Int = defaultThreads()): Boolean {
         if (tts != null && loadedId == modelId && !reload) return true
         reload = false
-        if (tts != null) { runCatching { tts?.release() }; tts = null; loadedId = null }
+        tts?.let { old -> runCatching { onWorker { old.release() } } }
+        tts = null; loadedId = null
         if (!TtsModels.isModelReady(modelId)) return false
         val threads = numThreads.coerceIn(1, 8)
         val built = tryBuild(modelId, threads) ?: return false
@@ -67,14 +104,16 @@ object KokoroEngine {
         val id = loadedId ?: return
         reload = false
         val built = tryBuild(id, loadedThreads.coerceAtLeast(1)) ?: return
-        runCatching { tts?.release() }
+        tts?.let { old -> runCatching { onWorker { old.release() } } }
         tts = built
         Log.i(TAG, "reloaded id=$id while narrating")
     }
 
     private fun tryBuild(modelId: String, threads: Int): TtsModel? {
         return try {
-            build(TtsModels.spec(modelId), TtsModels.modelDir(modelId).absolutePath, threads)
+            val spec = TtsModels.spec(modelId)
+            val dir = TtsModels.modelDir(modelId).absolutePath
+            onWorker { build(spec, dir, threads) }
         } catch (t: Throwable) {
             Log.w(TAG, "build failed (id=$modelId): ${t.message}")
             null
@@ -98,7 +137,8 @@ object KokoroEngine {
         val sid = speaker.coerceIn(0, (numSpeakers - 1).coerceAtLeast(0))
         return try {
             val t0 = System.nanoTime()
-            val samples = engine.generate(t, sid, speed.coerceIn(0.5f, 2.5f))
+            val pace = speed.coerceIn(0.5f, 2.5f)
+            val samples = onWorker { engine.generate(t, sid, pace) }
             condition(samples)
             val inferMs = (System.nanoTime() - t0) / 1_000_000.0
             val audioSec = samples.size.toDouble() / engine.sampleRate.coerceAtLeast(1)
@@ -134,7 +174,7 @@ object KokoroEngine {
 
     @Synchronized
     fun release() {
-        runCatching { tts?.release() }
+        tts?.let { old -> runCatching { onWorker { old.release() } } }
         tts = null
         loadedId = null
         loadedThreads = 0
