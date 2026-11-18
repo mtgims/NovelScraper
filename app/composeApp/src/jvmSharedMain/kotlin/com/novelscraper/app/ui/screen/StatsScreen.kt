@@ -532,49 +532,73 @@ private fun RankedCard(title: String, subtitle: String, rows: List<Pair<String, 
     }
 }
 
-/** How the rated novels were rated: the average, and a column per star. */
+/** How the rated novels were rated: the average, and a column per star. The
+ *  columns sit beside the average where there is room and under it on a
+ *  phone, where beside it they were too narrow for their labels; the chart
+ *  takes the height its labels need, so a larger system font can't push
+ *  them out of the card. */
 @Composable
 private fun RatingsCard(s: ReadingStats) {
-    val top = s.ratings.max().coerceAtLeast(1)
     StatCard(Modifier.fillMaxWidth()) {
-        Row(verticalAlignment = Alignment.Bottom) {
-            Column(Modifier.padding(end = 28.dp)) {
-                SectionTitle("Ratings", null)
-                Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.padding(top = 10.dp)) {
-                    Text(
-                        oneDecimal(s.averageRating),
-                        fontFamily = FontFamily.SansSerif, fontWeight = FontWeight.SemiBold, fontSize = 40.sp,
-                    )
-                    Icon(Icons.Filled.Star, null, Modifier.padding(start = 6.dp).size(26.dp), tint = MaterialTheme.colorScheme.primary)
+        BoxWithConstraints {
+            if (maxWidth < 400.dp) {
+                Column {
+                    RatingsAverage(s)
+                    RatingsBars(s, Modifier.fillMaxWidth().padding(top = 16.dp))
                 }
-                Text(
-                    "average of ${s.rated} rated", style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                )
+            } else {
+                Row(verticalAlignment = Alignment.Bottom) {
+                    RatingsAverage(s, Modifier.padding(end = 28.dp))
+                    RatingsBars(s, Modifier.weight(1f))
+                }
             }
-            Row(
-                Modifier.weight(1f).height(120.dp),
-                horizontalArrangement = Arrangement.spacedBy(10.dp, Alignment.CenterHorizontally),
-                verticalAlignment = Alignment.Bottom,
-            ) {
-                s.ratings.forEachIndexed { i, n ->
-                    Column(Modifier.weight(1f, fill = false).widthIn(max = 56.dp).fillMaxWidth(), horizontalAlignment = Alignment.CenterHorizontally) {
-                        Text(
-                            if (n > 0) n.toString() else "", style = MaterialTheme.typography.labelMedium,
-                            fontWeight = FontWeight.SemiBold,
-                        )
-                        Box(
-                            Modifier.padding(top = 4.dp).fillMaxWidth().height(maxOf(2.dp, 76.dp * (n.toFloat() / top)))
-                                .clip(RoundedCornerShape(topStart = 4.dp, topEnd = 4.dp))
-                                .background(if (n > 0) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.outlineVariant),
-                        )
-                        Text(
-                            "${i + 1}★", style = MaterialTheme.typography.labelMedium,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant, textAlign = TextAlign.Center,
-                            modifier = Modifier.padding(top = 6.dp),
-                        )
-                    }
-                }
+        }
+    }
+}
+
+@Composable
+private fun RatingsAverage(s: ReadingStats, modifier: Modifier = Modifier) {
+    Column(modifier) {
+        SectionTitle("Ratings", null)
+        Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.padding(top = 10.dp)) {
+            Text(
+                oneDecimal(s.averageRating),
+                fontFamily = FontFamily.SansSerif, fontWeight = FontWeight.SemiBold, fontSize = 40.sp,
+            )
+            Icon(Icons.Filled.Star, null, Modifier.padding(start = 6.dp).size(26.dp), tint = MaterialTheme.colorScheme.primary)
+        }
+        Text(
+            "average of ${s.rated} rated", style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
+    }
+}
+
+@Composable
+private fun RatingsBars(s: ReadingStats, modifier: Modifier = Modifier) {
+    val top = s.ratings.max().coerceAtLeast(1)
+    Row(
+        modifier,
+        horizontalArrangement = Arrangement.spacedBy(10.dp, Alignment.CenterHorizontally),
+        verticalAlignment = Alignment.Bottom,
+    ) {
+        s.ratings.forEachIndexed { i, n ->
+            Column(Modifier.weight(1f, fill = false).widthIn(max = 56.dp).fillMaxWidth(), horizontalAlignment = Alignment.CenterHorizontally) {
+                Text(
+                    if (n > 0) n.toString() else "", style = MaterialTheme.typography.labelMedium,
+                    fontWeight = FontWeight.SemiBold, maxLines = 1, softWrap = false,
+                )
+                Box(
+                    Modifier.padding(top = 4.dp).fillMaxWidth().height(maxOf(2.dp, 76.dp * (n.toFloat() / top)))
+                        .clip(RoundedCornerShape(topStart = 4.dp, topEnd = 4.dp))
+                        .background(if (n > 0) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.outlineVariant),
+                )
+                Text(
+                    "${i + 1}★", style = MaterialTheme.typography.labelMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant, textAlign = TextAlign.Center,
+                    maxLines = 1, softWrap = false,
+                    modifier = Modifier.padding(top = 6.dp),
+                )
             }
         }
     }
