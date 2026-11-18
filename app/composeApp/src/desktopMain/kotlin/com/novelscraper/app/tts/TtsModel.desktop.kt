@@ -26,8 +26,8 @@ actual fun buildOfflineTts(spec: TtsModels.Spec, dir: String, threads: Int): Tts
     // On the graphics card when the reader has the pack, it loads, and this
     // voice has been heard to work through it; the processor otherwise. A
     // voice not tried yet is tried in the background while the processor
-    // reads, and moves to the card the next time narration starts. One thread
-    // is all the card needs: the rest would only wait for it.
+    // reads, and moves to the card once it has passed. One thread is all the
+    // card needs: the rest would only wait for it.
     val onCard = GpuVoice.prepare() && when (GpuVoice.probeResult(spec, dir)) {
         true -> true
         false -> false
@@ -39,8 +39,8 @@ actual fun buildOfflineTts(spec: TtsModels.Spec, dir: String, threads: Int): Tts
         KokoroEngine.notice("The graphics card is short of memory, so narration uses the processor.")
     } else if (onCard) {
         try {
-            return buildModel(spec, dir, threads = 1, provider = GpuVoice.provider, modelPath = GpuVoice.modelFile(spec, dir))
-                .also { GpuVoice.onCard = true }
+            // In a process of its own: a failure there can't take the app down.
+            return GpuVoice.hostVoice(spec, dir).also { GpuVoice.onCard = true }
         } catch (t: Throwable) {
             GpuVoice.failed(t)
         }

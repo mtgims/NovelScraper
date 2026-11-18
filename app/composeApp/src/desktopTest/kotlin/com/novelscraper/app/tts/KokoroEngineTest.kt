@@ -10,11 +10,13 @@ import kotlin.test.assertTrue
 class KokoroEngineTest {
 
     private class Fake(val name: String, val threads: MutableSet<String>, val events: MutableList<String>) : TtsModel {
+        var dies = false
         var released = false
         override val sampleRate = 24000
         override val numSpeakers = 54
         override fun generate(text: String, speaker: Int, speed: Float): FloatArray {
             threads += Thread.currentThread().name
+            if (dies) throw CardGone()
             return FloatArray(1000) { 0.1f }
         }
         override fun release() { threads += Thread.currentThread().name; released = true; events += "release $name" }
@@ -28,7 +30,11 @@ class KokoroEngineTest {
         var room = false
         override fun leaveCard(): String? = short.also { short = null }
         override fun backToCard(): Boolean = room.also { room = false }
+        override fun cardFailed(t: Throwable): String? =
+            if (t is CardGone) "Narration on the graphics card stopped working." else null
     }
+
+    private class CardGone : java.io.IOException("the card's voice stopped answering")
 
     /** The threads the native model was used on: built, spoken with, released. */
     private val nativeThreads: MutableSet<String> = java.util.Collections.synchronizedSet(mutableSetOf())
@@ -144,5 +150,35 @@ class KokoroEngineTest {
         repeat(5) { KokoroEngine.generate("Sentence $it.", 0, 1f) }
         assertTrue(KokoroEngine.ensureLoaded(TtsModels.KOKORO))
         assertEquals(1, built.size)
+    }
+
+    /** The card's voice runs in a process of its own; when it dies the
+     *  sentence it was saying comes from the processor instead, and the
+     *  reader is told. */
+    @Test
+    fun whenTheCardsVoiceDiesTheSentenceComesFromTheProcessor() {
+        KokoroEngine.cardWatch = Watch()
+        assertTrue(KokoroEngine.ensureLoaded(TtsModels.KOKORO))
+        KokoroEngine.generate("On the card.", 0, 1f)
+        built.single().dies = true
+
+        val samples = KokoroEngine.generate("Mid-sentence it goes.", 0, 1f)
+        assertTrue(samples.isNotEmpty(), "the sentence was lost")
+        assertEquals(listOf("build processor", "release processor", "build card"), log)
+        assertEquals("Narration on the graphics card stopped working.", KokoroEngine.notice.value)
+    }
+
+    /** Any other failure is the sentence's alone: no move, nothing said. */
+    @Test
+    fun anOrdinaryFailureDoesNotMoveTheVoice() {
+        KokoroEngine.cardWatch = object : KokoroEngine.CardWatch {
+            override fun leaveCard(): String? = null
+            override fun backToCard() = false
+        }
+        assertTrue(KokoroEngine.ensureLoaded(TtsModels.KOKORO))
+        built.single().dies = true
+        assertTrue(KokoroEngine.generate("Fails.", 0, 1f).isEmpty())
+        assertEquals(1, built.size)
+        assertEquals(null, KokoroEngine.notice.value)
     }
 }

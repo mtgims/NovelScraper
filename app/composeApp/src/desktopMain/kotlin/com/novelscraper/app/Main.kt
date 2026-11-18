@@ -102,6 +102,10 @@ fun main(args: Array<String>) {
     if (args.firstOrNull() == com.novelscraper.app.tts.GpuVoice.PROBE_ARG) {
         kotlin.system.exitProcess(com.novelscraper.app.tts.GpuVoice.runProbe(args.drop(1)))
     }
+    // The copy that narrates on the graphics card (see VoiceHost): likewise.
+    if (args.firstOrNull() == com.novelscraper.app.tts.VoiceHost.ARG) {
+        kotlin.system.exitProcess(com.novelscraper.app.tts.GpuVoice.runVoiceHost(args.drop(1)))
+    }
     claimTheLibrary(args)
     // Before anything is logged: the end of the log is the last session's.
     com.novelscraper.app.ui.components.UncleanExit.begin()

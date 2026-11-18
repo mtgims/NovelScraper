@@ -40,6 +40,9 @@ object KokoroEngine {
         /** Asked when narration starts: true when a voice that left the card
          *  can go back, there being room again. */
         fun backToCard(): Boolean
+        /** Asked when a sentence failed: why the voice has to leave the card
+         *  (its process died, say), or null for an ordinary failure. */
+        fun cardFailed(t: Throwable): String? = null
     }
 
     @Volatile var cardWatch: CardWatch? = null
@@ -147,7 +150,12 @@ object KokoroEngine {
      * the card is short of.
      */
     private fun leaveCardIfShort() {
-        val reason = cardWatch?.leaveCard() ?: return
+        moveToProcessor(cardWatch?.leaveCard() ?: return)
+    }
+
+    /** Rebuilds the voice on the processor ([cardWatch] has already made the
+     *  next build go there) and tells the reader [reason]. */
+    private fun moveToProcessor(reason: String) {
         val id = loadedId ?: return
         Log.w(TAG, "moving narration to the processor: $reason")
         tts?.let { old -> runCatching { onWorker { old.release() } } }
@@ -187,7 +195,15 @@ object KokoroEngine {
         return try {
             val t0 = System.nanoTime()
             val pace = speed.coerceIn(0.5f, 2.5f)
-            val samples = onWorker { engine.generate(t, sid, pace) }
+            val samples = try {
+                onWorker { engine.generate(t, sid, pace) }
+            } catch (failure: Throwable) {
+                // The card's voice gone: the same sentence again, from the processor.
+                val reason = cardWatch?.cardFailed(failure) ?: throw failure
+                moveToProcessor(reason)
+                val again = tts ?: return FloatArray(0)
+                onWorker { again.generate(t, sid.coerceIn(0, (again.numSpeakers - 1).coerceAtLeast(0)), pace) }
+            }
             condition(samples)
             val inferMs = (System.nanoTime() - t0) / 1_000_000.0
             val audioSec = samples.size.toDouble() / engine.sampleRate.coerceAtLeast(1)

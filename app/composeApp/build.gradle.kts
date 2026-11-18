@@ -308,6 +308,8 @@ tasks.withType<Test>().configureEach {
     systemProperty("live.gpu.soak.rounds", providers.gradleProperty("liveGpuSoakRounds").getOrElse("3"))
     systemProperty("live.gpu.soak.threads", providers.gradleProperty("liveGpuSoakThreads").getOrElse("0"))
     systemProperty("live.gpu.soak.lowAt", providers.gradleProperty("liveGpuSoakLowAt").getOrElse("0"))
+    systemProperty("live.gpu.soak.killAt", providers.gradleProperty("liveGpuSoakKillAt").getOrElse("0"))
+    systemProperty("live.gpu.soak.launcher", providers.gradleProperty("liveGpuSoakLauncher").getOrElse(""))
     // LiveBrowserTest drives the browser on this machine; needs a display.
     systemProperty("live.browser", providers.gradleProperty("liveBrowser").getOrElse(""))
     systemProperty("live.dump", providers.gradleProperty("liveDump").getOrElse(""))

@@ -31,8 +31,9 @@ import java.util.zip.ZipInputStream
  * needs a CUDA-enabled ONNX Runtime beside it, plus NVIDIA's own libraries:
  * the CUDA runtime, cuBLAS, cuFFT and cuDNN. None of that fits in an installer
  * (about 2 GB to download, 2.5 GB on disk), so it is a pack the reader fetches
- * from Settings, kept in the data folder, and loaded instead of the CPU-only
- * libraries the next time narration starts.
+ * from Settings, kept in the data folder, and loaded by the copy of the app
+ * that narrates on the card ([VoiceHost]); the app itself keeps the CPU-only
+ * libraries, so nothing the card does can take it down.
  *
  * Measured on a GTX 1060 with the full-precision Kokoro: RTF 0.17 for 0.15
  * CPU-seconds per second of audio, against RTF 0.48 for 1.9 on four cores of
@@ -53,7 +54,9 @@ import java.util.zip.ZipInputStream
  * the same machine), so [probe] tries each and keeps the fastest.
  *
  * Whatever goes wrong, narration falls back to the processor: a pack that
- * won't load, a driver too old, a card CUDA doesn't know.
+ * won't load, a driver too old, a card CUDA doesn't know, the card running
+ * short of memory ([leaveCard]), or the card's voice process dying
+ * ([cardFailed]).
  */
 object GpuVoice : KokoroEngine.CardWatch {
 
@@ -105,14 +108,17 @@ object GpuVoice : KokoroEngine.CardWatch {
     @Volatile var problem: String? = null
         private set
 
-    /** True once narration has loaded its libraries this run: from then on the
-     *  choice between the pack and the processor holds until the app restarts. */
-    @Volatile var nativeLoaded = false
+    /** True once a pending removal has been dealt with this run. */
+    @Volatile private var prepared = false
+
+    /** True once the card's voice has been started this run, in its own
+     *  process ([VoiceHost]), so the pack's files may be in use. */
+    @Volatile var active = false
         private set
 
-    /** True when the pack's libraries are loaded this run (so its files are in
-     *  use); narration may still be on the processor, see [onCard]. */
-    @Volatile var active = false
+    /** True when the card's voice died or stopped answering this run: the
+     *  processor narrates until the app restarts. */
+    @Volatile var crashed = false
         private set
 
     /** True when the voice narration last built is running on the card. */
@@ -296,6 +302,8 @@ object GpuVoice : KokoroEngine.CardWatch {
         enabled // make sure the stored value has been read first
         prefs.putBoolean("enabled", on)
         _enabled.value = on
+        // Narration under way moves at its next sentence (see takesEffectNow).
+        KokoroEngine.reloadOnNextUse()
         // Switched on again: voices that failed before get another try, in
         // case the driver has changed since.
         if (on) {
@@ -316,8 +324,9 @@ object GpuVoice : KokoroEngine.CardWatch {
         probeInBackground(TtsModels.spec(id), TtsModels.modelDir(id).absolutePath)
     }
 
-    /** Takes effect for this run only if narration hasn't started yet. */
-    val takesEffectNow: Boolean get() = !nativeLoaded
+    /** The card's libraries live in a process of their own ([VoiceHost]), so
+     *  the switch takes effect at the next sentence, not the next start. */
+    val takesEffectNow: Boolean get() = true
 
     // --- getting it -------------------------------------------------------------------
 
@@ -560,22 +569,49 @@ object GpuVoice : KokoroEngine.CardWatch {
     // --- using it ---------------------------------------------------------------------
 
     /**
-     * Loads the pack's libraries in place of the processor-only ones, if the
-     * reader turned it on and it is all there. Called once, before narration
-     * first touches sherpa-onnx; false means the processor is used.
+     * Whether narration may go onto the card: the reader turned it on, the
+     * pack is all there, and the card's voice hasn't died this run. The app
+     * itself never loads the pack's libraries; [hostVoice] starts the process
+     * that does.
      */
     @Synchronized
     fun prepare(): Boolean {
-        if (nativeLoaded) return active
-        nativeLoaded = true
-        if (removalPending) {
-            Log.i(TAG, "removing the GPU files, as asked last run")
-            runCatching { root.deleteRecursively() }
-            prefs.putBoolean("remove-pending", false)
+        if (!prepared) {
+            prepared = true
+            if (removalPending) {
+                Log.i(TAG, "removing the GPU files, as asked last run")
+                runCatching { root.deleteRecursively() }
+                prefs.putBoolean("remove-pending", false)
+            }
         }
-        if (!enabled.value || !installed || support !is Support.Ready) return false
-        active = loadPack()
-        return active
+        return enabled.value && installed && support is Support.Ready && !crashed
+    }
+
+    /** The voice on the card, in a process of its own; throws if it won't start. */
+    fun hostVoice(spec: TtsModels.Spec, modelDir: String): TtsModel {
+        val command = probeCommand() ?: error("the app's own launcher wasn't found")
+        val log = File(DesktopDirs.cache, "gpu-voice.log").apply { parentFile.mkdirs(); delete() }
+        active = true
+        return VoiceHost.start(command, listOf(spec.kind, spec.onnx, modelDir, modelFile(spec, modelDir)), adapter, log)
+    }
+
+    /** The copy's side ([VoiceHost.run]): loads the pack and builds the voice. */
+    fun runVoiceHost(args: List<String>): Int = VoiceHost.run(args) { rest ->
+        val (kind, onnx, modelDir, modelPath) = rest.takeIf { it.size >= 4 } ?: error("not told which voice")
+        check(installed && support is Support.Ready && loadPack()) { problem ?: "the GPU files aren't there" }
+        val spec = TtsModels.Spec(dir = File(modelDir).name, url = "", kind = kind, onnx = onnx, required = emptyList(), sha256 = "")
+        buildModel(spec, modelDir, threads = 1, provider = provider, modelPath = modelPath)
+    }
+
+    /** When the card's voice process has died or stopped answering:
+     *  narration moves to the processor for the rest of this run. */
+    override fun cardFailed(t: Throwable): String? {
+        if (t !is VoiceHost.Died) return null
+        crashed = true
+        problem = "Narration on the graphics card stopped working (${t.message?.take(200)}), so it moved to the processor. " +
+            "It tries the card again the next time NovelScraper starts."
+        Log.w(TAG, problem!!)
+        return "Narration on the graphics card stopped working, so it moved to the processor."
     }
 
     /**
@@ -731,8 +767,11 @@ object GpuVoice : KokoroEngine.CardWatch {
      *  opens a model, from the process's environment as it is at the time. */
     private const val ADAPTER_VARIABLE = "SHERPA_ONNX_DML_DEVICE"
 
+    /** The adapter the probe chose, handed to the card's voice process. */
+    @Volatile private var adapter = 0
+
     private fun useAdapter(adapter: Int) {
-        if (backend == Backend.DIRECTML) runCatching { Kernel32Dll.SetEnvironmentVariable(WString(ADAPTER_VARIABLE), WString(adapter.toString())) }
+        this.adapter = adapter
     }
 
     /** The model file to open on the card: DirectML's own Kokoro where the
@@ -810,7 +849,6 @@ object GpuVoice : KokoroEngine.CardWatch {
 
     /** Called when the engine couldn't start on the card after all. */
     fun failed(t: Throwable) {
-        active = false
         problem = "Narration couldn't start on the graphics card, so it uses the processor. (${t.message?.take(200)})"
         Log.w(TAG, problem!!)
     }

@@ -19,13 +19,15 @@ import kotlin.test.assertTrue
  */
 class GpuSoakTest {
     private fun vram(): Pair<Int, Int> {
-        val me = ProcessHandle.current().pid().toString()
+        // The card's voice runs in a process of its own (VoiceHost): count this
+        // process and its children.
+        val mine = (listOf(ProcessHandle.current()) + ProcessHandle.current().descendants().toList()).map { it.pid().toString() }.toSet()
         val apps = ProcessBuilder("nvidia-smi", "--query-compute-apps=pid,used_memory", "--format=csv,noheader,nounits")
             .start().inputStream.bufferedReader().readText()
-        val mine = apps.lines().mapNotNull { l -> l.split(",").map { it.trim() }.takeIf { it.size == 2 && it[0] == me }?.get(1)?.toIntOrNull() }.sum()
+        val used = apps.lines().mapNotNull { l -> l.split(",").map { it.trim() }.takeIf { it.size == 2 && it[0] in mine }?.get(1)?.toIntOrNull() }.sum()
         val total = ProcessBuilder("nvidia-smi", "--query-gpu=memory.used", "--format=csv,noheader,nounits")
             .start().inputStream.bufferedReader().readText().trim().toInt()
-        return mine to total
+        return used to total
     }
 
     @Test
@@ -33,6 +35,9 @@ class GpuSoakTest {
         val file = System.getProperty("live.gpu.soak") ?: return
         if (file.isBlank()) return
         val rounds = (System.getProperty("live.gpu.soak.rounds") ?: "3").toInt()
+        // -PliveGpuSoakLauncher=<packaged bin/novelscraper>: the card's voice is
+        // started through the installed launcher, as the AppImage does.
+        System.getProperty("live.gpu.soak.launcher")?.takeIf { it.isNotBlank() }?.let { System.setProperty("jpackage.app-path", it) }
         Net.init()
         assertTrue(GpuVoice.installed, "pack not installed")
         val spec = TtsModels.spec(TtsModels.KOKORO)
@@ -49,6 +54,9 @@ class GpuSoakTest {
         // -PliveGpuSoakLowAt=N: from sentence N the driver "reports" 512 MB
         // free, to watch the move to the processor happen for real.
         val lowAt = (System.getProperty("live.gpu.soak.lowAt") ?: "0").toInt()
+        // -PliveGpuSoakKillAt=N: at sentence N the card's voice process is
+        // killed outright, as a native abort would end it.
+        val killAt = (System.getProperty("live.gpu.soak.killAt") ?: "0").toInt()
         val sentences = File(file).readLines().filter { it.isNotBlank() }
         var n = 0
         var audio = 0.0
@@ -64,6 +72,15 @@ class GpuSoakTest {
             } else KokoroEngine.generate(s, n % 3, 1.0f)
             audio += pcm.size.toDouble() / KokoroEngine.sampleRate
             n++
+            if (killAt > 0 && n == killAt) {
+                val host = VoiceHost.running
+                println("n=$n: killing the card's voice process ${host?.pid()}; on the card=${GpuVoice.onCard}")
+                host?.toHandle()?.destroyForcibly()
+            }
+            if (killAt > 0 && n == killAt + 1) {
+                println("n=$n: on the card=${GpuVoice.onCard} notice=${KokoroEngine.notice.value} audio=${pcm.size}")
+                println("        problem=${GpuVoice.problem}")
+            }
             if (lowAt > 0 && n == lowAt) {
                 println("n=$n: the card now reports 512 MB free; on the card=${GpuVoice.onCard}")
                 GpuVoice.freeMemory = { 512L shl 20 }

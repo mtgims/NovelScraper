@@ -109,8 +109,7 @@ fun GpuAccelerationSetting() {
                     }
                     problem != null -> note(problem, error = true)
                     enabled && GpuVoice.onCard -> note("Narration is running on the graphics card.")
-                    enabled && !GpuVoice.takesEffectNow -> note("Takes effect the next time NovelScraper starts.")
-                    !enabled && GpuVoice.onCard -> note("Narration stays on the graphics card until NovelScraper restarts.")
+                    !enabled && GpuVoice.onCard -> note("Narration moves to the processor at its next sentence.")
                 }
                 if (removalPending) {
                     note("The GPU files are removed the next time NovelScraper starts.")
