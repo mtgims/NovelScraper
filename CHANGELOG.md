@@ -11,6 +11,37 @@ since moved to a repository of their own; this one holds the apps.
 
 ---
 
+## 2026-11-18
+
+- **1.3.5: GPU narration can't take the app down.** ORT's CUDA provider
+  keeps about 1 GB of working memory per calling thread while the model
+  lives; `NeuralNarrator` generated on `Dispatchers.Default`, so a 12 GB card
+  filled in about 37 minutes, cuBLAS failed, and the C++ exception aborted
+  the JVM (and left the NVIDIA driver refusing new contexts until a reboot).
+  `KokoroEngine` now builds, runs and releases the model on one thread
+  (`onWorker`): flat 2.2 GB from 55 calling threads (`GpuSoakTest`). Before
+  each sentence NVML's free memory is read (`CardMemory`, CUDA only): below
+  1.5 GB the voice moves to the processor, and it loads on the card only with
+  3.5 GB free (`GpuVoice.leaveCard`, `roomToLoad`). The app no longer loads
+  the GPU pack at all: `VoiceHost` starts a copy with `--voice-host`, talks
+  to it over a token-guarded loopback socket, and on its death says the
+  sentence again from the processor (`CardWatch.cardFailed`).
+  `KokoroEngine.notice` drives the narration bar's warning.
+
+- **1.3.5: one desktop copy at a time, and a crash notice.** `SingleInstance`
+  holds an OS file lock (released on a crash) and hands a second launch to
+  the first through a wake file; an update's restart passes
+  `--after-update` to wait for the lock. `SessionMarker` writes a marker at
+  start that every proper exit removes; one found at the next start opens
+  `UncleanExitPrompt` with what the app was doing and the log's last 200
+  lines.
+
+- **1.3.5: layout checks at phone sizes.** `LayoutCheck` (Compose UI test)
+  draws screens at 360 and 412 dp, font 1.0x and 1.3x, and fails on text
+  taller than its box or past the screen edge outside a sideways-scrolling
+  row. It catches the ratings card's "5★" bug, fixed by stacking the average
+  above the bars below 400 dp.
+
 ## 2026-11-16
 
 - **1.3.4: narration moves to the card mid-listen.** A passing probe set

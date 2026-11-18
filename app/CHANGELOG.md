@@ -3,6 +3,34 @@
 Newest first.
 
 
+## 1.3.5, 2026-11-18 · `versionCode 108`
+
+Long narration on the graphics card no longer crashes the app, and if the
+card's voice ever fails, the processor carries on and says so.
+
+### On the computer
+- **Long GPU narration no longer fills the graphics card.** Each sentence
+  could run on another thread, and every thread kept about a gigabyte of the
+  card's memory, so after half an hour or so the card was full and the app
+  closed. Narration now runs on one thread and stays at about 2 GB.
+- **Narration moves to the processor before the card runs out.** When
+  another program leaves the card short of memory, narration carries on from
+  the processor and a warning says so, on the narration bar and in Settings.
+  It goes back to the card the next time Listen is pressed with room again.
+- **The card's voice runs in a process of its own,** so a failure there can't
+  close the app: the sentence is read again from the processor and a warning
+  says why. Turning the graphics card on or off now applies at the next
+  sentence instead of the next start.
+- **One copy of the app at a time.** Opening NovelScraper while it is already
+  open brings the open window to the front.
+- **A note when the app closed unexpectedly,** at the next start, with what it
+  was doing and a button to copy the details.
+
+### On the phone
+- **The ratings chart fits its card** on the statistics page: with only
+  five-star ratings, or a larger system font, the bars ran out of the box.
+
+
 ## 1.3.4, 2026-11-16 · `versionCode 107`
 
 Narration moves to the graphics card as soon as the card has been tried,
