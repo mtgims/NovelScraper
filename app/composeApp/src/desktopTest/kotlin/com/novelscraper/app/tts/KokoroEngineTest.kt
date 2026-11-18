@@ -9,7 +9,7 @@ import kotlin.test.assertTrue
 
 class KokoroEngineTest {
 
-    private class Fake(val name: String, val threads: MutableSet<String>) : TtsModel {
+    private class Fake(val name: String, val threads: MutableSet<String>, val events: MutableList<String>) : TtsModel {
         var released = false
         override val sampleRate = 24000
         override val numSpeakers = 54
@@ -17,7 +17,17 @@ class KokoroEngineTest {
             threads += Thread.currentThread().name
             return FloatArray(1000) { 0.1f }
         }
-        override fun release() { threads += Thread.currentThread().name; released = true }
+        override fun release() { threads += Thread.currentThread().name; released = true; events += "release $name" }
+    }
+
+    /** What happened to the native models, in order. */
+    private val log = mutableListOf<String>()
+
+    private class Watch : KokoroEngine.CardWatch {
+        var short: String? = null
+        var room = false
+        override fun leaveCard(): String? = short.also { short = null }
+        override fun backToCard(): Boolean = room.also { room = false }
     }
 
     /** The threads the native model was used on: built, spoken with, released. */
@@ -36,13 +46,15 @@ class KokoroEngineTest {
         KokoroEngine.build = { _, _, _ ->
             if (failNext) { failNext = false; error("no card") }
             nativeThreads += Thread.currentThread().name
-            Fake(if (built.isEmpty()) "processor" else "card", nativeThreads).also { built += it }
+            Fake(if (built.isEmpty()) "processor" else "card", nativeThreads, log).also { built += it; log += "build ${it.name}" }
         }
     }
 
     @AfterTest
     fun tearDown() {
         KokoroEngine.release()
+        KokoroEngine.cardWatch = null
+        KokoroEngine.dismissNotice()
         KokoroEngine.build = ::buildOfflineTts
         dir.deleteRecursively()
     }
@@ -95,5 +107,42 @@ class KokoroEngineTest {
         }
         assertEquals(2, built.size)
         assertEquals(1, nativeThreads.size, "used on $nativeThreads")
+    }
+
+    /** Another program can take the card's memory while narration runs there;
+     *  the runtime's out-of-memory error aborts the whole app, so the voice
+     *  moves to the processor first, freeing the card before it rebuilds, and
+     *  the reader is told. */
+    @Test
+    fun theVoiceLeavesTheCardWhenItsMemoryRunsShort() {
+        val watch = Watch()
+        KokoroEngine.cardWatch = watch
+        assertTrue(KokoroEngine.ensureLoaded(TtsModels.KOKORO))
+        KokoroEngine.generate("On the card.", 0, 1f)
+        assertEquals(null, KokoroEngine.notice.value)
+
+        watch.short = "The graphics card ran out of memory."
+        val samples = KokoroEngine.generate("Still speaking.", 0, 1f)
+        assertTrue(samples.isNotEmpty(), "the sentence was lost")
+        assertEquals(listOf("build processor", "release processor", "build card"), log)
+        assertEquals("The graphics card ran out of memory.", KokoroEngine.notice.value)
+
+        KokoroEngine.generate("And on.", 0, 1f)
+        assertEquals(2, built.size)   // moved once
+
+        // The next Listen goes back to the card when there is room again.
+        watch.room = true
+        assertTrue(KokoroEngine.ensureLoaded(TtsModels.KOKORO))
+        assertEquals(3, built.size)
+        assertEquals(null, KokoroEngine.notice.value)
+    }
+
+    @Test
+    fun withRoomOnTheCardTheVoiceStaysPut() {
+        KokoroEngine.cardWatch = Watch()
+        assertTrue(KokoroEngine.ensureLoaded(TtsModels.KOKORO))
+        repeat(5) { KokoroEngine.generate("Sentence $it.", 0, 1f) }
+        assertTrue(KokoroEngine.ensureLoaded(TtsModels.KOKORO))
+        assertEquals(1, built.size)
     }
 }

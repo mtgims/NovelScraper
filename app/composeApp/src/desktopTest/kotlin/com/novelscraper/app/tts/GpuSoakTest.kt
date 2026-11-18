@@ -44,7 +44,11 @@ class GpuSoakTest {
         println("tested: ${GpuVoice.probeResult(spec, dir)}")
         assertTrue(KokoroEngine.ensureLoaded(TtsModels.KOKORO), "load")
         assertTrue(GpuVoice.onCard, "not on the card")
-        println("after load: ${vram()}")
+        println("after load: ${vram()}, NVML free ${CardMemory.freeBytes()?.shr(20)} MiB")
+        KokoroEngine.cardWatch = GpuVoice
+        // -PliveGpuSoakLowAt=N: from sentence N the driver "reports" 512 MB
+        // free, to watch the move to the processor happen for real.
+        val lowAt = (System.getProperty("live.gpu.soak.lowAt") ?: "0").toInt()
         val sentences = File(file).readLines().filter { it.isNotBlank() }
         var n = 0
         var audio = 0.0
@@ -60,6 +64,14 @@ class GpuSoakTest {
             } else KokoroEngine.generate(s, n % 3, 1.0f)
             audio += pcm.size.toDouble() / KokoroEngine.sampleRate
             n++
+            if (lowAt > 0 && n == lowAt) {
+                println("n=$n: the card now reports 512 MB free; on the card=${GpuVoice.onCard}")
+                GpuVoice.freeMemory = { 512L shl 20 }
+            }
+            if (lowAt > 0 && n == lowAt + 1) {
+                println("n=$n: on the card=${GpuVoice.onCard} notice=${KokoroEngine.notice.value} audio=${pcm.size} problem=${GpuVoice.problem}")
+                println("        vram ${vram()}")
+            }
             if (n % 25 == 0) {
                 val (mine, total) = vram()
                 println("n=$n audio=${(audio / 60).toInt()}min len=${s.length} mine=${mine}MiB total=${total}MiB t=${(System.nanoTime() - t0) / 1_000_000_000}s")

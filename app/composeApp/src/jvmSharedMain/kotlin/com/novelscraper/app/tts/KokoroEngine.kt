@@ -1,6 +1,10 @@
 package com.novelscraper.app.tts
 
 import com.novelscraper.app.platform.Log
+import com.novelscraper.app.platform.showToast
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.asStateFlow
 
 /**
  * On-device neural TTS via sherpa-onnx, running one of the models in
@@ -27,6 +31,28 @@ object KokoroEngine {
     @Volatile private var reload = false
 
     fun reloadOnNextUse() { reload = true }
+
+    /** The desktop's watch on the graphics card's memory; none elsewhere. */
+    interface CardWatch {
+        /** Asked before each sentence: why the voice has to leave the card
+         *  now (the next build then uses the processor), or null to stay. */
+        fun leaveCard(): String?
+        /** Asked when narration starts: true when a voice that left the card
+         *  can go back, there being room again. */
+        fun backToCard(): Boolean
+    }
+
+    @Volatile var cardWatch: CardWatch? = null
+
+    private val _notice = MutableStateFlow<String?>(null)
+    /** Something the reader should see while narration plays, such as the
+     *  voice having moved to the processor; null when there is nothing. */
+    val notice: StateFlow<String?> = _notice.asStateFlow()
+
+    fun dismissNotice() { _notice.value = null }
+
+    /** For a build that couldn't use the card it was meant to. */
+    fun notice(message: String) { _notice.value = message }
 
     /** How a model is built; replaced in tests. */
     internal var build: (TtsModels.Spec, String, Int) -> TtsModel = ::buildOfflineTts
@@ -77,7 +103,10 @@ object KokoroEngine {
      */
     @Synchronized
     fun ensureLoaded(modelId: String, numThreads: Int = defaultThreads()): Boolean {
-        if (tts != null && loadedId == modelId && !reload) return true
+        val loaded = tts != null && loadedId == modelId
+        val back = loaded && cardWatch?.backToCard() == true
+        if (loaded && !reload && !back) return true
+        if (back) { _notice.value = null; Log.i(TAG, "room on the graphics card again: moving back") }
         reload = false
         tts?.let { old -> runCatching { onWorker { old.release() } } }
         tts = null; loadedId = null
@@ -109,6 +138,25 @@ object KokoroEngine {
         Log.i(TAG, "reloaded id=$id while narrating")
     }
 
+    /**
+     * Moves the voice to the processor when [cardWatch] says the card is
+     * running out of memory. ONNX Runtime's out-of-memory error escapes the
+     * native library and aborts the whole app, and a card filled to the brim
+     * once left the driver refusing new windows, so this happens before the
+     * card is full. The card's model is released first: its memory is what
+     * the card is short of.
+     */
+    private fun leaveCardIfShort() {
+        val reason = cardWatch?.leaveCard() ?: return
+        val id = loadedId ?: return
+        Log.w(TAG, "moving narration to the processor: $reason")
+        tts?.let { old -> runCatching { onWorker { old.release() } } }
+        tts = tryBuild(id, loadedThreads.coerceAtLeast(1))
+        if (tts == null) loadedId = null
+        _notice.value = reason
+        showToast(reason, long = true)
+    }
+
     private fun tryBuild(modelId: String, threads: Int): TtsModel? {
         return try {
             val spec = TtsModels.spec(modelId)
@@ -129,6 +177,7 @@ object KokoroEngine {
     @Synchronized
     fun generate(text: String, speaker: Int, speed: Float): FloatArray {
         rebuildIfAsked()
+        leaveCardIfShort()
         val engine = tts ?: return FloatArray(0)
         // Drop image placeholders — an illustration is its own "sentence" in the
         // shared split, but there's nothing to speak; treat it as silence.

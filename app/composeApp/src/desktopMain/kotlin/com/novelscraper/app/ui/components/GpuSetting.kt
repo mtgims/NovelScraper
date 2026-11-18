@@ -23,6 +23,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import com.novelscraper.app.data.ReaderPrefs
 import com.novelscraper.app.tts.GpuVoice
+import com.novelscraper.app.tts.KokoroEngine
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
@@ -94,6 +95,9 @@ fun GpuAccelerationSetting() {
                     Text(label, style = MaterialTheme.typography.bodySmall, modifier = Modifier.weight(1f))
                     Switch(checked = enabled, onCheckedChange = { GpuVoice.setEnabled(it) })
                 }
+                // The notice changes when narration leaves the card or goes back,
+                // which is when the problem does: read it so this page follows.
+                KokoroEngine.notice.collectAsState().value
                 val problem = GpuVoice.problem
                 when {
                     st is GpuVoice.State.Testing -> {

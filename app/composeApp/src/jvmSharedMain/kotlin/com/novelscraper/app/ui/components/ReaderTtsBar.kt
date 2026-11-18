@@ -22,6 +22,7 @@ import androidx.compose.material.icons.filled.Headphones
 import androidx.compose.material.icons.filled.KeyboardArrowUp
 import androidx.compose.material.icons.filled.Pause
 import androidx.compose.material.icons.filled.PlayArrow
+import androidx.compose.material.icons.filled.Warning
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.Icon
@@ -48,6 +49,7 @@ import androidx.compose.ui.unit.dp
 import com.novelscraper.app.data.ReaderPrefs
 import com.novelscraper.app.platform.rememberNarrationPermission
 import com.novelscraper.app.platform.rememberSystemVoices
+import com.novelscraper.app.tts.KokoroEngine
 import com.novelscraper.app.tts.SleepTimer
 import com.novelscraper.app.tts.TtsController
 import com.novelscraper.app.tts.TtsModels
@@ -90,6 +92,11 @@ fun ReaderTtsBar(
             ) {
                 Column(Modifier.padding(horizontal = 10.dp, vertical = 6.dp)) {
                     AnimatedVisibility(expanded) { SettingsPanel() }
+
+                    // Stays while it holds (the voice on the processor after the
+                    // graphics card ran short of memory), unlike the toast.
+                    val notice by KokoroEngine.notice.collectAsState()
+                    notice?.let { NarrationNotice(it) { KokoroEngine.dismissNotice() } }
 
                     // Seek across sentences (drag commits on release).
                     val count = s.sentenceCount.coerceAtLeast(1)
@@ -135,6 +142,38 @@ fun ReaderTtsBar(
                         }
                     }
                 }
+            }
+        }
+    }
+}
+
+@Composable
+private fun NarrationNotice(message: String, onDismiss: () -> Unit) {
+    Surface(
+        shape = RoundedCornerShape(12.dp),
+        color = MaterialTheme.colorScheme.errorContainer,
+        modifier = Modifier.fillMaxWidth().padding(top = 4.dp, bottom = 2.dp),
+    ) {
+        Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.padding(start = 10.dp)) {
+            Icon(
+                Icons.Filled.Warning,
+                contentDescription = null,
+                tint = MaterialTheme.colorScheme.onErrorContainer,
+                modifier = Modifier.size(18.dp),
+            )
+            Text(
+                message,
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onErrorContainer,
+                modifier = Modifier.weight(1f).padding(horizontal = 8.dp, vertical = 6.dp),
+            )
+            IconButton(onClick = onDismiss, modifier = Modifier.size(32.dp)) {
+                Icon(
+                    Icons.Filled.Close,
+                    contentDescription = "Dismiss",
+                    tint = MaterialTheme.colorScheme.onErrorContainer,
+                    modifier = Modifier.size(16.dp),
+                )
             }
         }
     }

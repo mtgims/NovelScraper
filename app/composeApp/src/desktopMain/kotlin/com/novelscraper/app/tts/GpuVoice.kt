@@ -55,7 +55,7 @@ import java.util.zip.ZipInputStream
  * Whatever goes wrong, narration falls back to the processor: a pack that
  * won't load, a driver too old, a card CUDA doesn't know.
  */
-object GpuVoice {
+object GpuVoice : KokoroEngine.CardWatch {
 
     private const val TAG = "GpuVoice"
 
@@ -117,6 +117,61 @@ object GpuVoice {
 
     /** True when the voice narration last built is running on the card. */
     @Volatile var onCard = false
+
+    // --- the card's memory ------------------------------------------------------------
+
+    /** Narration leaves the card when less than this is free. Kokoro holds a
+     *  flat 2.2 GB there once warm, but ONNX Runtime grows its pool in steps
+     *  of up to about 1 GB, and an allocation that fails aborts the app. */
+    internal const val LEAVE_BELOW = 1536L shl 20
+    /** ...and goes onto it, or back, only with this much free: the model's
+     *  2.2 GB with room to spare, so it doesn't bounce between the two. */
+    internal const val LOAD_ABOVE = 3584L shl 20
+
+    /** The card's free memory in bytes, null when unknown (nothing moves
+     *  then). Only for CUDA: DirectML picks its adapter itself, and which
+     *  card that is can't be matched to the driver's list. Replaced in tests. */
+    internal var freeMemory: () -> Long? = { if (backend == Backend.CUDA) CardMemory.freeBytes() else null }
+
+    /** True when narration moved to the processor for want of the card's
+     *  memory; it goes back when narration next starts with room again. */
+    @Volatile var overloaded = false
+        private set
+
+    private fun mb(bytes: Long) = bytes shr 20
+
+    override fun leaveCard(): String? {
+        if (!onCard) return null
+        val free = freeMemory() ?: return null
+        if (free >= LEAVE_BELOW) return null
+        overloaded = true
+        problem = "The graphics card ran short of memory (${mb(free)} MB free), so narration moved to the processor. " +
+            "It goes back to the card the next time narration starts with room there."
+        Log.w(TAG, problem!!)
+        return "The graphics card ran out of memory, so narration moved to the processor."
+    }
+
+    override fun backToCard(): Boolean {
+        if (!overloaded) return false
+        val free = freeMemory() ?: return false
+        if (free < LOAD_ABOVE) return false
+        overloaded = false
+        problem = null
+        return true
+    }
+
+    /** Whether narration about to start may go onto the card: false (and
+     *  [overloaded], with the reason in [problem]) when it is too full. */
+    fun roomToLoad(): Boolean {
+        if (overloaded) return false
+        val free = freeMemory() ?: return true
+        if (free >= LOAD_ABOVE) return true
+        overloaded = true
+        problem = "The graphics card had too little free memory (${mb(free)} MB) when narration started, " +
+            "so it uses the processor. It tries the card again the next time narration starts."
+        Log.w(TAG, problem!!)
+        return false
+    }
 
     @Volatile private var cancelled = false
 

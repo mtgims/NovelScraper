@@ -106,6 +106,9 @@ fun main(args: Array<String>) {
         com.novelscraper.app.ui.components.ExpressiveReadingSetting()
     }
     com.novelscraper.app.tts.AudiobookExport.director = com.novelscraper.app.tts.ExpressiveReading
+    // Narration on the graphics card moves to the processor before the card's
+    // memory runs out (an allocation that fails there aborts the app).
+    com.novelscraper.app.tts.KokoroEngine.cardWatch = com.novelscraper.app.tts.GpuVoice
     com.novelscraper.app.ui.screen.BookHooks.narration = { bookId, title, onDismiss ->
         com.novelscraper.app.ui.components.NovelVoicingDialog(bookId, title, onDismiss)
     }

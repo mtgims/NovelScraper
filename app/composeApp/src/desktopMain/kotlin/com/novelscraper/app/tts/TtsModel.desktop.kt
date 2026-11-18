@@ -33,7 +33,11 @@ actual fun buildOfflineTts(spec: TtsModels.Spec, dir: String, threads: Int): Tts
         false -> false
         null -> { GpuVoice.probeInBackground(spec, dir); false }
     }
-    if (onCard) {
+    // A card another program has filled would abort the app at the first
+    // allocation that fails, so too little free memory means the processor.
+    if (onCard && !GpuVoice.roomToLoad()) {
+        KokoroEngine.notice("The graphics card is short of memory, so narration uses the processor.")
+    } else if (onCard) {
         try {
             return buildModel(spec, dir, threads = 1, provider = GpuVoice.provider, modelPath = GpuVoice.modelFile(spec, dir))
                 .also { GpuVoice.onCard = true }

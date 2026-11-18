@@ -8,6 +8,8 @@ import java.nio.file.Files
 import java.util.concurrent.TimeUnit
 import kotlin.test.Test
 import kotlin.test.assertEquals
+import kotlin.test.assertFalse
+import kotlin.test.assertNotNull
 import kotlin.test.assertNull
 import kotlin.test.assertTrue
 
@@ -69,6 +71,40 @@ class GpuVoiceTest {
             assertEquals(setOf(cuda, old), GpuVoice.stalePacks(root, GpuVoice.Backend.DIRECTML).toSet())
         } finally {
             root.deleteRecursively()
+        }
+    }
+
+    /** Narration leaves the card below [GpuVoice.LEAVE_BELOW] free and goes
+     *  back only with [GpuVoice.LOAD_ABOVE], so it doesn't bounce. Without an
+     *  answer from the driver nothing moves. */
+    @Test
+    fun narrationLeavesTheCardOnlyWhenItsMemoryRunsShort() {
+        val was = GpuVoice.freeMemory
+        try {
+            GpuVoice.onCard = true
+            GpuVoice.freeMemory = { 4L shl 30 }
+            assertNull(GpuVoice.leaveCard())
+            GpuVoice.freeMemory = { null }
+            assertNull(GpuVoice.leaveCard())
+
+            GpuVoice.freeMemory = { 900L shl 20 }
+            assertNotNull(GpuVoice.leaveCard())
+            assertTrue(GpuVoice.overloaded)
+            assertTrue(GpuVoice.problem!!.contains("900 MB"), GpuVoice.problem)
+
+            GpuVoice.onCard = false
+            assertNull(GpuVoice.leaveCard())   // already on the processor
+            GpuVoice.freeMemory = { 2L shl 30 }
+            assertFalse(GpuVoice.backToCard())
+            assertTrue(GpuVoice.overloaded)
+            GpuVoice.freeMemory = { 5L shl 30 }
+            assertTrue(GpuVoice.backToCard())
+            assertFalse(GpuVoice.overloaded)
+            assertNull(GpuVoice.problem)
+            assertFalse(GpuVoice.backToCard())   // nothing to go back from
+        } finally {
+            GpuVoice.freeMemory = was
+            GpuVoice.onCard = false
         }
     }
 }
