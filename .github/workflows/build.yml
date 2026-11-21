@@ -28,6 +28,16 @@ jobs:
         # gradlew.bat, not ./gradlew: PowerShell will happily "run" the Unix
         # script and carry on as though a build had happened.
         run: .\gradlew.bat :composeApp:packageExe --no-daemon
+      # The class-data archive (build.gradle.kts, ClassArchive) is made by a
+      # training run of the app, which hasn't been tried on this runner yet:
+      # its absence is a warning here, not a failed release.
+      - name: Was the class-data archive made?
+        working-directory: app
+        shell: pwsh
+        run: |
+          if (-not (Test-Path composeApp/build/compose/binaries/main/app/NovelScraper/app/NovelScraper.jsa)) {
+            Write-Output "::warning title=No class-data archive::The Windows app will start without it. See composeApp/build/class-archive."
+          }
       - name: Name it as the app expects
         working-directory: app
         shell: pwsh
@@ -63,9 +73,12 @@ jobs:
           distribution: temurin
           java-version: "21"
       - uses: gradle/actions/setup-gradle@ed408507eac070d1f99cc633dbcf757c94c7933a # v4.4.3
+      # The class-data archive's training run draws on a hidden display.
+      - name: Install Xvfb
+        run: sudo apt-get update -q && sudo apt-get install -y -q xvfb dbus
       - name: Build the AppImage
         working-directory: app
-        run: ./gradlew :composeApp:packageLinuxAppImage --no-daemon
+        run: ./gradlew :composeApp:packageLinuxAppImage -PrequireClassArchive=true --no-daemon
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
           name: novelscraper-appimage

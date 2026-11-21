@@ -4,6 +4,7 @@ import java.security.MessageDigest
 import javax.inject.Inject
 import java.nio.file.Files
 import java.nio.file.StandardCopyOption
+import java.util.concurrent.TimeUnit
 
 plugins {
     id("com.android.kotlin.multiplatform.library")
@@ -386,6 +387,124 @@ compose.desktop {
     }
 }
 
+// A class-data archive for the packaged app. The runtime jlink builds has none
+// (a full JDK ships one for its own classes), so every start read and checked
+// some 9,400 classes from the jars: 1.2 s to the window from the AppImage,
+// 0.57 s with this (2026-11-21). The app is started once in a throwaway
+// profile with --cds-training, which quits once the first screen has settled;
+// the classes it loaded are dumped into <app>/<name>.jsa, and the launcher's
+// .cfg points Java at it. Java checks the archive against the runtime and the
+// jars it was made from and, should anything not match, starts without it as
+// before. It is made by the runtime it ships with, so on each platform's own
+// build machine. Linux needs Xvfb for the training run (the build never puts
+// a window on the screen); without it the app is packaged without the archive,
+// unless -PrequireClassArchive=true, which the release builds pass.
+object ClassArchive {
+    private val windows = System.getProperty("os.name").startsWith("Windows", ignoreCase = true)
+
+    fun add(image: File, work: File, require: Boolean, log: org.gradle.api.logging.Logger) {
+        try {
+            make(image, work, log)
+        } catch (e: Exception) {
+            val why = "class-data archive not made: ${e.message} (see ${work.path})"
+            if (require) throw GradleException(why, e)
+            log.warn("w: $why; the app will start without it")
+        }
+    }
+
+    private fun make(image: File, work: File, log: org.gradle.api.logging.Logger) {
+        val root = image.listFiles { f -> f.isDirectory }?.singleOrNull()
+            ?: error("expected one app folder in $image")
+        val name = root.name
+        val appDir = if (windows) File(root, "app") else File(root, "lib/app")
+        val cfg = File(appDir, "$name.cfg").takeIf { it.isFile } ?: error("no $name.cfg in $appDir")
+        val launcher = if (windows) File(root, "$name.exe") else File(root, "bin/$name")
+        val archive = File(appDir, "$name.jsa")
+        work.deleteRecursively()
+        work.mkdirs()
+        val classes = File(work, "classes.lst")
+
+        // The training run, in a profile of its own.
+        val env = mutableMapOf<String, String>()
+        if (windows) {
+            env["APPDATA"] = File(work, "profile/roaming").path
+            env["LOCALAPPDATA"] = File(work, "profile/local").path
+        } else {
+            env["XDG_CONFIG_HOME"] = File(work, "profile/config").path
+            env["XDG_DATA_HOME"] = File(work, "profile/data").path
+            env["XDG_CACHE_HOME"] = File(work, "profile/cache").path
+        }
+        env["JAVA_TOOL_OPTIONS"] = "-XX:DumpLoadedClassList=${quoted(classes)}"
+        var display: Process? = null
+        try {
+            val command = mutableListOf(launcher.path, "--cds-training")
+            if (!windows) {
+                val xvfb = onPath("Xvfb") ?: error("Xvfb is not installed")
+                display = ProcessBuilder(xvfb.path, "-displayfd", "1", "-screen", "0", "1280x860x24", "-nolisten", "tcp")
+                    .redirectError(File(work, "xvfb.log")).start()
+                val number = display.inputStream.bufferedReader().readLine()?.trim()
+                    ?.takeIf { it.isNotEmpty() } ?: error("Xvfb did not start")
+                env["DISPLAY"] = ":$number"
+                // A bus of its own, so media keys start as they do for a reader
+                // without taking the name from a copy of the app already running.
+                onPath("dbus-run-session")?.let { command.addAll(0, listOf(it.path, "--")) }
+                    ?: run { env["DBUS_SESSION_BUS_ADDRESS"] = "disabled:" }
+            }
+            run(command, env, File(work, "training.log"), 180)
+        } finally {
+            display?.destroy()
+        }
+        if (!classes.isFile || classes.length() == 0L) error("the training run listed no classes")
+
+        // The dump. The launcher passes the app's own options (the collector
+        // among them), which the archive must be made and used with alike.
+        // Java dumps before main; --cds-dump makes main quit at once.
+        archive.delete()
+        run(
+            listOf(launcher.path, "--cds-dump"),
+            mapOf("JAVA_TOOL_OPTIONS" to "-Xshare:dump -XX:SharedClassListFile=${quoted(classes)} " +
+                "-XX:SharedArchiveFile=${quoted(archive)}"),
+            File(work, "dump.log"), 300,
+        )
+        if (!archive.isFile) error("the dump wrote no archive")
+
+        val lines = cfg.readLines().toMutableList()
+        val at = lines.indexOf("[JavaOptions]")
+        if (at < 0) { archive.delete(); error("no [JavaOptions] in $cfg") }
+        lines.addAll(at + 1, listOf("java-options=-XX:SharedArchiveFile=\$APPDIR/$name.jsa", "java-options=-Xshare:auto"))
+        cfg.writeText(lines.joinToString("\n", postfix = "\n"))
+        log.lifecycle("Class-data archive -> ${archive.path} (${archive.length() / (1024 * 1024)} MB, ${classes.readLines().size} classes listed)")
+    }
+
+    private fun run(command: List<String>, env: Map<String, String>, output: File, seconds: Long) {
+        val p = ProcessBuilder(command).redirectErrorStream(true).redirectOutput(output)
+            .apply { environment().putAll(env) }.start()
+        if (!p.waitFor(seconds, TimeUnit.SECONDS)) {
+            p.descendants().forEach { it.destroyForcibly() }
+            p.destroyForcibly()
+            error("${output.name}: still running after ${seconds}s")
+        }
+        if (p.exitValue() != 0) error("${output.name}: exited with ${p.exitValue()}")
+    }
+
+    private fun onPath(tool: String): File? = System.getenv("PATH").orEmpty().split(File.pathSeparator)
+        .map { File(it, tool) }.firstOrNull { it.canExecute() }
+
+    /** JAVA_TOOL_OPTIONS splits on spaces unless quoted, and Windows paths have them. */
+    private fun quoted(f: File) = if (' ' in f.path) "\"${f.path}\"" else f.path
+}
+
+val requireClassArchive = providers.gradleProperty("requireClassArchive").map { it.toBoolean() }.orElse(false)
+// The Compose plugin registers its tasks after this script has run.
+tasks.withType<org.jetbrains.compose.desktop.application.tasks.AbstractJPackageTask>().matching {
+    it.name == "createDistributable"
+}.configureEach {
+    val image = destinationDir
+    val work = layout.buildDirectory.dir("class-archive")
+    val require = requireClassArchive
+    doLast { ClassArchive.add(image.get().asFile, work.get().asFile, require.get(), logger) }
+}
+
 // A single-file AppImage of the desktop app for Linux, dropped at the repo root
 // as novelscraper-x86_64.AppImage (like the APK): the app image Compose builds
 // (with its own Java runtime) wrapped by appimagetool. Both AppImage tools are
@@ -416,6 +535,12 @@ abstract class BuildAppImage : DefaultTask() {
         val appDir = workDir.get().dir("NovelScraper.AppDir").asFile
         appDir.deleteRecursively()
         fs.copy { from(appImageDir); into(appDir) }
+        // With the copy's own times the class-data archive is refused: Java
+        // checks each jar's modification time against the one it was made from.
+        val source = appImageDir.get().asFile
+        source.walkTopDown().filter { it.isFile }.forEach {
+            File(appDir, it.relativeTo(source).path).setLastModified(it.lastModified())
+        }
         icon.get().asFile.copyTo(File(appDir, "novelscraper.png"), overwrite = true)
         File(appDir, "novelscraper.desktop").writeText(
             """

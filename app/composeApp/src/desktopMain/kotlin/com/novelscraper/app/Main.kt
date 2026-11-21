@@ -59,8 +59,9 @@ fun initApp() {
     Extensions.init(Net.client)
     AppUpdates.init(Net.client)
     // A quiet look at the releases page on startup: a reader who didn't
-    // ask isn't told that GitHub was unreachable.
-    AppUpdates.check(quietly = true)
+    // ask isn't told that GitHub was unreachable. Not from a build's
+    // training run, which would ask GitHub on every build.
+    if (!training) AppUpdates.check(quietly = true)
     // Likewise for the sources: newer versions are counted on Browse.
     ExtensionUpdates.checkQuietly()
     Library.init()
@@ -97,6 +98,9 @@ private val icon by lazy {
 }
 
 fun main(args: Array<String>) {
+    // The build's archive dump (see TRAINING_ARG): Java has written the archive
+    // before main, and unlike `java`, jpackage's launcher runs main afterwards.
+    if (args.firstOrNull() == "--cds-dump") kotlin.system.exitProcess(0)
     // A throwaway copy of the app trying a voice on the graphics card (see
     // GpuVoice.probe): nothing else of the app starts.
     if (args.firstOrNull() == com.novelscraper.app.tts.GpuVoice.PROBE_ARG) {
@@ -106,6 +110,7 @@ fun main(args: Array<String>) {
     if (args.firstOrNull() == com.novelscraper.app.tts.VoiceHost.ARG) {
         kotlin.system.exitProcess(com.novelscraper.app.tts.GpuVoice.runVoiceHost(args.drop(1)))
     }
+    training = TRAINING_ARG in args
     claimTheLibrary(args)
     // Before anything is logged: the end of the log is the last session's.
     com.novelscraper.app.ui.components.UncleanExit.begin()
@@ -157,7 +162,9 @@ fun main(args: Array<String>) {
         val state = WindowState(
             placement = if (windowPrefs.getBoolean("maximized", false)) WindowPlacement.Maximized
                         else WindowPlacement.Floating,
-            position = if (windowPrefs.getInt("x", Int.MIN_VALUE) == Int.MIN_VALUE) WindowPosition.PlatformDefault
+            // The training run draws off screen: on Windows it has no hidden display.
+            position = if (training) WindowPosition((-30000).dp, (-30000).dp)
+                       else if (windowPrefs.getInt("x", Int.MIN_VALUE) == Int.MIN_VALUE) WindowPosition.PlatformDefault
                        else WindowPosition(windowPrefs.getInt("x", 0).dp, windowPrefs.getInt("y", 0).dp),
             size = DpSize(windowPrefs.getInt("width", 1280).dp, windowPrefs.getInt("height", 860).dp),
         )
@@ -186,6 +193,14 @@ fun main(args: Array<String>) {
         ) {
             window.minimumSize = java.awt.Dimension(420, 560)
             mainWindow = window
+            if (training) androidx.compose.runtime.LaunchedEffect(Unit) {
+                androidx.compose.runtime.withFrameNanos { }
+                // What starts in the background just after (the library, sync,
+                // the sources) is part of starting too.
+                kotlinx.coroutines.delay(TRAINING_SETTLE_MS)
+                shutdown()
+                kotlin.system.exitProcess(0)
+            }
             // On Windows the window gets its system frame back, minus the title
             // bar, which the app draws (see WindowsFrame).
             if (Os.isWindows) {
@@ -252,6 +267,18 @@ fun AppContent(titleBar: (@Composable () -> Unit)? = null) {
         }
     }
 }
+
+/**
+ * Passed by the build to the copy whose loaded classes become the packaged
+ * app's class-data archive (`createDistributable` in build.gradle.kts): the
+ * app starts as it always does, in a throwaway profile, and quits once its
+ * first screen is drawn and has settled. With the archive, Java maps those
+ * classes in at start instead of reading and checking each one from the
+ * jars, which halved the time to the window (1.2 s to 0.57 s, 2026-11-21).
+ */
+private const val TRAINING_ARG = "--cds-training"
+private const val TRAINING_SETTLE_MS = 4_000L
+@Volatile private var training = false
 
 /** The one copy of the app on this data folder (see SingleInstance). */
 private val instance by lazy { com.novelscraper.app.platform.SingleInstance(DesktopDirs.data) }
