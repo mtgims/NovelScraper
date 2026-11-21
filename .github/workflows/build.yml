@@ -44,6 +44,9 @@ jobs:
         run: |
           $exe = Get-ChildItem -Recurse -Filter *.exe composeApp/build/compose/binaries | Select-Object -First 1
           if (-not $exe) { throw "no installer was produced" }
+          # The app and its runtime are well over 100 MB: anything small is
+          # jpackage's launcher without the installer in it (1.3.7 shipped two).
+          if ($exe.Length -lt 50MB) { throw "the installer is only $($exe.Length) bytes" }
           New-Item -ItemType Directory -Force -Path artifacts | Out-Null
           Copy-Item $exe.FullName artifacts/novelscraper-setup.exe
       - name: Build a version that can report its own failures
@@ -52,6 +55,7 @@ jobs:
         run: |
           .\gradlew.bat :composeApp:packageExe -PwinConsole --no-daemon
           $exe = Get-ChildItem -Recurse -Filter *.exe composeApp/build/compose/binaries | Select-Object -First 1
+          if ($exe.Length -lt 50MB) { throw "the console installer is only $($exe.Length) bytes" }
           Copy-Item $exe.FullName artifacts/novelscraper-setup-console.exe
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
