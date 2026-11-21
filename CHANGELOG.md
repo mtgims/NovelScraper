@@ -13,6 +13,17 @@ since moved to a repository of their own; this one holds the apps.
 
 ## 2026-11-21
 
+- **1.3.7: the archive on Windows, and two cards redesigned.** `packageExe`
+  had run jpackage from the jars instead of wrapping `createDistributable`'s
+  folder, so 1.3.6's installer came without the class-data archive (CI
+  warned); it is now handed that folder as `appImage` (`--app-image`).
+  Ratings on the statistics page are the average with part-filled stars and
+  a share bar per star, in the sources/genres cards' shape (the 1.3.5
+  columns fitted but read poorly on phone and desktop). The update card is
+  Settings rows: the version with Check, a tinted panel while a newer one is
+  out (notes, release page, Update, Not now; progress; Install), and
+  "Version history"; `UpdateRows` is stateless and layout-tested in every
+  state.
 - **1.3.6: the desktop app opens in half the time.** The runtime jlink builds
   carries no class-data archive, so every start read and verified some 9,400
   classes from the jars (1.2 s to the window from the AppImage).

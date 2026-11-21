@@ -3,6 +3,24 @@
 Newest first.
 
 
+## 1.3.7, 2026-11-21 · `versionCode 110`
+
+The Windows app opens faster too, and two cards got a cleaner design.
+
+### On the computer
+- **Faster to open on Windows.** 1.3.6 made the Linux app open in about
+  half the time; the Windows installer now carries the same ready-made copy
+  of the classes the app starts with.
+
+### Everywhere
+- **Ratings, redesigned.** The statistics page shows the average with its
+  stars, then a bar for each star from five down, with how many novels got
+  it.
+- **The update card, redesigned.** Settings shows the version with a Check
+  button and the version history below it. When a new version is out, what
+  is new and the Update button sit together in one panel.
+
+
 ## 1.3.6, 2026-11-21 · `versionCode 109`
 
 The computer app opens in about half the time.
