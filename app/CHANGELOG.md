@@ -3,6 +3,18 @@
 Newest first.
 
 
+## 1.3.6, 2026-11-21 · `versionCode 109`
+
+The computer app opens in about half the time.
+
+### On the computer
+- **Faster to open.** Java now keeps a ready-made copy of the classes the app
+  needs to start, instead of reading and checking each one from the program's
+  files every time: on Linux the window shows in about 0.6 s instead of
+  1.2 s. Should anything about that copy not match, the app starts the old
+  way.
+
+
 ## 1.3.5, 2026-11-18 · `versionCode 108`
 
 Long narration on the graphics card no longer crashes the app, and if the

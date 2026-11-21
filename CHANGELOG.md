@@ -11,6 +11,24 @@ since moved to a repository of their own; this one holds the apps.
 
 ---
 
+## 2026-11-21
+
+- **1.3.6: the desktop app opens in half the time.** The runtime jlink builds
+  carries no class-data archive, so every start read and verified some 9,400
+  classes from the jars (1.2 s to the window from the AppImage).
+  `createDistributable` now makes one (`ClassArchive` in
+  `composeApp/build.gradle.kts`): the packaged app runs once in a throwaway
+  profile with `--cds-training` (Xvfb on Linux, off screen on Windows) and
+  quits once its first screen has settled, the loaded classes are dumped by
+  the same launcher (`--cds-dump` makes main quit, since jpackage's launcher
+  runs main after `-Xshare:dump`), and the `.cfg` points Java at
+  `$APPDIR/<name>.jsa`. 1.22 s to 0.62 s; 7,243 classes from the archive. The
+  AppImage copy step keeps the jars' modification times, which Java compares.
+  The Linux release build requires the archive; Windows only warns, since the
+  installer may not keep file times. `5cc5740`: the training run no longer
+  uses `Xvfb -displayfd` (it deleted the desktop's own Xwayland socket) or a
+  private session bus (its portals crashed against the compositor).
+
 ## 2026-11-18
 
 - **1.3.5: GPU narration can't take the app down.** ORT's CUDA provider
