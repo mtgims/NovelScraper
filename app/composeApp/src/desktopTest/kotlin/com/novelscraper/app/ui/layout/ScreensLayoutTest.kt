@@ -14,6 +14,8 @@ import com.novelscraper.app.data.ReaderPrefs
 import com.novelscraper.app.net.Net
 import com.novelscraper.app.sync.SyncSettings
 import com.novelscraper.app.ui.browse.SourceRow
+import com.novelscraper.app.ui.components.UpdateRows
+import com.novelscraper.app.ui.screen.SettingsGroup
 import com.novelscraper.app.ui.components.ExpressiveReadingSetting
 import com.novelscraper.app.ui.components.GpuAccelerationSetting
 import com.novelscraper.app.ui.screen.ReleaseCard
@@ -21,6 +23,7 @@ import com.novelscraper.app.ui.screen.SettingsHooks
 import com.novelscraper.app.ui.screen.SettingsPage
 import com.novelscraper.app.update.AppUpdates
 import com.novelscraper.app.update.Changelog
+import java.io.File
 import kotlin.test.Test
 import kotlin.test.assertTrue
 
@@ -48,6 +51,27 @@ class ScreensLayoutTest {
             // Scrolling, as the screen does: what is below the window is still laid out.
             Column(Modifier.verticalScroll(rememberScrollState()).padding(16.dp), verticalArrangement = Arrangement.spacedBy(16.dp)) {
                 releases.forEach { ReleaseCard(it) }
+            }
+        }
+    }
+
+    /** The "This app" card in each state it can be in, a long failure message included. */
+    @Test
+    fun theUpdateCardFitsInEveryState() {
+        val states = listOf(
+            AppUpdates.State.Idle(upToDate = true),
+            AppUpdates.State.Checking,
+            AppUpdates.State.Available(
+                "1.12.10", "The computer app opens in about half the time, and narration on the graphics card " +
+                    "carries on from the processor when the card runs short of memory.", "", 0, "",
+            ),
+            AppUpdates.State.Downloading("1.12.10", 61_000_000, 150_000_000),
+            AppUpdates.State.Ready("1.12.10", File("update")),
+            AppUpdates.State.Failed("Couldn't reach the releases page: connection timed out after 30 seconds."),
+        )
+        LayoutCheck.assertFits("The update card") {
+            Column(Modifier.padding(16.dp)) {
+                states.forEach { SettingsGroup(title = "This app") { UpdateRows(it, "1.12.9", {}, {}, {}, {}, {}, {}) } }
             }
         }
     }

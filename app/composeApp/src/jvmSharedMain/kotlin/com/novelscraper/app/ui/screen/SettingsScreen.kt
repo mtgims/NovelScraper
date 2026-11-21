@@ -163,7 +163,7 @@ private fun Overview(selected: SettingsPage?, onOpen: (SettingsPage) -> Unit, on
         }
     }
     SettingsGroup(title = "This app") {
-        GroupBody { UpdateSection(onChangelog) }
+        UpdateSection(onChangelog)
     }
 }
 
