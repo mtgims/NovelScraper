@@ -424,8 +424,10 @@ object ClassArchive {
         work.mkdirs()
         val classes = File(work, "classes.lst")
 
-        // The training run, in a profile of its own.
-        val env = mutableMapOf<String, String>()
+        // Both runs get a profile of their own, and nothing of the desktop the
+        // build runs on: no Wayland, no session bus (a private one started the
+        // desktop portals, which attached to the reader's compositor and crashed).
+        val env = mutableMapOf<String, String?>("WAYLAND_DISPLAY" to null, "DISPLAY" to null)
         if (windows) {
             env["APPDATA"] = File(work, "profile/roaming").path
             env["LOCALAPPDATA"] = File(work, "profile/local").path
@@ -433,26 +435,37 @@ object ClassArchive {
             env["XDG_CONFIG_HOME"] = File(work, "profile/config").path
             env["XDG_DATA_HOME"] = File(work, "profile/data").path
             env["XDG_CACHE_HOME"] = File(work, "profile/cache").path
+            env["DBUS_SESSION_BUS_ADDRESS"] = "disabled:"
         }
-        env["JAVA_TOOL_OPTIONS"] = "-XX:DumpLoadedClassList=${quoted(classes)}"
+
+        // The training run.
         var display: Process? = null
         try {
-            val command = mutableListOf(launcher.path, "--cds-training")
             if (!windows) {
                 val xvfb = onPath("Xvfb") ?: error("Xvfb is not installed")
-                display = ProcessBuilder(xvfb.path, "-displayfd", "1", "-screen", "0", "1280x860x24", "-nolisten", "tcp")
-                    .redirectError(File(work, "xvfb.log")).start()
-                val number = display.inputStream.bufferedReader().readLine()?.trim()
-                    ?.takeIf { it.isNotEmpty() } ?: error("Xvfb did not start")
+                // A display number nothing holds, by socket and by lock file, as
+                // VirtualDisplay picks its own. Not Xvfb's -displayfd: it tries
+                // :0 first, and in doing so deleted the socket of the desktop's
+                // own Xwayland (2026-11-21), after which no X11 app could open.
+                val number = (70..89).firstOrNull {
+                    !File("/tmp/.X11-unix/X$it").exists() && !File("/tmp/.X$it-lock").exists()
+                } ?: error("no free display number in 70..89")
+                display = ProcessBuilder(xvfb.path, ":$number", "-screen", "0", "1280x860x24", "-nolisten", "tcp")
+                    .redirectErrorStream(true).redirectOutput(File(work, "xvfb.log")).start()
+                val socket = File("/tmp/.X11-unix/X$number")
+                val until = System.currentTimeMillis() + 10_000
+                while (!socket.exists() && display.isAlive && System.currentTimeMillis() < until) Thread.sleep(100)
+                if (!socket.exists()) error("Xvfb did not start on :$number")
                 env["DISPLAY"] = ":$number"
-                // A bus of its own, so media keys start as they do for a reader
-                // without taking the name from a copy of the app already running.
-                onPath("dbus-run-session")?.let { command.addAll(0, listOf(it.path, "--")) }
-                    ?: run { env["DBUS_SESSION_BUS_ADDRESS"] = "disabled:" }
             }
-            run(command, env, File(work, "training.log"), 180)
+            run(
+                listOf(launcher.path, "--cds-training"),
+                env + ("JAVA_TOOL_OPTIONS" to "-XX:DumpLoadedClassList=${quoted(classes)}"),
+                File(work, "training.log"), 180,
+            )
         } finally {
             display?.destroy()
+            display?.waitFor(10, TimeUnit.SECONDS)
         }
         if (!classes.isFile || classes.length() == 0L) error("the training run listed no classes")
 
@@ -462,7 +475,7 @@ object ClassArchive {
         archive.delete()
         run(
             listOf(launcher.path, "--cds-dump"),
-            mapOf("JAVA_TOOL_OPTIONS" to "-Xshare:dump -XX:SharedClassListFile=${quoted(classes)} " +
+            env + ("DISPLAY" to null) + ("JAVA_TOOL_OPTIONS" to "-Xshare:dump -XX:SharedClassListFile=${quoted(classes)} " +
                 "-XX:SharedArchiveFile=${quoted(archive)}"),
             File(work, "dump.log"), 300,
         )
@@ -476,9 +489,11 @@ object ClassArchive {
         log.lifecycle("Class-data archive -> ${archive.path} (${archive.length() / (1024 * 1024)} MB, ${classes.readLines().size} classes listed)")
     }
 
-    private fun run(command: List<String>, env: Map<String, String>, output: File, seconds: Long) {
+    /** [env]: a null value takes the variable away. */
+    private fun run(command: List<String>, env: Map<String, String?>, output: File, seconds: Long) {
         val p = ProcessBuilder(command).redirectErrorStream(true).redirectOutput(output)
-            .apply { environment().putAll(env) }.start()
+            .apply { env.forEach { (k, v) -> if (v == null) environment().remove(k) else environment()[k] = v } }
+            .start()
         if (!p.waitFor(seconds, TimeUnit.SECONDS)) {
             p.descendants().forEach { it.destroyForcibly() }
             p.destroyForcibly()
