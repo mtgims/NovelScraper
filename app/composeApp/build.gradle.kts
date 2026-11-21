@@ -519,16 +519,6 @@ tasks.withType<org.jetbrains.compose.desktop.application.tasks.AbstractJPackageT
     val require = requireClassArchive
     doLast { ClassArchive.add(image.get().asFile, work.get().asFile, require.get(), logger) }
 }
-// Left to itself packageExe runs jpackage from the jars again, so the 1.3.6
-// installer came without the archive. Handed createDistributable's app folder,
-// it wraps that one (jpackage --app-image), archive and launcher .cfg included.
-tasks.withType<org.jetbrains.compose.desktop.application.tasks.AbstractJPackageTask>().matching {
-    it.name == "packageExe"
-}.configureEach {
-    val distributable = tasks.named<org.jetbrains.compose.desktop.application.tasks.AbstractJPackageTask>("createDistributable")
-    dependsOn(distributable)
-    appImage.set(distributable.flatMap { d -> d.destinationDir.dir(d.packageName) })
-}
 
 // A single-file AppImage of the desktop app for Linux, dropped at the repo root
 // as novelscraper-x86_64.AppImage (like the APK): the app image Compose builds
