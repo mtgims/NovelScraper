@@ -80,7 +80,12 @@ object SiteChecks {
 
     /** Remember that this site only answers a real browser. */
     fun needsBrowser(url: String) {
-        host(url)?.let { if (browserHosts.add(it)) save() }
+        host(url)?.let {
+            // A plain request has just been refused: that is this half hour's
+            // try, not a reason to make another straight away.
+            triedPlainly[it] = System.currentTimeMillis()
+            if (browserHosts.add(it)) save()
+        }
     }
 
     // When each host was last given another chance at a plain request.
@@ -95,6 +100,14 @@ object SiteChecks {
     fun wantsBrowser(url: String): Boolean {
         val host = host(url) ?: return false
         if (host !in browserHosts) return false
+        // The browser has just got in: what it was let in with may carry plain
+        // requests too (DDoS-Guard's cookies do, Cloudflare's don't), and a
+        // plain request is a fraction of a second where a page in the browser
+        // is several. One try says which.
+        if (afterPass.remove(host)) {
+            onTrial.add(host)
+            return false
+        }
         val now = System.currentTimeMillis()
         if (now - (triedPlainly[host] ?: 0L) > TRY_PLAIN_AGAIN_MS) {
             triedPlainly[host] = now
@@ -134,7 +147,39 @@ object SiteChecks {
     /** This site answers plain requests again (its guard was lifted, or the one
      *  page that needed a browser was an accident): stop routing it the long way. */
     fun plainAgain(url: String) {
-        host(url)?.let { if (browserHosts.remove(it)) save() }
+        host(url)?.let {
+            onTrial.remove(it)
+            if (browserHosts.remove(it)) save()
+        }
+    }
+
+    // Sites the browser has just been let into, whose next request goes plainly
+    // to see whether what the browser was given carries it (see wantsBrowser).
+    private val afterPass: MutableSet<String> = java.util.Collections.synchronizedSet(HashSet())
+    // Sites whose plain request is that try, until it is answered.
+    private val onTrial: MutableSet<String> = java.util.Collections.synchronizedSet(HashSet())
+    // Sites where it didn't: their passes hold only for the browser. Not tried
+    // again this run, or every other request would be a refusal.
+    private val passStaysInBrowser: MutableSet<String> = java.util.Collections.synchronizedSet(HashSet())
+
+    /** The browser brought back a page of this site. */
+    fun browserGotIn(url: String) {
+        val host = host(url) ?: return
+        if (host in browserHosts && host !in passStaysInBrowser) afterPass.add(host)
+    }
+
+    /** Everything known about this site's checks, gone (tests share one host). */
+    internal fun forget(url: String) {
+        val host = host(url) ?: return
+        listOf(afterPass, onTrial, passStaysInBrowser).forEach { it.remove(host) }
+        triedPlainly.remove(host)
+        interactiveHosts.remove(host)
+        if (browserHosts.remove(host)) save()
+    }
+
+    /** A plain request to this site was turned away. */
+    fun plainRefused(url: String) {
+        host(url)?.let { if (onTrial.remove(it)) passStaysInBrowser.add(it) }
     }
 
     private fun host(url: String): String? =

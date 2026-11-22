@@ -334,6 +334,8 @@ enum class CheckKind {
     Managed,
     /** Wants a tick in a box. */
     Interactive,
+    /** A puzzle only a person can answer (Ranobes' pictures): no waiting, no tick. */
+    Person,
     /** A check that doesn't say which (DDoS-Guard, or one this doesn't know). */
     Other,
 }
@@ -344,6 +346,9 @@ private val CHECK_TYPE = Regex("""cType:\s*'([a-z-]+)'""")
 /** The kind of browser check this page is, or null if it is not one. */
 fun browserCheckKind(html: String): CheckKind? {
     if (!looksLikeBrowserCheck(html)) return null
+    // Ranobes' guard asks which picture matches: only a person can answer
+    // that, so there is nothing to wait out and no box to tick.
+    if (html.contains("vb-custom-captcha")) return CheckKind.Person
     // The options sit in a script near the end of a small page, past the 6 KB
     // the check itself is recognised by.
     return when (CHECK_TYPE.find(html.take(20_000))?.groupValues?.get(1)) {

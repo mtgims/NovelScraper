@@ -45,6 +45,17 @@ class BrowserCheckTest {
         assertEquals(CheckKind.Interactive, browserCheckKind(interstitial("interactive")))
     }
 
+    /** Ranobes' guard asks which picture matches: a person's job from the start. */
+    @Test fun aPicturePuzzleWantsAPerson() {
+        val puzzle = """
+            <html><head><title>Just a moment...</title></head><body>
+            <div id="vb-captcha-shell" class="vb-custom-captcha-shell">
+            <button class="vb-custom-captcha-option" type="submit" name="vb_custom_captcha_answer" value="1"></button>
+            </div></body></html>
+        """.trimIndent()
+        assertEquals(CheckKind.Person, browserCheckKind(puzzle))
+    }
+
     /** A check that names no kind, or isn't Cloudflare's, is still a check. */
     @Test fun aCheckOfNoKnownKindIsOther() {
         assertEquals(CheckKind.Other, browserCheckKind(interstitial("something-new")))

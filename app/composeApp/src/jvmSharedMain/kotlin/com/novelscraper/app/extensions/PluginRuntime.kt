@@ -81,6 +81,10 @@ class PluginRuntime private constructor(
     /** The current call was nobody's in particular ([search]'s unattended). */
     @Volatile private var unattended = false
 
+    /** Hosts the browser was asked for during the current call and couldn't get into. */
+    private val browserGaveUpOn: MutableSet<String> =
+        java.util.Collections.synchronizedSet(HashSet())
+
     suspend fun popular(page: Int, latest: Boolean = false): List<NovelItem> =
         decode(call("__popular(${q(info.id)}, $page, $latest)"))
 
@@ -147,7 +151,12 @@ class PluginRuntime private constructor(
             // few of those take the pool down with them. This reaches the
             // interpreter itself, which is the only thing that stops it.
             js.interruptEvaluation()
-            throw e
+            // Not a cancellation: nobody cancelled the caller, the source ran
+            // out of time. Passed on as one, every screen took it for the
+            // reader leaving and kept its spinner up for good. (A caller that
+            // was itself cancelled meanwhile still hears its cancellation.)
+            kotlinx.coroutines.currentCoroutineContext().ensureActive()
+            throw PluginTimeoutException(info.id, callTimeoutMs)
         } finally {
             // Nothing after the call can use what a request it left running
             // brings back, nor the bodies it was handed: a plugin reads a body
@@ -172,6 +181,7 @@ class PluginRuntime private constructor(
         withTimeout(callTimeoutMs) {
             challengedUrl = null
             blockedUrl = null
+            browserGaveUpOn.clear()
             js.evaluate<Any?>("__call(() => $expr)")
             val r = json.parseToJsonElement(js.evaluate<String>("__take()")).jsonObject
             val value = r["v"]?.jsonPrimitive?.contentOrNull ?: ""
@@ -209,6 +219,20 @@ class PluginRuntime private constructor(
         internal var callTimeoutMs = 90_000L
         /** How long a plugin's own code may take to load. Not const, as above. */
         internal var loadTimeoutMs = 30_000L
+
+        /** A page as the browser gets it (null: no browser, or it didn't get
+         *  in). Not const: tests stand a browser in, as no real one is driven there. */
+        internal var pageInBrowser: suspend (url: String, publicOnly: Boolean, unattended: Boolean) -> String? =
+            { url, publicOnly, unattended ->
+                if (canFetchThroughBrowser) fetchThroughBrowser(url, publicOnly, unattended) else null
+            }
+
+        /** A request made from inside one of the site's pages in the browser. As above. */
+        internal var requestInBrowser: suspend (
+            url: String, method: String, headers: Map<String, String>, body: BrowserBody?, publicOnly: Boolean,
+        ) -> BrowserReply? = { url, method, headers, body, publicOnly ->
+            requestThroughBrowser(url, method, headers, body, publicOnly)
+        }
         private val json = Json { ignoreUnknownKeys = true; isLenient = true; coerceInputValues = true }
 
         private val prelude: String by lazy {
@@ -377,10 +401,18 @@ class PluginRuntime private constructor(
             }
             val contentType = headers.entries.firstOrNull { it.key.equals("content-type", true) }?.value
             builder.method(method, requestBody(method, r["body"] as? JsonObject, contentType))
+            val host = url.toHttpUrlOrNull()?.host
+            // The browser has already been asked for this site during this call
+            // and didn't get in: every other page of it waits the same wait for
+            // the same check. Said at once instead, so the reader hears about
+            // the check in seconds rather than after a minute or more.
+            val browserGaveUp = host != null && host in browserGaveUpOn
             // A site that has already refused plain requests is asked through the
             // browser from the start, rather than being refused once every time.
-            if (SiteChecks.wantsBrowser(url)) {
+            val browserFirst = !browserGaveUp && SiteChecks.wantsBrowser(url)
+            if (browserFirst) {
                 viaBrowser(url, method, headers, r["body"] as? JsonObject)?.let { return@withContext it }
+                host?.let { browserGaveUpOn += it }
             }
             val call = http.newCall(builder.build())
             val asked = System.currentTimeMillis()
@@ -394,10 +426,16 @@ class PluginRuntime private constructor(
             val blocked = resp.code == 403 &&
                 looksLikeBlocked(String(bytes, 0, minOf(bytes.size, 20_000), Charsets.UTF_8))
             if (blocked || isChallenge(resp.code, resp.headers, bytes)) {
+                SiteChecks.plainRefused(url)
                 // Cloudflare reads more than cookies, so a browser check can't
                 // hand this client a pass: ask through the browser instead.
                 SiteChecks.needsBrowser(url)
-                viaBrowser(url, method, headers, r["body"] as? JsonObject)?.let { return@withContext it }
+                // Not twice: the browser was asked just above, or earlier in
+                // this call, and asking again is the same wait over again.
+                if (!browserFirst && !browserGaveUp) {
+                    viaBrowser(url, method, headers, r["body"] as? JsonObject)?.let { return@withContext it }
+                    host?.let { browserGaveUpOn += it }
+                }
                 if (blocked) blockedUrl = url else challengedUrl = url
             } else {
                 // How the site answered sets how soon the download queue asks it
@@ -509,7 +547,7 @@ class PluginRuntime private constructor(
             else -> return null
         }
         val reply: BrowserReply? = try {
-            requestThroughBrowser(url, method, headers, sending, publicOnly)
+            requestInBrowser(url, method, headers, sending, publicOnly)
         } catch (e: kotlinx.coroutines.CancellationException) {
             throw e
         } catch (e: Exception) {
@@ -518,16 +556,32 @@ class PluginRuntime private constructor(
         }
         if (reply == null) return null
         if (looksLikeBrowserCheck(reply.body)) return null
-        if (looksLikeBlocked(reply.body)) blockedUrl = url
+        if (looksLikeBlocked(reply.body)) {
+            blockedUrl = url
+            return synthetic(reply.status, url, reply.body, "text/html; charset=utf-8")
+        }
+        // Only a site that refused the plain request comes here, so the same
+        // refusal from inside its page is the guard again, worded some way the
+        // check above doesn't know. Handed over, it was read as a page with
+        // nothing on it: "Nothing found" for a site that wanted a check.
+        if (reply.status == 403 || reply.status == 503) {
+            Log.w(TAG, "the browser's request was refused too (${reply.status}): $url")
+            return null
+        }
+        SiteChecks.browserGotIn(url)
         return synthetic(reply.status, url, reply.body, "text/html; charset=utf-8")
     }
 
     /** The page as a real browser sees it, shaped like a fetch response. */
     private suspend fun browserResponse(url: String, publicOnly: Boolean): String? {
-        if (!canFetchThroughBrowser) return null
-        val html = runCatching { fetchThroughBrowser(url, publicOnly, unattended) }
-            .onFailure { Log.w(TAG, "browser fetch failed: ${it.message}") }
-            .getOrNull()?.takeIf { it.isNotBlank() } ?: return null
+        val html = try {
+            pageInBrowser(url, publicOnly, unattended)
+        } catch (e: kotlinx.coroutines.CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            Log.w(TAG, "browser fetch failed: ${e.message}")
+            null
+        }?.takeIf { it.isNotBlank() } ?: return null
         if (looksLikeBrowserCheck(html)) {
             Log.w(TAG, "browser fetch: the site is still asking the browser itself")
             return null
@@ -538,6 +592,7 @@ class PluginRuntime private constructor(
             blockedUrl = url
             return synthetic(403, url, html, "text/html; charset=utf-8")
         }
+        SiteChecks.browserGotIn(url)
         return synthetic(200, url, html, "text/html; charset=utf-8")
     }
 
@@ -605,6 +660,10 @@ class SiteBlockedException(val pluginId: String, val url: String) :
  *  to pass; the plugin couldn't get through. */
 class SiteChallengeException(val pluginId: String, val url: String) :
     Exception("The site asks for a browser check: $url")
+
+/** The source ran out of time on a call (its requests and parsing together). */
+class PluginTimeoutException(val pluginId: String, val limitMs: Long) :
+    Exception("The source $pluginId took longer than ${limitMs / 1000} s to answer.")
 
 /** The source this novel comes from is not installed on this device. */
 class PluginNotInstalledException(val source: String) :

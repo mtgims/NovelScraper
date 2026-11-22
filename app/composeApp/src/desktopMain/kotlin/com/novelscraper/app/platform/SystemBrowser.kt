@@ -267,6 +267,7 @@ object SystemBrowser {
                     // rather than after a silent wait it was never going to come out of.
                     val patience = when (kind) {
                         CheckKind.Interactive -> if (ticksLeft > 0) TICKING_MS else 0L
+                        CheckKind.Person -> 0L
                         CheckKind.Waiting -> maxOf(patienceMs, WAITING_PATIENCE_MS)
                         else -> patienceMs
                     }

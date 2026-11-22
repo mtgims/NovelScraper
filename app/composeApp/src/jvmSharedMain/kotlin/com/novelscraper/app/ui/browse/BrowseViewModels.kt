@@ -40,6 +40,7 @@ fun describe(e: Throwable): String = when (e) {
     is PluginException -> if (e.message?.contains("Network request failed") == true) OFFLINE
                           else "The source failed: ${e.message}"
     is java.io.IOException -> OFFLINE
+    is com.novelscraper.app.extensions.PluginTimeoutException,
     is kotlinx.coroutines.TimeoutCancellationException -> "The source took too long to answer."
     else -> "Couldn't reach the source (${e.message ?: e.javaClass.simpleName})."
 }
