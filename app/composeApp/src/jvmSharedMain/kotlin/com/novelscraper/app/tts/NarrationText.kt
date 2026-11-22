@@ -20,7 +20,7 @@ object NarrationText {
      */
     private val JUNK = listOf(
         // "Royal Road is the home of this novel", "Visit novelfire.net to read..."
-        Regex("""\b(royal ?road|novelfire|novelbin|webnovel|wuxiaworld|scribblehub|novelupdates)\b[^.!?]{0,80}\b(read|visit|home|original|support|latest|chapter)\b""", RegexOption.IGNORE_CASE),
+        Regex("""\b(royal ?road|novelfire|novelbin|novelping|webnovel|wuxiaworld|scribblehub|novelupdates)\b[^.!?]{0,80}\b(read|visit|home|original|support|latest|chapter)\b""", RegexOption.IGNORE_CASE),
         Regex("""\b(read|find|continue)[^.!?]{0,40}\b(latest|full|original|more) chapters?\b[^.!?]{0,40}\b(at|on|from)\b""", RegexOption.IGNORE_CASE),
         Regex("""\bp[a@]treon\b|\bko-?fi\b|\bdiscord(\.gg|\s+server)\b|\bbuy me a coffee\b""", RegexOption.IGNORE_CASE),
         Regex("""\b(advance|advanced|early) (access )?chapters?\b""", RegexOption.IGNORE_CASE),
