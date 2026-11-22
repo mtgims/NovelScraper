@@ -3,6 +3,43 @@
 Newest first.
 
 
+## 1.3.8, 2026-11-22 · `versionCode 111`
+
+Sites behind a browser check say so sooner and load much faster once past
+it, and the Windows installers work again.
+
+### Everywhere
+- **A site that wants a browser check says so sooner.** The app could wait
+  for a check that was never going to pass by itself, several times over in
+  one request. A check that needs a person (a picture puzzle, a box to tick)
+  is now shown at once, and one that may pass by itself gets 15 s: on the
+  phone, Ranobes asked after about 7 s instead of 48.
+- **"Nothing found" no longer stands in for a check.** When a site turned
+  away the request made from inside its own page too, that refusal was read
+  as an empty list. It now brings up the browser check.
+- **Faster after a check.** Once the browser gets past a site's check, the
+  next request tries the quick way again: where the site accepts it
+  (Ranobes does), the site stops going through the browser.
+- **No more endless spinner** when a source takes too long: it says so.
+- **NovelPing replaces Novel Bin,** which moved there (novelarrow.com leads
+  to it too). It is a new source: install it from Extensions, and remove
+  Novel Bin, which no longer works. Its read-it-at notes are left out of
+  narration.
+
+### On the phone
+- **Sites behind a check load in a fraction of the time.** Every request to
+  such a site opened a new hidden browser page, loaded it whole and waited.
+  One page is now kept open for two minutes and the site's other pages are
+  asked for from inside it: about a quarter of a second each instead of
+  several.
+
+### On the computer
+- **The Windows installers work again.** 1.3.7's were 800 KB files that
+  installed nothing. They are built as in 1.3.6 again (without 1.3.7's
+  faster start on Windows), and the build now fails if an installer comes
+  out that small.
+
+
 ## 1.3.7, 2026-11-21 · `versionCode 110`
 
 The Windows app opens faster too, and two cards got a cleaner design.

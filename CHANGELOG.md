@@ -11,6 +11,30 @@ since moved to a repository of their own; this one holds the apps.
 
 ---
 
+## 2026-11-22
+
+- **1.3.8: browser checks sooner and faster, NovelPing, Windows installers
+  back.** In one plugin call the browser was asked again for every page of
+  a site it had already failed on (nine times for a five-page list), up to
+  45 s each on Android: now once per host per call (`browserGaveUpOn`). An
+  in-page request answered 403/503 was returned to the plugin as a page
+  ("Nothing found", seen on Wuxiabox search); `viaBrowser` now returns null
+  for it, so the call ends in `SiteChallengeException`. After the browser
+  gets in, the host's next request goes plainly once (`SiteChecks.afterPass`
+  / `onTrial` / `passStaysInBrowser`): DDoS-Guard's cookies carry plain
+  requests, Cloudflare's don't. A call that overran `callTimeoutMs` was
+  rethrown as a cancellation, which every screen ignores (spinner forever);
+  it is `PluginTimeoutException` now. `CheckKind.Person` for Ranobes' picture
+  puzzle (`vb-custom-captcha`), never waited on. Android keeps one WebView
+  for two minutes and fetches a site's later pages from inside it (emulator:
+  3.2 s for the first, 230 to 330 ms after; Ranobes' prompt 7.4 s, was
+  48.5 s); pages are read once they hold still instead of after a flat
+  2.5 s, without images. `BrowserRouteTest` (six cases, all failing on the
+  old code). Windows: `packageExe` back to the jars (revert of d0ce735,
+  which made 800 KB stub installers in 1.3.7), and CI fails on an installer
+  under a size floor. Extensions (own repository): NovelPing replaces Novel
+  Bin, Ranobes 2.0.4 fetches its chapter list four pages at a time.
+
 ## 2026-11-21
 
 - **1.3.7: the archive on Windows, and two cards redesigned.** `packageExe`
